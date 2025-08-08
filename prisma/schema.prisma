@@ -1,0 +1,376 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+  model User {
+    id                String         @id @default(uuid())
+    email             String         @unique
+    firstName         String
+    lastName          String
+    password          String?
+    phoneNumber       String?        @unique
+    profilePic        String?
+    address           String?
+    city              String?
+    state             String?
+    country           String         @default("Nigeria")
+    role              RoleEnum       @default(TENANT)
+    permissions       PermissionEnum[]
+    provider          ProviderEnum   @default(EMAIL)
+    providerAccounts        ProviderAccount[] 
+    isVerified        Boolean        @default(false)
+    isActive          Boolean        @default(true)
+    status            UserStatus     @default(ACTIVE)
+    refreshToken      String?
+    lastLogin         DateTime?
+    createdAt         DateTime       @default(now())
+    updatedAt         DateTime       @updatedAt
+
+    // Relations
+    properties              Property[]
+    propertyLikes           PropertyLike[]
+    propertyViews           PropertyView[]
+    identityVerifications   IdentityVerification[]
+    propertyOwnershipProofs PropertyOwnershipProof[]
+    verificationTokens      VerificationToken[]
+    notifications           Notification[]
+    chatsAsRenter           Conversation[] @relation("RenterConversations")
+    chatsAsOwner            Conversation[] @relation("OwnerConversations")
+    sentMessages            Message[]
+    adminActionLogs         AdminActionLog[]
+
+    @@map("users")
+  }
+
+  model ProviderAccount {
+  id          String       @id @default(uuid())
+  userId      String
+  provider    ProviderEnum
+  providerId  String
+  accessToken String
+  user        User         @relation(fields: [userId], references: [id])
+  @@unique([provider, providerId])
+  @@map("provider_accounts")
+}
+
+model Property {
+  id                    String         @id @default(uuid())
+  title                 String
+  description           String
+  status                PropertyStatus @default(DRAFT)
+  amount                Float
+  rentalPeriod          RentalPeriod
+  address               String
+  city                  String
+  state                 String
+  country               String         @default("Nigeria")
+  latitude              Float?
+  longitude             Float?
+  sqft                  Float?
+  bedrooms              Int
+  bathrooms             Int
+  propertyType          PropertyType
+  roomType              RoomType
+  visitingDays          DayOfWeek[]
+  visitingTimeStart     String?
+  visitingTimeEnd       String?
+  amenities             String[]
+  isFurnished           Boolean        @default(false)
+  isForStudents         Boolean        @default(false)
+  images                String[]       @default([])
+  livingRoomImages      String[]       @default([])
+  bedroomImages         String[]       @default([])
+  bathroomImages        String[]       @default([])
+  video                String       
+  propertyOwnershipDocs String[]  @default([])
+  propertyPlanDocs  String[]  @default([])
+  propertyDimensionDocs String[] @default([])
+  ownershipVerified     Boolean        @default(false)
+  featured              Boolean        @default(false)
+  ownerId               String
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  // Relations
+  owner                   User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  likes                   PropertyLike[]
+  views                   PropertyView[]
+  ownershipProofs         PropertyOwnershipProof[]
+  conversations           Conversation[]
+
+
+  @@map("properties")
+}
+
+model PropertyLike {
+  id         String   @id @default(uuid())
+  userId     String
+  propertyId String
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("property_likes")
+}
+
+model PropertyView {
+  id         String   @id @default(uuid())
+  userId     String
+  propertyId String
+  viewedAt   DateTime @default(now())
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("property_views")
+}
+
+model IdentityVerification {
+  id               String             @id @default(uuid())
+  userId           String
+  documentType     DocumentType
+  documentNumber   String
+  documentImages   String[]
+  status           VerificationStatus @default(PENDING)
+  reviewedAt       DateTime?
+  reviewedBy       String?
+  rejectionReason  String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("identity_verifications")
+}
+
+model PropertyOwnershipProof {
+  id               String             @id @default(uuid())
+  propertyId       String
+  userId           String
+  documentType     String
+  documentImages   String[]
+  status           VerificationStatus @default(PENDING)
+  reviewedAt       DateTime?
+  reviewedBy       String?
+  rejectionReason  String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("property_ownership_proofs")
+}
+
+model VerificationToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  type      TokenType
+  userId    String
+  email     String
+  used      Boolean   @default(false)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_tokens")
+}
+
+model Conversation {
+  id         String    @id @default(uuid())
+  propertyId String
+  renterId   String
+  ownerId    String
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Relations
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  renter   User     @relation("RenterConversations", fields: [renterId], references: [id], onDelete: Cascade)
+  owner    User     @relation("OwnerConversations", fields: [ownerId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([propertyId, renterId, ownerId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  senderId       String
+  content        String
+  messageType    MessageType @default(TEXT)
+  attachments    String[]    @default([])
+  isRead         Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model AdminActionLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  action    String
+  data      Json?
+  createdAt DateTime @default(now())
+
+  admin User @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@map("admin_action_logs")
+}
+
+// Enums
+enum RoleEnum {
+  TENANT
+  PROPERTY_OWNER
+  ADMIN
+}
+
+enum PermissionEnum {
+  READ_USERS
+  WRITE_USERS
+  DELETE_USERS
+  READ_PROPERTIES
+  WRITE_PROPERTIES
+  DELETE_PROPERTIES
+  MANAGE_VERIFICATIONS
+  VIEW_ANALYTICS
+  SUPER_ADMIN
+}
+
+enum ProviderEnum {
+  EMAIL
+  GOOGLE
+  FACEBOOK
+  LINKEDIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  PENDING_VERIFICATION
+}
+
+enum PropertyStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  RENTED
+  INACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum PropertyType {
+  BUNGALOW
+  TWO_STORY
+  THREE_STORY
+  FOUR_STORY
+  SIX_PLUS_STORY
+  APARTMENT
+  DUPLEX
+  MANSION
+}
+
+enum RoomType {
+  STUDIO
+  ONE_BEDROOM
+  TWO_BEDROOM
+  THREE_BEDROOM
+  FOUR_BEDROOM
+  FIVE_PLUS_BEDROOM
+  SELF_CONTAIN
+}
+
+enum RentalPeriod {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum DocumentType {
+  NIN
+  DRIVERS_LICENSE
+  INTERNATIONAL_PASSPORT
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  PHONE_VERIFICATION
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+  SYSTEM
+}
+
+enum NotificationType {
+  PROPERTY_APPROVED
+  PROPERTY_REJECTED
+  NEW_MESSAGE
+  PROPERTY_LIKED
+  PROPERTY_VIEWED
+  VERIFICATION_APPROVED
+  VERIFICATION_REJECTED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_REACTIVATED
+  PROPERTY_INQUIRY
+  SYSTEM_UPDATE
+}

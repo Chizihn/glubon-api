@@ -1,0 +1,570 @@
+import {
+  Resolver,
+  Query,
+  Mutation,
+  Arg,
+  Ctx,
+  UseMiddleware,
+  Args,
+  Int,
+  Float,
+} from "type-graphql";
+import {
+  GetPropertiesArgs,
+  PaginatedPropertiesResponse,
+  PaginatedVisitorsResponse,
+  PropertyResponse,
+  PropertyStatsResponse,
+} from "./property.types";
+import { PropertyFilters, UpdatePropertyInput } from "./property.inputs";
+import { PropertyStatus, RoleEnum } from "@prisma/client";
+import { CreatePropertyInput } from "./property.inputs";
+import { PropertyService } from "../../services/property";
+import { prisma, redis } from "../../config";
+import { Context } from "../../types";
+import { AuthMiddleware, RequireRole } from "../../middleware";
+import { logger } from "../../utils";
+import {
+  PropertyFilters as ServicePropertyFilters,
+  PropertySearchOptions,
+  UpdatePropertyInput as UpdatePropertyInputType,
+} from "../../types/services/properties";
+
+@Resolver()
+export class PropertyResolver {
+  private propertyService: PropertyService;
+
+  constructor() {
+    this.propertyService = new PropertyService(prisma, redis);
+  }
+
+  private transformPropertyToResponse(property: any): PropertyResponse {
+    return {
+      id: property.id,
+      title: property.title,
+      description: property.description ?? null,
+      status: property.status,
+      amount: property.amount,
+      rentalPeriod: property.rentalPeriod,
+      address: property.address,
+      city: property.city ?? null,
+      state: property.state ?? null,
+      country: property.country,
+      latitude: property.latitude ?? null,
+      longitude: property.longitude ?? null,
+      sqft: property.sqft ?? null,
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
+      propertyType: property.propertyType,
+      roomType: property.roomType,
+      visitingDays: property.visitingDays,
+      visitingTimeStart: property.visitingTimeStart ?? null,
+      visitingTimeEnd: property.visitingTimeEnd ?? null,
+      amenities: property.amenities,
+      isFurnished: property.isFurnished,
+      isForStudents: property.isForStudents,
+      ownerId: property.ownerId,
+      owner: {
+        id: property.owner.id,
+        firstName: property.owner.firstName,
+        lastName: property.owner.lastName,
+        email: property.owner.email,
+        phoneNumber: property.owner.phoneNumber ?? null,
+        profilePic: property.owner.profilePic ?? null,
+        isVerified: property.owner.isVerified,
+        role: property.owner.role,
+        status: property.owner.status,
+        address: property.owner.address ?? null,
+        city: property.owner.city ?? null,
+        state: property.owner.state ?? null,
+        country: property.owner.country ?? null,
+        createdAt: property.owner.createdAt,
+        updatedAt: property.owner.updatedAt,
+        lastLogin: property.owner.lastLogin ?? null,
+      },
+      viewsCount: property.viewsCount,
+      likesCount: property.likesCount,
+      isLiked: property.isLiked ?? false,
+      isViewed: property.isViewed ?? false,
+      createdAt: property.createdAt,
+      updatedAt: property.updatedAt,
+      distance: property.distance ?? null,
+    };
+  }
+
+  @Query(() => PaginatedPropertiesResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getProperties(
+    @Args() args: GetPropertiesArgs,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedPropertiesResponse> {
+    const filters: ServicePropertyFilters = {
+      minAmount: args.minAmount,
+      maxAmount: args.maxAmount,
+      bedrooms: args.bedrooms ?? undefined,
+      bathrooms: args.bathrooms ?? undefined,
+      propertyType: args.propertyType,
+      roomType: args.roomType,
+      isFurnished: args.isFurnished ?? undefined,
+      isForStudents: args.isForStudents ?? undefined,
+      city: args.city,
+      state: args.state,
+      amenities: args.amenities,
+      latitude: args.latitude,
+      longitude: args.longitude,
+      radiusKm: args.radiusKm,
+      status: args.status,
+    };
+
+    const options: PropertySearchOptions = {
+      page: args.page,
+      limit: args.limit,
+      sortBy: args.sortBy as any,
+      sortOrder: args.sortOrder as any,
+      search: args.search ?? undefined,
+    };
+
+    const result = await this.propertyService.getProperties(
+      filters,
+      options,
+      ctx.user?.id
+    );
+    if (!result.success) throw new Error(result.message);
+
+    const data = result.data!;
+    return {
+      properties: data.properties.map(
+        this.transformPropertyToResponse.bind(this)
+      ),
+      totalCount: data.totalCount,
+      pagination: data.pagination,
+    };
+  }
+
+  @Query(() => PropertyResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getProperty(
+    @Arg("id") id: string,
+    @Ctx() ctx: Context
+  ): Promise<PropertyResponse> {
+    logger.info(
+      `Resolver: Getting property ${id} for user ${
+        ctx.user?.id || "anonymous"
+      } with role ${ctx.user?.role || "none"}`
+    );
+
+    const result = await this.propertyService.getPropertyById(id, ctx.user!);
+
+    if (!result.success) {
+      logger.error(`Resolver: Failed to get property ${id}: ${result.message}`);
+      throw new Error(result.message);
+    }
+
+    logger.info(`Resolver: Successfully retrieved property ${id}`);
+    return this.transformPropertyToResponse(result.data!);
+  }
+
+  @Query(() => PaginatedPropertiesResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getPropertiesNearby(
+    @Arg("latitude") latitude: number,
+    @Arg("longitude") longitude: number,
+    @Arg("radius", () => Float, { defaultValue: 10 }) radius: number,
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedPropertiesResponse> {
+    const filters: ServicePropertyFilters = {
+      latitude,
+      longitude,
+      radiusKm: radius,
+    };
+    const options: PropertySearchOptions = { page, limit };
+
+    const result = await this.propertyService.getProperties(
+      filters,
+      options,
+      ctx.user?.id
+    );
+    if (!result.success) throw new Error(result.message);
+
+    const data = result.data!;
+    return {
+      properties: data.properties.map(
+        this.transformPropertyToResponse.bind(this)
+      ),
+      totalCount: data.totalCount,
+      pagination: data.pagination,
+    };
+  }
+
+  @Query(() => PaginatedPropertiesResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getMyProperties(
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Arg("status", () => PropertyStatus, { nullable: true })
+    status: PropertyStatus,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedPropertiesResponse> {
+    const options: PropertySearchOptions = { page, limit };
+
+    const result = await this.propertyService.getMyProperties(
+      ctx.user!.id,
+      options
+    );
+    if (!result.success) throw new Error(result.message);
+
+    const data = result.data!;
+    return {
+      properties: data.properties.map(
+        this.transformPropertyToResponse.bind(this)
+      ),
+      totalCount: data.totalCount,
+      pagination: data.pagination,
+    };
+  }
+
+  @Query(() => PaginatedPropertiesResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.TENANT))
+  async getLikedProperties(
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedPropertiesResponse> {
+    const options: PropertySearchOptions = { page, limit };
+
+    const result = await this.propertyService.getLikedProperties(
+      ctx.user!.id,
+      options
+    );
+    if (!result.success) throw new Error(result.message);
+
+    const data = result.data!;
+    return {
+      properties: data.properties.map(
+        this.transformPropertyToResponse.bind(this)
+      ),
+      totalCount: data.totalCount,
+      pagination: data.pagination,
+    };
+  }
+
+  @Query(() => PaginatedVisitorsResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.PROPERTY_OWNER))
+  async getPropertyVisitors(
+    @Arg("propertyId") propertyId: string,
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedVisitorsResponse> {
+    const options: PropertySearchOptions = { page, limit };
+
+    const result = await this.propertyService.getPropertyVisitors(
+      propertyId,
+      ctx.user!.id,
+      options
+    );
+    if (!result.success) throw new Error(result.message);
+
+    return result.data!;
+  }
+
+  @Mutation(() => PropertyResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.PROPERTY_OWNER))
+  async createProperty(
+    @Arg("input") input: CreatePropertyInput,
+    @Ctx() ctx: Context
+  ): Promise<PropertyResponse> {
+    const serviceInput: CreatePropertyInput = {
+      title: input.title,
+      description: input.description ?? null,
+      amount: input.amount,
+      rentalPeriod: input.rentalPeriod,
+      address: input.address,
+      city: input.city,
+      state: input.state,
+      sqft: input.sqft ?? null,
+      bedrooms: input.bedrooms,
+      bathrooms: input.bathrooms,
+      propertyType: input.propertyType,
+      roomType: input.roomType,
+      isFurnished: input.isFurnished,
+      isForStudents: input.isForStudents,
+      visitingDays: input.visitingDays,
+      visitingTimeStart: input.visitingTimeStart ?? null,
+      visitingTimeEnd: input.visitingTimeEnd ?? null,
+      amenities: input.amenities,
+    };
+
+    const result = await this.propertyService.createProperty(
+      ctx.user!.id,
+      serviceInput
+    );
+    if (!result.success) throw new Error(result.message);
+
+    const property = result.data!;
+    return {
+      id: property.id,
+      title: property.title,
+      description: property.description ?? null,
+      status: property.status,
+      amount: property.amount,
+      rentalPeriod: property.rentalPeriod,
+      address: property.address,
+      city: property.city ?? null,
+      state: property.state ?? null,
+      country: property.country,
+      latitude: property.latitude ?? null,
+      longitude: property.longitude ?? null,
+      sqft: property.sqft ?? null,
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
+      propertyType: property.propertyType,
+      roomType: property.roomType,
+      visitingDays: property.visitingDays,
+      visitingTimeStart: property.visitingTimeStart ?? null,
+      visitingTimeEnd: property.visitingTimeEnd ?? null,
+      amenities: property.amenities,
+      isFurnished: property.isFurnished,
+      isForStudents: property.isForStudents,
+      ownerId: property.ownerId,
+      owner: {
+        id: ctx.user!.id,
+        firstName: ctx.user!.firstName,
+        lastName: ctx.user!.lastName,
+        email: ctx.user!.email,
+        phoneNumber: ctx.user!.phoneNumber ?? null,
+        profilePic: ctx.user!.profilePic ?? null,
+        isVerified: ctx.user!.isVerified,
+        role: ctx.user!.role,
+        status: ctx.user!.status,
+        address: ctx.user!.address ?? null,
+        city: ctx.user!.city ?? null,
+        state: ctx.user!.state ?? null,
+        country: ctx.user!.country ?? null,
+        createdAt: ctx.user!.createdAt,
+        updatedAt: ctx.user!.updatedAt,
+        lastLogin: ctx.user!.lastLogin ?? null,
+      },
+      viewsCount: 0,
+      likesCount: 0,
+      isLiked: false,
+      isViewed: false,
+      createdAt: property.createdAt,
+      updatedAt: property.updatedAt,
+    };
+  }
+
+  @Mutation(() => PropertyResponse)
+  @UseMiddleware(AuthMiddleware)
+  async updateProperty(
+    @Arg("id") id: string,
+    @Arg("input") input: UpdatePropertyInput,
+    @Ctx() ctx: Context
+  ): Promise<PropertyResponse> {
+    const serviceInput: UpdatePropertyInputType = {
+      title: input.title ?? null,
+      description: input.description ?? null,
+      amount: input.amount ?? null,
+      rentalPeriod: input.rentalPeriod ?? null,
+      address: input.address ?? null,
+      city: input.city ?? null,
+      state: input.state ?? null,
+      sqft: input.sqft,
+      bedrooms: input.bedrooms ?? 0,
+      bathrooms: input.bathrooms,
+      propertyType: input.propertyType,
+      roomType: input.roomType,
+      isFurnished: input.isFurnished,
+      isForStudents: input.isForStudents,
+      visitingDays: input.visitingDays,
+      visitingTimeStart: input.visitingTimeStart,
+      visitingTimeEnd: input.visitingTimeEnd,
+      amenities: input.amenities || [],
+    };
+
+    const result = await this.propertyService.updateProperty(
+      id,
+      ctx.user!.id,
+      serviceInput
+    );
+    if (!result.success) throw new Error(result.message);
+
+    const property = result.data!;
+    return {
+      id: property.id,
+      title: property.title,
+      description: property.description ?? null,
+      status: property.status,
+      amount: property.amount,
+      rentalPeriod: property.rentalPeriod,
+      address: property.address,
+      city: property.city ?? null,
+      state: property.state ?? null,
+      country: property.country,
+      latitude: property.latitude ?? null,
+      longitude: property.longitude ?? null,
+      sqft: property.sqft ?? null,
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
+      propertyType: property.propertyType,
+      roomType: property.roomType,
+      visitingDays: property.visitingDays,
+      visitingTimeStart: property.visitingTimeStart ?? null,
+      visitingTimeEnd: property.visitingTimeEnd ?? null,
+      amenities: property.amenities,
+      isFurnished: property.isFurnished,
+      isForStudents: property.isForStudents,
+      ownerId: property.ownerId,
+      owner: {
+        id: ctx.user!.id,
+        firstName: ctx.user!.firstName,
+        lastName: ctx.user!.lastName,
+        email: ctx.user!.email,
+        phoneNumber: ctx.user!.phoneNumber ?? null,
+        profilePic: ctx.user!.profilePic ?? null,
+        isVerified: ctx.user!.isVerified,
+        role: ctx.user!.role,
+        status: ctx.user!.status,
+        address: ctx.user!.address ?? null,
+        city: ctx.user!.city ?? null,
+        state: ctx.user!.state ?? null,
+        country: ctx.user!.country ?? null,
+        createdAt: ctx.user!.createdAt,
+        updatedAt: ctx.user!.updatedAt,
+        lastLogin: ctx.user!.lastLogin ?? null,
+      },
+      viewsCount: 0,
+      likesCount: 0,
+      isLiked: false,
+      isViewed: false,
+      createdAt: property.createdAt,
+      updatedAt: property.updatedAt,
+    };
+  }
+
+  @Mutation(() => Boolean)
+  @UseMiddleware(AuthMiddleware)
+  async deleteProperty(
+    @Arg("id") id: string,
+    @Ctx() ctx: Context
+  ): Promise<boolean> {
+    const result = await this.propertyService.deleteProperty(id, ctx.user!.id);
+    if (!result.success) throw new Error(result.message);
+    return true;
+  }
+
+  @Mutation(() => Boolean)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.TENANT))
+  async togglePropertyLike(
+    @Arg("propertyId") propertyId: string,
+    @Ctx() ctx: Context
+  ): Promise<boolean> {
+    const result = await this.propertyService.togglePropertyLike(
+      propertyId,
+      ctx.user!.id
+    );
+    if (!result.success) throw new Error(result.message);
+    return result.data!.isLiked;
+  }
+
+  @Query(() => PaginatedPropertiesResponse)
+  @UseMiddleware(AuthMiddleware)
+  async searchProperties(
+    @Arg("query") query: string,
+    @Arg("filters", () => PropertyFilters, { nullable: true })
+    filters: PropertyFilters = {},
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedPropertiesResponse> {
+    const serviceFilters: ServicePropertyFilters = {
+      minAmount: filters.minAmount,
+      maxAmount: filters.maxAmount,
+      bedrooms: filters.bedrooms ?? undefined,
+      bathrooms: filters.bathrooms ?? undefined,
+      propertyType: filters.propertyType,
+      roomType: filters.roomType,
+      isFurnished: filters.isFurnished ?? undefined,
+      isForStudents: filters.isForStudents ?? undefined,
+      city: filters.city,
+      state: filters.state,
+      amenities: filters.amenities,
+      latitude: filters.latitude,
+      longitude: filters.longitude,
+      radiusKm: filters.radiusKm,
+      status: filters.status,
+    };
+
+    const options: PropertySearchOptions = { page, limit, search: query };
+
+    const result = await this.propertyService.getProperties(
+      serviceFilters,
+      options,
+      ctx.user?.id
+    );
+    if (!result.success) throw new Error(result.message);
+
+    const data = result.data!;
+    return {
+      properties: data.properties.map(
+        this.transformPropertyToResponse.bind(this)
+      ),
+      totalCount: data.totalCount,
+      pagination: data.pagination,
+    };
+  }
+
+  @Query(() => PropertyStatsResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getPropertyStats(): Promise<PropertyStatsResponse> {
+    const result = await this.propertyService.getPropertyStats();
+    if (!result.success) throw new Error(result.message);
+    return result.data!;
+  }
+
+  @Query(() => [PropertyResponse])
+  @UseMiddleware(AuthMiddleware)
+  async getTrendingProperties(
+    @Arg("limit", () => Int, { defaultValue: 10 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PropertyResponse[]> {
+    const result = await this.propertyService.getTrendingProperties(
+      limit,
+      ctx.user?.id
+    );
+    if (!result.success) throw new Error(result.message);
+    return result.data!.map(this.transformPropertyToResponse.bind(this));
+  }
+
+  @Query(() => [PropertyResponse])
+  @UseMiddleware(AuthMiddleware)
+  async getFeaturedProperties(
+    @Arg("limit", () => Int, { defaultValue: 10 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PropertyResponse[]> {
+    const result = await this.propertyService.getFeaturedProperties(
+      limit,
+      ctx.user?.id
+    );
+    if (!result.success) throw new Error(result.message);
+    return result.data!.map(this.transformPropertyToResponse.bind(this));
+  }
+
+  @Query(() => [PropertyResponse])
+  @UseMiddleware(AuthMiddleware)
+  async getSimilarProperties(
+    @Arg("propertyId") propertyId: string,
+    @Arg("limit", () => Int, { defaultValue: 5 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PropertyResponse[]> {
+    const result = await this.propertyService.getSimilarProperties(
+      propertyId,
+      limit,
+      ctx.user?.id
+    );
+    if (!result.success) throw new Error(result.message);
+    return result.data!.map(this.transformPropertyToResponse.bind(this));
+  }
+}
