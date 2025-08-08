@@ -21,8 +21,9 @@ export class PropertyRepository extends BaseRepository {
     super(prisma, redis);
   }
 
-  async create(data: any): Promise<Property> {
-    return this.prisma.property.create({ data });
+  async create(data: any, tx?: PrismaClient): Promise<Property> {
+    const client = tx || this.prisma;
+    return client.property.create({ data });
   }
 
   async findById(id: string, user?: User): Promise<PropertyWithDetails | null> {

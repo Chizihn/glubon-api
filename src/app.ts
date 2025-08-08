@@ -13,8 +13,10 @@ import { appConfig, corsConfig, prisma, redis } from "./config";
 import { createApolloServer } from "./graphql/server";
 import { createWebSocketServer } from "./graphql/websocket";
 import { rateLimiterMiddleware } from "./middleware/rateLimiter";
+import { graphqlUploadExpress } from "graphql-upload-ts";
 import { createGraphQLContext } from "./graphql/context";
 import { logger } from "./utils";
+import { upload } from "./middleware/multer";
 
 export async function createApp() {
   try {
@@ -74,6 +76,15 @@ export async function createApp() {
         },
       });
     });
+
+    app.use(
+      graphqlUploadExpress({
+        maxFileSize: 50 * 1024 * 1024,
+        maxFiles: 21,
+        overrideSendResponse: false,
+      })
+    );
+    app.use(upload);
 
     // GraphQL endpoint
     app.use(

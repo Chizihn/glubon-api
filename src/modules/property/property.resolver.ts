@@ -29,6 +29,7 @@ import {
   PropertySearchOptions,
   UpdatePropertyInput as UpdatePropertyInputType,
 } from "../../types/services/properties";
+import { FileUpload, GraphQLUpload } from "graphql-upload-ts";
 
 @Resolver()
 export class PropertyResolver {
@@ -274,6 +275,8 @@ export class PropertyResolver {
   @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.PROPERTY_OWNER))
   async createProperty(
     @Arg("input") input: CreatePropertyInput,
+    @Arg("files", () => [GraphQLUpload], { nullable: true })
+    files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<PropertyResponse> {
     const serviceInput: CreatePropertyInput = {
@@ -297,10 +300,30 @@ export class PropertyResolver {
       amenities: input.amenities,
     };
 
+    type MappedFile = {
+      file: FileUpload;
+      type: "image" | "video" | "document";
+      category:
+        | "property"
+        | "livingRoom"
+        | "bedroom"
+        | "bathroom"
+        | "ownership"
+        | "plan"
+        | "dimension";
+    };
+    const mappedFiles: MappedFile[] | undefined = files?.map((file) => ({
+      file,
+      type: this.getFileType(file.mimetype),
+      category: this.getFileCategory(file.filename),
+    }));
+
+    // TODO: Pass mappedFiles to the service if/when it supports file uploads
     const result = await this.propertyService.createProperty(
       ctx.user!.id,
       serviceInput
     );
+
     if (!result.success) throw new Error(result.message);
 
     const property = result.data!;
@@ -347,6 +370,14 @@ export class PropertyResolver {
         updatedAt: ctx.user!.updatedAt,
         lastLogin: ctx.user!.lastLogin ?? null,
       },
+      images: property.images,
+      livingRoomImages: property.livingRoomImages,
+      bedroomImages: property.bedroomImages,
+      bathroomImages: property.bathroomImages,
+      video: property.video,
+      propertyOwnershipDocs: property.propertyOwnershipDocs,
+      propertyPlanDocs: property.propertyPlanDocs,
+      propertyDimensionDocs: property.propertyDimensionDocs,
       viewsCount: 0,
       likesCount: 0,
       isLiked: false,
@@ -354,6 +385,35 @@ export class PropertyResolver {
       createdAt: property.createdAt,
       updatedAt: property.updatedAt,
     };
+  }
+
+  private getFileType(mimetype: string): "image" | "video" | "document" {
+    if (mimetype.startsWith("image/")) return "image";
+    if (mimetype.startsWith("video/")) return "video";
+    if (mimetype === "application/pdf") return "document";
+    throw new Error("Invalid file type");
+  }
+
+  private getFileCategory(
+    filename: string
+  ):
+    | "property"
+    | "livingRoom"
+    | "bedroom"
+    | "bathroom"
+    | "ownership"
+    | "plan"
+    | "dimension" {
+    // This is a simple implementation. You might want to use a more sophisticated
+    // method to determine the category based on your requirements
+    if (filename.includes("living")) return "livingRoom";
+    if (filename.includes("bedroom")) return "bedroom";
+    if (filename.includes("bathroom")) return "bathroom";
+    if (filename.includes("ownership")) return "ownership";
+    if (filename.includes("plan")) return "plan";
+    if (filename.includes("dimension")) return "dimension";
+    // 'video' is not a valid category in the union, so skip it
+    return "property";
   }
 
   @Mutation(() => PropertyResponse)

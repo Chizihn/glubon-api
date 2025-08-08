@@ -5,6 +5,7 @@ import {
   RoomType,
   DayOfWeek,
 } from "@prisma/client";
+import { FileUpload, GraphQLUpload } from "graphql-upload-ts";
 import { Field, InputType, Int, Float } from "type-graphql";
 
 @InputType()
@@ -128,6 +129,9 @@ export class CreatePropertyInput {
 
   @Field(() => [String])
   amenities: string[];
+
+  @Field(() => [GraphQLUpload], { nullable: true })
+  files?: FileUpload[];
 }
 
 @InputType()
@@ -185,4 +189,7 @@ export class UpdatePropertyInput {
 
   @Field(() => [String], { nullable: true })
   amenities?: string[];
+
+  @Field(() => [GraphQLUpload], { nullable: true })
+  files?: FileUpload[];
 }

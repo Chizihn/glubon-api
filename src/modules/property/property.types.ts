@@ -107,6 +107,29 @@ export class GetPropertiesArgs {
 
 @ObjectType()
 export class PropertyResponse {
+  @Field(() => [String], { nullable: true })
+  images?: string[];
+
+  @Field(() => [String], { nullable: true })
+  livingRoomImages?: string[];
+
+  @Field(() => [String], { nullable: true })
+  bedroomImages?: string[];
+
+  @Field(() => [String], { nullable: true })
+  bathroomImages?: string[];
+
+  @Field(() => String, { nullable: true })
+  video?: string;
+
+  @Field(() => [String], { nullable: true })
+  propertyOwnershipDocs?: string[];
+
+  @Field(() => [String], { nullable: true })
+  propertyPlanDocs?: string[];
+
+  @Field(() => [String], { nullable: true })
+  propertyDimensionDocs?: string[];
   @Field()
   id: string;
 
