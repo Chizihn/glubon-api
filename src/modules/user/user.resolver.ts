@@ -1,3 +1,5 @@
+import { GraphQLUpload, FileUpload } from "graphql-upload-ts";
+
 import {
   Resolver,
   Query,
@@ -54,6 +56,21 @@ export class UserResolver {
       throw new Error(result.message);
     }
     return result.data!;
+  }
+
+  @Mutation(() => User)
+  @UseMiddleware(AuthMiddleware)
+  async uploadProfilePicture(
+    @Arg("file", () => GraphQLUpload) file: any,
+    @Ctx() ctx: Context
+  ): Promise<User> {
+    const userId = ctx.user?.id;
+    if (!userId) throw new Error("Unauthorized");
+    const result = await this.userService.uploadProfilePicture(userId, file);
+    if (!result.success || !result.data) {
+      throw new Error(result.message || "Failed to upload profile picture");
+    }
+    return result.data;
   }
 
   @Mutation(() => BaseResponse)

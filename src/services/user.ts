@@ -1,5 +1,6 @@
+import { S3Service } from "./s3";
+import { ReadStream } from "fs";
 import {
-  DocumentType,
   UserStatus,
   VerificationStatus,
   PrismaClient,
@@ -24,6 +25,83 @@ export class UserService extends BaseService {
   constructor(prisma: PrismaClient, redis: any) {
     super(prisma, redis);
     this.userRepository = new UserRepository(prisma, redis);
+  }
+
+  /**
+   * Handles profile picture upload: processes file, uploads to S3, updates user profilePic.
+   */
+  async uploadProfilePicture(
+    userId: string,
+    file: any
+  ): Promise<ServiceResponse<UserWithStats>> {
+    try {
+      // Get user data
+      const userRes = await this.getUserProfile(userId);
+      if (!userRes.success || !userRes.data) {
+        return this.failure("User not found");
+      }
+      const oldProfilePic = userRes.data.profilePic;
+
+      // Convert GraphQLUpload to Multer-compatible file
+      const { createReadStream, filename, mimetype, encoding } = file;
+      const stream: ReadStream = createReadStream();
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      const buffer = Buffer.concat(chunks);
+      const multerFile = {
+        fieldname: "file",
+        originalname: filename,
+        encoding,
+        mimetype,
+        size: buffer.length,
+        buffer,
+        stream,
+        destination: "",
+        filename: filename,
+        path: "",
+      };
+
+      // Upload to S3
+      const s3Service = new S3Service(this.prisma, this.redis);
+      const uploadResult = await s3Service.uploadSingleFile(
+        { file: multerFile, type: "image", category: "profile" },
+        userId,
+        "users"
+      );
+      if (!uploadResult.success || !uploadResult.data?.url) {
+        return this.failure(uploadResult.message || "Failed to upload image");
+      }
+      const newProfilePicUrl = uploadResult.data.url;
+
+      // Delete old profile picture if it exists and is a URL
+      if (oldProfilePic?.startsWith("http")) {
+        try {
+          const url = new URL(oldProfilePic);
+          const key = url.pathname.startsWith("/")
+            ? url.pathname.slice(1)
+            : url.pathname;
+          await s3Service.deleteFile(key);
+        } catch (err) {
+          // Log the error but don't fail the mutation
+          console.warn("Failed to delete old profile picture:", err);
+        }
+      }
+
+      // Update profile picture in DB
+      const updateRes = await this.updateProfile(userId, {
+        profilePic: newProfilePicUrl,
+      });
+      if (!updateRes.success || !updateRes.data) {
+        return this.failure(
+          updateRes.message || "Failed to update profile picture"
+        );
+      }
+      return this.success(updateRes.data, "Profile picture updated");
+    } catch (error) {
+      return this.handleError(error, "uploadProfilePicture");
+    }
   }
 
   async getUserProfile(

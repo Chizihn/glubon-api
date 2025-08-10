@@ -279,141 +279,15 @@ export class PropertyResolver {
     files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<PropertyResponse> {
-    const serviceInput: CreatePropertyInput = {
-      title: input.title,
-      description: input.description ?? null,
-      amount: input.amount,
-      rentalPeriod: input.rentalPeriod,
-      address: input.address,
-      city: input.city,
-      state: input.state,
-      sqft: input.sqft ?? null,
-      bedrooms: input.bedrooms,
-      bathrooms: input.bathrooms,
-      propertyType: input.propertyType,
-      roomType: input.roomType,
-      isFurnished: input.isFurnished,
-      isForStudents: input.isForStudents,
-      visitingDays: input.visitingDays,
-      visitingTimeStart: input.visitingTimeStart ?? null,
-      visitingTimeEnd: input.visitingTimeEnd ?? null,
-      amenities: input.amenities,
-    };
-
-    type MappedFile = {
-      file: FileUpload;
-      type: "image" | "video" | "document";
-      category:
-        | "property"
-        | "livingRoom"
-        | "bedroom"
-        | "bathroom"
-        | "ownership"
-        | "plan"
-        | "dimension";
-    };
-    const mappedFiles: MappedFile[] | undefined = files?.map((file) => ({
-      file,
-      type: this.getFileType(file.mimetype),
-      category: this.getFileCategory(file.filename),
-    }));
-
-    // TODO: Pass mappedFiles to the service if/when it supports file uploads
     const result = await this.propertyService.createProperty(
       ctx.user!.id,
-      serviceInput
+      input,
+      files
     );
 
     if (!result.success) throw new Error(result.message);
 
-    const property = result.data!;
-    return {
-      id: property.id,
-      title: property.title,
-      description: property.description ?? null,
-      status: property.status,
-      amount: property.amount,
-      rentalPeriod: property.rentalPeriod,
-      address: property.address,
-      city: property.city ?? null,
-      state: property.state ?? null,
-      country: property.country,
-      latitude: property.latitude ?? null,
-      longitude: property.longitude ?? null,
-      sqft: property.sqft ?? null,
-      bedrooms: property.bedrooms,
-      bathrooms: property.bathrooms,
-      propertyType: property.propertyType,
-      roomType: property.roomType,
-      visitingDays: property.visitingDays,
-      visitingTimeStart: property.visitingTimeStart ?? null,
-      visitingTimeEnd: property.visitingTimeEnd ?? null,
-      amenities: property.amenities,
-      isFurnished: property.isFurnished,
-      isForStudents: property.isForStudents,
-      ownerId: property.ownerId,
-      owner: {
-        id: ctx.user!.id,
-        firstName: ctx.user!.firstName,
-        lastName: ctx.user!.lastName,
-        email: ctx.user!.email,
-        phoneNumber: ctx.user!.phoneNumber ?? null,
-        profilePic: ctx.user!.profilePic ?? null,
-        isVerified: ctx.user!.isVerified,
-        role: ctx.user!.role,
-        status: ctx.user!.status,
-        address: ctx.user!.address ?? null,
-        city: ctx.user!.city ?? null,
-        state: ctx.user!.state ?? null,
-        country: ctx.user!.country ?? null,
-        createdAt: ctx.user!.createdAt,
-        updatedAt: ctx.user!.updatedAt,
-        lastLogin: ctx.user!.lastLogin ?? null,
-      },
-      images: property.images,
-      livingRoomImages: property.livingRoomImages,
-      bedroomImages: property.bedroomImages,
-      bathroomImages: property.bathroomImages,
-      video: property.video,
-      propertyOwnershipDocs: property.propertyOwnershipDocs,
-      propertyPlanDocs: property.propertyPlanDocs,
-      propertyDimensionDocs: property.propertyDimensionDocs,
-      viewsCount: 0,
-      likesCount: 0,
-      isLiked: false,
-      isViewed: false,
-      createdAt: property.createdAt,
-      updatedAt: property.updatedAt,
-    };
-  }
-
-  private getFileType(mimetype: string): "image" | "video" | "document" {
-    if (mimetype.startsWith("image/")) return "image";
-    if (mimetype.startsWith("video/")) return "video";
-    if (mimetype === "application/pdf") return "document";
-    throw new Error("Invalid file type");
-  }
-
-  private getFileCategory(
-    filename: string
-  ):
-    | "property"
-    | "livingRoom"
-    | "bedroom"
-    | "bathroom"
-    | "ownership"
-    | "plan"
-    | "dimension" {
-    // This is a simple implementation. You might want to use a more sophisticated
-    // method to determine the category based on your requirements
-    if (filename.includes("living")) return "livingRoom";
-    if (filename.includes("bedroom")) return "bedroom";
-    if (filename.includes("bathroom")) return "bathroom";
-    if (filename.includes("ownership")) return "ownership";
-    if (filename.includes("plan")) return "plan";
-    if (filename.includes("dimension")) return "dimension";
-    // 'video' is not a valid category in the union, so skip it
-    return "property";
+    return this.transformPropertyToResponse(result.data!);
   }
 
   @Mutation(() => PropertyResponse)
@@ -421,87 +295,19 @@ export class PropertyResolver {
   async updateProperty(
     @Arg("id") id: string,
     @Arg("input") input: UpdatePropertyInput,
+    @Arg("files", () => [GraphQLUpload], { nullable: true })
+    files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<PropertyResponse> {
-    const serviceInput: UpdatePropertyInputType = {
-      title: input.title ?? null,
-      description: input.description ?? null,
-      amount: input.amount ?? null,
-      rentalPeriod: input.rentalPeriod ?? null,
-      address: input.address ?? null,
-      city: input.city ?? null,
-      state: input.state ?? null,
-      sqft: input.sqft,
-      bedrooms: input.bedrooms ?? 0,
-      bathrooms: input.bathrooms,
-      propertyType: input.propertyType,
-      roomType: input.roomType,
-      isFurnished: input.isFurnished,
-      isForStudents: input.isForStudents,
-      visitingDays: input.visitingDays,
-      visitingTimeStart: input.visitingTimeStart,
-      visitingTimeEnd: input.visitingTimeEnd,
-      amenities: input.amenities || [],
-    };
-
     const result = await this.propertyService.updateProperty(
       id,
       ctx.user!.id,
-      serviceInput
+      input,
+      files
     );
     if (!result.success) throw new Error(result.message);
 
-    const property = result.data!;
-    return {
-      id: property.id,
-      title: property.title,
-      description: property.description ?? null,
-      status: property.status,
-      amount: property.amount,
-      rentalPeriod: property.rentalPeriod,
-      address: property.address,
-      city: property.city ?? null,
-      state: property.state ?? null,
-      country: property.country,
-      latitude: property.latitude ?? null,
-      longitude: property.longitude ?? null,
-      sqft: property.sqft ?? null,
-      bedrooms: property.bedrooms,
-      bathrooms: property.bathrooms,
-      propertyType: property.propertyType,
-      roomType: property.roomType,
-      visitingDays: property.visitingDays,
-      visitingTimeStart: property.visitingTimeStart ?? null,
-      visitingTimeEnd: property.visitingTimeEnd ?? null,
-      amenities: property.amenities,
-      isFurnished: property.isFurnished,
-      isForStudents: property.isForStudents,
-      ownerId: property.ownerId,
-      owner: {
-        id: ctx.user!.id,
-        firstName: ctx.user!.firstName,
-        lastName: ctx.user!.lastName,
-        email: ctx.user!.email,
-        phoneNumber: ctx.user!.phoneNumber ?? null,
-        profilePic: ctx.user!.profilePic ?? null,
-        isVerified: ctx.user!.isVerified,
-        role: ctx.user!.role,
-        status: ctx.user!.status,
-        address: ctx.user!.address ?? null,
-        city: ctx.user!.city ?? null,
-        state: ctx.user!.state ?? null,
-        country: ctx.user!.country ?? null,
-        createdAt: ctx.user!.createdAt,
-        updatedAt: ctx.user!.updatedAt,
-        lastLogin: ctx.user!.lastLogin ?? null,
-      },
-      viewsCount: 0,
-      likesCount: 0,
-      isLiked: false,
-      isViewed: false,
-      createdAt: property.createdAt,
-      updatedAt: property.updatedAt,
-    };
+    return this.transformPropertyToResponse(result.data!);
   }
 
   @Mutation(() => Boolean)

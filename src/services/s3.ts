@@ -10,14 +10,7 @@ import Redis from "ioredis";
 export interface FileUpload {
   file: Express.Multer.File;
   type: "image" | "video" | "document";
-  category:
-    | "property"
-    | "livingRoom"
-    | "bedroom"
-    | "bathroom"
-    | "ownership"
-    | "plan"
-    | "dimension";
+  category: string; // Now allows any category, not just property-centric
 }
 
 interface S3UploadResult {
@@ -47,9 +40,13 @@ export class S3Service extends BaseService {
     });
   }
 
+  /**
+   * Generic multi-file upload. Context is the upload context (e.g., 'properties', 'users').
+   */
   async uploadFiles(
     files: FileUpload[],
-    propertyId: string
+    contextId: string,
+    contextType: "properties" | "users" = "properties"
   ): Promise<ServiceResponse<S3UploadResult[]>> {
     try {
       // Validate file counts per category
@@ -71,7 +68,7 @@ export class S3Service extends BaseService {
       }
 
       const uploadPromises = files.map((file) =>
-        this.uploadSingleFile(file, propertyId)
+        this.uploadSingleFile(file, contextId, contextType)
       );
       const results = await Promise.all(uploadPromises);
 
@@ -97,9 +94,13 @@ export class S3Service extends BaseService {
     }
   }
 
-  private async uploadSingleFile(
+  /**
+   * Generic single file upload. contextType is the upload context (e.g., 'properties', 'users').
+   */
+  async uploadSingleFile(
     file: FileUpload,
-    propertyId: string
+    contextId: string,
+    contextType: "properties" | "users" = "properties"
   ): Promise<ServiceResponse<S3UploadResult>> {
     try {
       // Validate file type
@@ -114,7 +115,8 @@ export class S3Service extends BaseService {
 
       const fileExtension = extname(file.file.originalname);
       const fileName = `${uuidv4()}${fileExtension}`;
-      const key = `properties/${propertyId}/${file.category}/${fileName}`;
+      // Use contextType (e.g., 'users', 'properties') for upload path
+      const key = `${contextType}/${contextId}/${file.category}/${fileName}`;
 
       const params: AWS.S3.PutObjectRequest = {
         Bucket: this.bucket,

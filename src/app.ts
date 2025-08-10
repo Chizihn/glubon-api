@@ -16,6 +16,8 @@ import { rateLimiterMiddleware } from "./middleware/rateLimiter";
 import { graphqlUploadExpress } from "graphql-upload-ts";
 import { createGraphQLContext } from "./graphql/context";
 import { logger } from "./utils";
+
+import { oauthRestRouter } from "./modules/auth";
 import { upload } from "./middleware/multer";
 
 export async function createApp() {
@@ -62,6 +64,9 @@ export async function createApp() {
     // Body parsing
     app.use(express.json({ limit: "10mb" }));
     app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+    // OAuth REST endpoints
+    app.use("/api/oauth", oauthRestRouter);
 
     // Health check endpoint
     app.get("/health", (req, res) => {

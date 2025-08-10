@@ -256,8 +256,8 @@ model AdminActionLog {
 
 // Enums
 enum RoleEnum {
-  TENANT
-  PROPERTY_OWNER
+  RENTER
+  LISTER
   ADMIN
 }
 
