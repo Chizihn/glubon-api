@@ -1,4 +1,11 @@
-import { ObjectType, Field, ID, Int, registerEnumType } from "type-graphql";
+import {
+  ObjectType,
+  Field,
+  ID,
+  Int,
+  registerEnumType,
+  GraphQLISODateTime,
+} from "type-graphql";
 import {
   DocumentType,
   ProviderEnum,
@@ -65,15 +72,15 @@ export class User {
   state?: string | null;
 
   @Field(() => String)
-  country: string;
+  country?: string | null;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   updatedAt: Date;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   lastLogin?: Date | null;
 }
 @ObjectType()
@@ -105,13 +112,13 @@ export class IdentityVerificationStatusResponse {
   @Field(() => String, { nullable: true })
   status?: string;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   reviewedAt?: Date;
 
   @Field(() => String, { nullable: true })
   rejectionReason?: string;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   createdAt?: Date;
 }
 

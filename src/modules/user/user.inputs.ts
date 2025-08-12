@@ -1,5 +1,12 @@
 import { DocumentType, RoleEnum } from "@prisma/client";
-import { Field, ID, InputType, Int, ObjectType } from "type-graphql";
+import {
+  Field,
+  GraphQLISODateTime,
+  ID,
+  InputType,
+  Int,
+  ObjectType,
+} from "type-graphql";
 import { PaginatedResponse, PaginationInfo } from "../../types";
 
 @InputType()
@@ -92,13 +99,13 @@ export class UserProfileResponse {
   @Field(() => String)
   status: string;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   lastLogin?: Date | null;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   updatedAt: Date;
 }
 

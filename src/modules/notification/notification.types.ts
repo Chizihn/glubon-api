@@ -1,5 +1,5 @@
 import { NotificationType } from "@prisma/client";
-import { ObjectType, Field, Int, registerEnumType } from "type-graphql";
+import { ObjectType, Field, Int, registerEnumType, GraphQLISODateTime } from "type-graphql";
 import { PaginatedResponse } from "../../types";
 
 registerEnumType(NotificationType, {
@@ -31,7 +31,7 @@ export class NotificationResponse {
   @Field(() => Boolean)
   isRead: boolean;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 }
 

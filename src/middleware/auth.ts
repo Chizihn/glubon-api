@@ -141,5 +141,5 @@ export const validateRole = (role: RoleEnum | undefined): RoleEnum => {
   if (role === RoleEnum.ADMIN) {
     throw new Error("You do not have permission to perform this action!");
   }
-  return role || RoleEnum.TENANT;
+  return role || RoleEnum.RENTER;
 };

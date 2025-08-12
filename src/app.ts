@@ -19,6 +19,7 @@ import { logger } from "./utils";
 
 import { oauthRestRouter } from "./modules/auth";
 import { upload } from "./middleware/multer";
+import { WebhookController } from "./api/webhook";
 
 export async function createApp() {
   try {
@@ -67,6 +68,12 @@ export async function createApp() {
 
     // OAuth REST endpoints
     app.use("/api/oauth", oauthRestRouter);
+    const webhookController = new WebhookController(prisma, redis);
+
+    // Paystack webhook endpoint
+    app.post("/api/webhook/paystack", (req, res) =>
+      webhookController.handlePaystackWebhook(req, res)
+    );
 
     // Health check endpoint
     app.get("/health", (req, res) => {

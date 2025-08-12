@@ -40,7 +40,7 @@ export class PropertyService extends BaseService {
         where: { id: ownerId },
       });
 
-      if (!user || user.role !== RoleEnum.PROPERTY_OWNER) {
+      if (!user || user.role !== RoleEnum.LISTER) {
         return this.failure("Only property owners can create properties");
       }
 

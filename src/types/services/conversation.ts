@@ -1,9 +1,8 @@
 import { MessageType } from "@prisma/client";
 
 export interface CreateConversationInput {
-  propertyId: string;
-  renterId: string;
-  ownerId: string;
+  participantIds: string[];
+  propertyId?: string;
 }
 
 export interface SendMessageInput {

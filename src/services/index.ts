@@ -4,21 +4,21 @@ import { Redis } from "ioredis";
 import { emailServiceSingleton } from "./email";
 import { AuthService } from "./auth";
 import { UserService } from "./user";
-import { UploadService } from "./upload-service";
 import { NotificationService } from "./notification";
 import { OAuthService } from "./oauth";
 import { PropertyService } from "./property";
-import { AdminService } from "./admin";
-import { ChatService } from "./chat";
+import { AdminUsersService } from "./admin-user";
+import { AdminStatsService } from "./admin-stats";
+import { ConversationService } from "./conversation";
 
 export interface Services {
   authService: AuthService;
-  adminService: AdminService;
   oAuthService: OAuthService;
   userService: UserService;
-  chatService: ChatService;
+  adminUserService: AdminUsersService;
+  adminStatsService: AdminStatsService;
+  conversationService: ConversationService;
   propertyService: PropertyService;
-  uploadService: UploadService;
   emailService: typeof emailServiceSingleton;
   notificationService: NotificationService;
 }
@@ -30,20 +30,20 @@ export function createServices(prisma: PrismaClient, redis: Redis): Services {
   const oAuthService = new OAuthService(prisma, redis);
   const userService = new UserService(prisma, redis);
   const propertyService = new PropertyService(prisma, redis);
-  const uploadService = new UploadService(prisma);
   const notificationService = new NotificationService(prisma, redis);
-  const chatService = new ChatService(prisma, redis);
-  const adminService = new AdminService(prisma, redis);
+  const adminUserService = new AdminUsersService(prisma, redis);
+  const adminStatsService = new AdminStatsService(prisma, redis);
+  const conversationService = new ConversationService(prisma, redis);
 
   return {
     authService,
     userService,
     oAuthService,
     propertyService,
-    uploadService,
     emailService,
     notificationService,
-    chatService,
-    adminService,
+    adminUserService,
+    adminStatsService,
+    conversationService,
   };
 }

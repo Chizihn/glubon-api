@@ -1,10 +1,5 @@
-import { registerEnumType } from "type-graphql";
 
-export enum RoleEnum {
-  TENANT = "TENANT",
-  PROPERTY_OWNER = "PROPERTY_OWNER",
-  ADMIN = "ADMIN",
-}
+
 
 export enum PermissionEnum {
   READ_USERS = "READ_USERS",

@@ -58,12 +58,16 @@ export class S3Service extends BaseService {
         const count = categoryCounts[file.category] ?? 0;
         if (file.type !== "video" && count > this.maxFilesPerCategory) {
           return this.failure(
-            `Maximum ${this.maxFilesPerCategory} files allowed per category`
+            `Maximum ${this.maxFilesPerCategory} files allowed per category`,
+            [] as S3UploadResult[] // Return empty array instead of null
           );
         }
         // Only allow one video file per upload
         if (file.type === "video" && count > 1) {
-          return this.failure("Only one video file allowed");
+          return this.failure(
+            "Only one video file allowed",
+            [] as S3UploadResult[] // Return empty array instead of null
+          );
         }
       }
 
@@ -77,7 +81,7 @@ export class S3Service extends BaseService {
       if (failedUploads.length > 0) {
         return this.failure(
           "Some files failed to upload",
-          null,
+          [] as S3UploadResult[], // Return empty array instead of null
           failedUploads.map((r) => r.message)
         );
       }
@@ -90,7 +94,7 @@ export class S3Service extends BaseService {
         "Files uploaded successfully"
       );
     } catch (error) {
-      return this.handleError(error, "uploadFiles");
+      return this.handleError(error, "uploadFiles") as ServiceResponse<S3UploadResult[]>;
     }
   }
 
@@ -174,3 +178,21 @@ export class S3Service extends BaseService {
     }
   }
 }
+
+// You should also update the BaseService failure method to be more type-safe:
+/*
+In BaseService, update the failure method to:
+
+protected failure<T>(
+  message = "Operation failed",
+  data: T,
+  errors: any[] = []
+): ServiceResponse<T> {
+  return {
+    success: false,
+    message,
+    data,
+    errors,
+  };
+}
+*/

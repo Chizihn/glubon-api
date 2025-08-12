@@ -23,9 +23,11 @@ export class OAuthService extends BaseService {
       // Verify state to prevent CSRF
       const storedState = await this.redis.get(`oauth_state:${state}`);
       if (!storedState || storedState !== provider) {
-        return this.failure("Invalid state parameter", [
-          StatusCodes.BAD_REQUEST,
-        ]);
+        return this.failure<OAuthUserData & { token: string }>(
+          "Invalid state parameter",
+          null,
+          [StatusCodes.BAD_REQUEST]
+        );
       }
       await this.redis.del(`oauth_state:${state}`);
 
@@ -36,7 +38,11 @@ export class OAuthService extends BaseService {
         redirectUri
       );
       if (!tokenResult.success || !tokenResult.data) {
-        return this.failure(tokenResult.message, [StatusCodes.UNAUTHORIZED]);
+        return this.failure<OAuthUserData & { token: string }>(
+          tokenResult.message,
+          null,
+          [StatusCodes.UNAUTHORIZED]
+        );
       }
 
       const { accessToken } = tokenResult.data;
@@ -44,7 +50,11 @@ export class OAuthService extends BaseService {
       // Verify token and get user data
       const userResult = await this.verifyProviderToken(provider, accessToken);
       if (!userResult.success || !userResult.data) {
-        return this.failure(userResult.message, [StatusCodes.UNAUTHORIZED]);
+        return this.failure<OAuthUserData & { token: string }>(
+          userResult.message,
+          null,
+          [StatusCodes.UNAUTHORIZED]
+        );
       }
 
       const userData = userResult.data;
@@ -96,9 +106,11 @@ export class OAuthService extends BaseService {
       );
     } catch (error) {
       logger.error(`${provider} OAuth flow failed:`, error);
-      return this.failure(`Failed to complete ${provider} OAuth flow`, [
-        StatusCodes.INTERNAL_SERVER_ERROR,
-      ]);
+      return this.failure<OAuthUserData & { token: string }>(
+        `Failed to complete ${provider} OAuth flow`,
+        null,
+        [StatusCodes.INTERNAL_SERVER_ERROR]
+      );
     }
   }
 
@@ -144,7 +156,11 @@ export class OAuthService extends BaseService {
           break;
 
         default:
-          return this.failure(`Unsupported OAuth provider: ${provider}`);
+          return this.failure<{ authUrl: string; state: string }>(
+            `Unsupported OAuth provider: ${provider}`,
+            null,
+            [StatusCodes.BAD_REQUEST]
+          );
       }
 
       // Store state in Redis with 10-minute expiry
@@ -156,7 +172,11 @@ export class OAuthService extends BaseService {
       );
     } catch (error) {
       logger.error(`Failed to generate ${provider} auth URL:`, error);
-      return this.failure(`Failed to generate ${provider} authorization URL`);
+      return this.failure<{ authUrl: string; state: string }>(
+        `Failed to generate ${provider} auth URL`,
+        null,
+        [StatusCodes.INTERNAL_SERVER_ERROR]
+      );
     }
   }
 
@@ -196,17 +216,21 @@ export class OAuthService extends BaseService {
       };
 
       if (!userData.email || !userData.firstName || !userData.id) {
-        return this.failure("Incomplete user data from Google", [
-          StatusCodes.BAD_REQUEST,
-        ]);
+        return this.failure<OAuthUserData>(
+          "Incomplete user data from Google",
+          null,
+          [StatusCodes.BAD_REQUEST]
+        );
       }
 
       return this.success(userData, "Google token verified successfully");
     } catch (error) {
       logger.error("Google token verification failed:", error);
-      return this.failure("Invalid Google access token", [
-        StatusCodes.UNAUTHORIZED,
-      ]);
+      return this.failure<OAuthUserData>(
+        "Invalid Google access token",
+        null,
+        [StatusCodes.UNAUTHORIZED]
+      );
     }
   }
 
@@ -238,15 +262,21 @@ export class OAuthService extends BaseService {
       };
 
       if (!userData.email || !userData.firstName || !userData.id) {
-        return this.failure("Incomplete user data from Facebook", [
-          StatusCodes.BAD_REQUEST,
-        ]);
+        return this.failure<OAuthUserData>(
+          "Incomplete user data from Facebook",
+          null,
+          [StatusCodes.BAD_REQUEST]
+        );
       }
 
       return this.success(userData, "Facebook token verified successfully");
     } catch (error) {
       logger.error("Facebook token verification failed:", error);
-      return this.failure("Invalid Facebook access token");
+      return this.failure<OAuthUserData>(
+        "Invalid Facebook access token",
+        null,
+        [StatusCodes.UNAUTHORIZED]
+      );
     }
   }
 
@@ -308,7 +338,11 @@ export class OAuthService extends BaseService {
       case ProviderEnum.LINKEDIN:
         return this.verifyLinkedInToken(accessToken);
       default:
-        return this.failure(`Unsupported OAuth provider: ${provider}`);
+        return this.failure<OAuthUserData>(
+          `Unsupported OAuth provider: ${provider}`,
+          null,
+          [StatusCodes.BAD_REQUEST]
+        );
     }
   }
 
@@ -365,7 +399,11 @@ export class OAuthService extends BaseService {
           break;
 
         default:
-          return this.failure(`Unsupported OAuth provider: ${provider}`);
+          return this.failure<OAuthTokenData>(
+            `Unsupported OAuth provider: ${provider}`,
+            null,
+            [StatusCodes.BAD_REQUEST]
+          );
       }
 
       const tokenData: OAuthTokenData = {
@@ -378,7 +416,11 @@ export class OAuthService extends BaseService {
       return this.success(tokenData, "Token exchange successful");
     } catch (error) {
       logger.error(`${provider} token exchange failed:`, error);
-      return this.failure(`Failed to exchange ${provider} authorization code`);
+      return this.failure<OAuthTokenData>(
+        `Failed to exchange ${provider} authorization code`,
+        null,
+        [StatusCodes.INTERNAL_SERVER_ERROR]
+      );
     }
   }
 }

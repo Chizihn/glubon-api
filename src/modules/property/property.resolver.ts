@@ -13,8 +13,9 @@ import {
   GetPropertiesArgs,
   PaginatedPropertiesResponse,
   PaginatedVisitorsResponse,
-  PropertyResponse,
+  Property,
   PropertyStatsResponse,
+  // Property,
 } from "./property.types";
 import { PropertyFilters, UpdatePropertyInput } from "./property.inputs";
 import { PropertyStatus, RoleEnum } from "@prisma/client";
@@ -39,57 +40,9 @@ export class PropertyResolver {
     this.propertyService = new PropertyService(prisma, redis);
   }
 
-  private transformPropertyToResponse(property: any): PropertyResponse {
+  private transformPropertyToResponse(property: any): Property {
     return {
-      id: property.id,
-      title: property.title,
-      description: property.description ?? null,
-      status: property.status,
-      amount: property.amount,
-      rentalPeriod: property.rentalPeriod,
-      address: property.address,
-      city: property.city ?? null,
-      state: property.state ?? null,
-      country: property.country,
-      latitude: property.latitude ?? null,
-      longitude: property.longitude ?? null,
-      sqft: property.sqft ?? null,
-      bedrooms: property.bedrooms,
-      bathrooms: property.bathrooms,
-      propertyType: property.propertyType,
-      roomType: property.roomType,
-      visitingDays: property.visitingDays,
-      visitingTimeStart: property.visitingTimeStart ?? null,
-      visitingTimeEnd: property.visitingTimeEnd ?? null,
-      amenities: property.amenities,
-      isFurnished: property.isFurnished,
-      isForStudents: property.isForStudents,
-      ownerId: property.ownerId,
-      owner: {
-        id: property.owner.id,
-        firstName: property.owner.firstName,
-        lastName: property.owner.lastName,
-        email: property.owner.email,
-        phoneNumber: property.owner.phoneNumber ?? null,
-        profilePic: property.owner.profilePic ?? null,
-        isVerified: property.owner.isVerified,
-        role: property.owner.role,
-        status: property.owner.status,
-        address: property.owner.address ?? null,
-        city: property.owner.city ?? null,
-        state: property.owner.state ?? null,
-        country: property.owner.country ?? null,
-        createdAt: property.owner.createdAt,
-        updatedAt: property.owner.updatedAt,
-        lastLogin: property.owner.lastLogin ?? null,
-      },
-      viewsCount: property.viewsCount,
-      likesCount: property.likesCount,
-      isLiked: property.isLiked ?? false,
-      isViewed: property.isViewed ?? false,
-      createdAt: property.createdAt,
-      updatedAt: property.updatedAt,
-      distance: property.distance ?? null,
+      ...property,
     };
   }
 
@@ -142,12 +95,12 @@ export class PropertyResolver {
     };
   }
 
-  @Query(() => PropertyResponse)
+  @Query(() => Property)
   @UseMiddleware(AuthMiddleware)
   async getProperty(
     @Arg("id") id: string,
     @Ctx() ctx: Context
-  ): Promise<PropertyResponse> {
+  ): Promise<Property> {
     logger.info(
       `Resolver: Getting property ${id} for user ${
         ctx.user?.id || "anonymous"
@@ -227,7 +180,7 @@ export class PropertyResolver {
   }
 
   @Query(() => PaginatedPropertiesResponse)
-  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.TENANT))
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.RENTER))
   async getLikedProperties(
     @Arg("page", () => Int, { defaultValue: 1 }) page: number,
     @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
@@ -252,7 +205,7 @@ export class PropertyResolver {
   }
 
   @Query(() => PaginatedVisitorsResponse)
-  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.PROPERTY_OWNER))
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
   async getPropertyVisitors(
     @Arg("propertyId") propertyId: string,
     @Arg("page", () => Int, { defaultValue: 1 }) page: number,
@@ -271,14 +224,14 @@ export class PropertyResolver {
     return result.data!;
   }
 
-  @Mutation(() => PropertyResponse)
-  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.PROPERTY_OWNER))
+  @Mutation(() => Property)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
   async createProperty(
     @Arg("input") input: CreatePropertyInput,
     @Arg("files", () => [GraphQLUpload], { nullable: true })
     files: FileUpload[],
     @Ctx() ctx: Context
-  ): Promise<PropertyResponse> {
+  ): Promise<Property> {
     const result = await this.propertyService.createProperty(
       ctx.user!.id,
       input,
@@ -290,7 +243,7 @@ export class PropertyResolver {
     return this.transformPropertyToResponse(result.data!);
   }
 
-  @Mutation(() => PropertyResponse)
+  @Mutation(() => Property)
   @UseMiddleware(AuthMiddleware)
   async updateProperty(
     @Arg("id") id: string,
@@ -298,7 +251,7 @@ export class PropertyResolver {
     @Arg("files", () => [GraphQLUpload], { nullable: true })
     files: FileUpload[],
     @Ctx() ctx: Context
-  ): Promise<PropertyResponse> {
+  ): Promise<Property> {
     const result = await this.propertyService.updateProperty(
       id,
       ctx.user!.id,
@@ -322,7 +275,7 @@ export class PropertyResolver {
   }
 
   @Mutation(() => Boolean)
-  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.TENANT))
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.RENTER))
   async togglePropertyLike(
     @Arg("propertyId") propertyId: string,
     @Ctx() ctx: Context
@@ -390,12 +343,12 @@ export class PropertyResolver {
     return result.data!;
   }
 
-  @Query(() => [PropertyResponse])
+  @Query(() => [Property])
   @UseMiddleware(AuthMiddleware)
   async getTrendingProperties(
     @Arg("limit", () => Int, { defaultValue: 10 }) limit: number,
     @Ctx() ctx: Context
-  ): Promise<PropertyResponse[]> {
+  ): Promise<Property[]> {
     const result = await this.propertyService.getTrendingProperties(
       limit,
       ctx.user?.id
@@ -404,12 +357,12 @@ export class PropertyResolver {
     return result.data!.map(this.transformPropertyToResponse.bind(this));
   }
 
-  @Query(() => [PropertyResponse])
+  @Query(() => [Property])
   @UseMiddleware(AuthMiddleware)
   async getFeaturedProperties(
     @Arg("limit", () => Int, { defaultValue: 10 }) limit: number,
     @Ctx() ctx: Context
-  ): Promise<PropertyResponse[]> {
+  ): Promise<Property[]> {
     const result = await this.propertyService.getFeaturedProperties(
       limit,
       ctx.user?.id
@@ -418,13 +371,13 @@ export class PropertyResolver {
     return result.data!.map(this.transformPropertyToResponse.bind(this));
   }
 
-  @Query(() => [PropertyResponse])
+  @Query(() => [Property])
   @UseMiddleware(AuthMiddleware)
   async getSimilarProperties(
     @Arg("propertyId") propertyId: string,
     @Arg("limit", () => Int, { defaultValue: 5 }) limit: number,
     @Ctx() ctx: Context
-  ): Promise<PropertyResponse[]> {
+  ): Promise<Property[]> {
     const result = await this.propertyService.getSimilarProperties(
       propertyId,
       limit,

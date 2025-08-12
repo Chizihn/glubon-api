@@ -4,7 +4,23 @@ export interface EmailTemplate {
   text: string;
 }
 
+// Re-export all template modules
+export * from './userEmailTemplates';
+export * from './propertyEmailTemplates';
+export * from './adminEmailTemplates';
+export * from './chatEmailTemplates';
+
+/**
+ * @deprecated Use the modular template classes instead:
+ * - UserEmailTemplates
+ * - PropertyEmailTemplates
+ * - AdminEmailTemplates
+ * - ChatEmailTemplates
+ */
 export class EmailTemplates {
+  /**
+   * @deprecated Use UserEmailTemplates.welcomeEmail instead
+   */
   static welcomeEmail(firstName: string): EmailTemplate {
     return {
       subject: "Welcome to Glubon - Start Your Property Journey!",
@@ -78,6 +94,9 @@ export class EmailTemplates {
     };
   }
 
+  /**
+   * @deprecated Use UserEmailTemplates.oauthWelcomeEmail instead
+   */
   static oauthWelcomeEmail(firstName: string, provider: string): EmailTemplate {
     return {
       subject: "Welcome to Glubon!",
@@ -151,6 +170,9 @@ export class EmailTemplates {
     };
   }
 
+  /**
+   * @deprecated Use UserEmailTemplates.verificationCode instead
+   */
   static verificationCode(
     firstName: string,
     code: string,
@@ -225,6 +247,9 @@ export class EmailTemplates {
     };
   }
 
+  /**
+   * @deprecated Use UserEmailTemplates.accountLinkedEmail instead
+   */
   static accountLinkedEmail(
     firstName: string,
     provider: string
@@ -290,6 +315,9 @@ export class EmailTemplates {
     };
   }
 
+  /**
+   * @deprecated Use PropertyEmailTemplates.propertyAlert instead
+   */
   static propertyAlert(
     firstName: string,
     propertyTitle: string,
@@ -382,6 +410,9 @@ export class EmailTemplates {
     };
   }
 
+  /**
+   * @deprecated Use PropertyEmailTemplates.propertyApproval instead
+   */
   static propertyApproval(
     ownerName: string,
     propertyTitle: string,
@@ -477,6 +508,9 @@ export class EmailTemplates {
     };
   }
 
+  /**
+   * @deprecated Use AdminEmailTemplates.identityVerification instead
+   */
   static identityVerification(
     firstName: string,
     verificationType: string,
@@ -800,6 +834,9 @@ export class EmailTemplates {
     };
   }
 
+  /**
+   * @deprecated Use AdminEmailTemplates.adminAnnouncement instead
+   */
   static adminAnnouncement(title: string, message: string): EmailTemplate {
     return {
       subject: title,
@@ -1113,6 +1150,169 @@ export class EmailTemplates {
         </html>
       `,
       text: `Hi ${ownerName}, ${viewerName} viewed your property "${propertyTitle}". View: ${process.env.FRONTEND_URL}/properties/${propertyId}`,
+    };
+  }
+
+  /**
+   * @deprecated Use AdminEmailTemplates.adminWelcomeEmail instead
+   */
+  static adminWelcomeEmail(firstName: string, password: string): EmailTemplate {
+    return {
+      subject: "Welcome to Glubon Admin Panel",
+      html: `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Welcome Admin</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2a44; background-color: #f5f7fa; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%); color: #fff; padding: 40px 20px; text-align: center; }
+            .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+            .content { padding: 32px; }
+            .content h2 { font-size: 22px; font-weight: 600; margin-bottom: 16px; }
+            .content p { font-size: 16px; margin-bottom: 16px; }
+            .button { display: inline-block; padding: 12px 24px; background: #1d4ed8; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 16px 0; }
+            .button:hover { background: #1e40af; }
+            .footer { text-align: center; padding: 24px; background: #f8fafc; font-size: 14px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+            .footer a { color: #1d4ed8; text-decoration: none; }
+            .footer a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Welcome to Glubon Admin</h1>
+            </div>
+            <div class="content">
+              <h2>Hello ${firstName},</h2>
+              <p>Congratulations! You've been granted admin access to the Glubon platform.</p>
+              <p>You can now manage users, properties, and other administrative tasks. Log in to the admin panel to get started.</p>
+              <a href="${process.env.FRONTEND_URL}/admin/login" class="button">Access Admin Panel</a>
+            </div>
+            <div class="footer">
+              <p>&copy; 2025 Glubon. All rights reserved.</p>
+              <p><a href="${process.env.FRONTEND_URL}/support">Contact Support</a></p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Hi ${firstName}, You've been granted admin access to the Glubon platform. 
+
+      Your password to access the admin platform is ${password}
+      
+      Log in to the admin panel to manage users and properties: ${process.env.FRONTEND_URL}/admin/login`,
+    };
+  }
+
+  static userStatusChangeNotification(
+    firstName: string,
+    status: string,
+    reason: string
+  ): EmailTemplate {
+    return {
+      subject: `Your Glubon Account Status Update`,
+      html: `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Account Status Update</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2a44; background-color: #f5f7fa; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%); color: #fff; padding: 40px 20px; text-align: center; }
+            .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+            .content { padding: 32px; }
+            .content h2 { font-size: 22px; font-weight: 600; margin-bottom: 16px; }
+            .content p { font-size: 16px; margin-bottom: 16px; }
+            .status { background: #f8fafc; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #1d4ed8; }
+            .button { display: inline-block; padding: 12px 24px; background: #1d4ed8; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 16px 0; }
+            .button:hover { background: #1e40af; }
+            .footer { text-align: center; padding: 24px; background: #f8fafc; font-size: 14px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+            .footer a { color: #1d4ed8; text-decoration: none; }
+            .footer a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Account Status Update</h1>
+            </div>
+            <div class="content">
+              <h2>Hello ${firstName},</h2>
+              <p>Your Glubon account status has been updated to: <strong>${status}</strong>.</p>
+              <div class="status">
+                <p>Please review your account details or contact support if you have any questions.</p>
+              </div>
+              <a href="${process.env.FRONTEND_URL}/account" class="button">View Account</a>
+            </div>
+            <div class="footer">
+              <p>&copy; 2025 Glubon. All rights reserved.</p>
+              <p><a href="${process.env.FRONTEND_URL}/support">Contact Support</a></p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Hi ${firstName}, Your Glubon account status has been updated to: ${status}. Your account was changed for ${reason.toLocaleLowerCase()}
+      
+      View your account: ${process.env.FRONTEND_URL}/account`,
+    };
+  }
+
+  static adminDeactivationNotification(firstName: string): EmailTemplate {
+    return {
+      subject: "Glubon Admin Access Deactivated",
+      html: `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Admin Access Deactivated</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2a44; background-color: #f5f7fa; }
+            .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%); color: #fff; padding: 40px 20px; text-align: center; }
+            .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+            .content { padding: 32px; }
+            .content h2 { font-size: 22px; font-weight: 600; margin-bottom: 16px; }
+            .content p { font-size: 16px; margin-bottom: 16px; }
+            .button { display: inline-block; padding: 12px 24px; background: #1d4ed8; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 16px 0; }
+            .button:hover { background: #1e40af; }
+            .footer { text-align: center; padding: 24px; background: #f8fafc; font-size: 14px; color: #6b7280; border-top: 1px solid #e5e7eb; }
+            .footer a { color: #1d4ed8; text-decoration: none; }
+            .footer a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Admin Access Deactivated</h1>
+            </div>
+            <div class="content">
+              <h2>Hello ${firstName},</h2>
+              <p>Your admin access to the Glubon platform has been deactivated.</p>
+              <p>If you believe this is an error or have questions, please contact our support team.</p>
+              <a href="${process.env.FRONTEND_URL}/support" class="button">Contact Support</a>
+            </div>
+            <div class="footer">
+              <p>&copy; 2025 Glubon. All rights reserved.</p>
+              <p><a href="${process.env.FRONTEND_URL}/support">Contact Support</a></p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Hi ${firstName}, Your admin access to the Glubon platform has been deactivated. Contact support: ${process.env.FRONTEND_URL}/support`,
     };
   }
 }

@@ -17,10 +17,10 @@ import {
   CreateConversationInput,
   MessageFilters,
   SendMessageInput,
-} from "../types/services/chat";
+} from "../types/services/conversation";
 import { RedisPubSub } from "graphql-redis-subscriptions";
 
-export class ChatService extends BaseService {
+export class ConversationService extends BaseService {
   private notificationService: NotificationService;
   private emailService: EmailService;
 
@@ -31,37 +31,69 @@ export class ChatService extends BaseService {
   }
 
   async createConversation(
-    input: CreateConversationInput
+    input: CreateConversationInput & { initiatorId: string }
   ): Promise<IBaseResponse<any>> {
     try {
-      const { propertyId, renterId, ownerId } = input;
+      const { participantIds, propertyId, initiatorId } = input;
 
-      // Verify property exists and belongs to owner
-      const property = await this.prisma.property.findFirst({
-        where: { id: propertyId, ownerId },
-        include: { owner: true },
+      // Validate participants
+      if (!participantIds.includes(initiatorId)) {
+        return this.failure("Initiator must be a participant", [
+          StatusCodes.BAD_REQUEST,
+        ]);
+      }
+
+      if (participantIds.length < 2) {
+        return this.failure("At least two participants are required", [
+          StatusCodes.BAD_REQUEST,
+        ]);
+      }
+
+      // Verify all participants exist and are active
+      const participants = await this.prisma.user.findMany({
+        where: {
+          id: { in: participantIds },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          profilePic: true,
+          isVerified: true,
+        },
       });
 
-      if (!property) {
-        return this.failure("Property not found or access denied", [
+      if (participants.length !== participantIds.length) {
+        return this.failure("One or more participants not found or inactive", [
           StatusCodes.NOT_FOUND,
         ]);
       }
 
-      // Verify renter exists and is a tenant
-      const renter = await this.prisma.user.findFirst({
-        where: { id: renterId, role: RoleEnum.TENANT, isActive: true },
-      });
+      // Verify property exists if provided
+      let property;
+      if (propertyId) {
+        property = await this.prisma.property.findFirst({
+          where: { id: propertyId },
+          select: { id: true, title: true, images: true },
+        });
 
-      if (!renter) {
-        return this.failure("Renter not found or invalid", [
-          StatusCodes.NOT_FOUND,
-        ]);
+        if (!property) {
+          return this.failure("Property not found", [StatusCodes.NOT_FOUND]);
+        }
       }
 
-      // Check if conversation already exists
+      // Check for existing conversation with same participants and property
       const existingConversation = await this.prisma.conversation.findFirst({
-        where: { propertyId, renterId, ownerId },
+        where: {
+          propertyId: propertyId || null,
+          participants: {
+            every: { userId: { in: participantIds } },
+            none: { userId: { notIn: participantIds } },
+          },
+        },
+        include: { participants: { include: { user: true } } },
       });
 
       if (existingConversation) {
@@ -73,36 +105,41 @@ export class ChatService extends BaseService {
 
       // Create new conversation
       const conversation = await this.prisma.conversation.create({
-        data: { propertyId, renterId, ownerId },
+        data: {
+          propertyId: propertyId || null,
+          participants: {
+            create: participantIds.map((userId) => ({
+              userId,
+            })),
+          },
+        },
         include: {
           property: {
             select: { id: true, title: true, images: true },
           },
-          renter: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePic: true,
-            },
-          },
-          owner: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePic: true,
+          participants: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  profilePic: true,
+                  isVerified: true,
+                },
+              },
             },
           },
           _count: { select: { messages: true } },
         },
       });
 
-      // Clear cache
-      await Promise.all([
-        this.deleteCachePattern(`conversations:${renterId}:*`),
-        this.deleteCachePattern(`conversations:${ownerId}:*`),
-      ]);
+      // Clear cache for all participants
+      await Promise.all(
+        participantIds.map((userId) =>
+          this.deleteCachePattern(`conversations:${userId}:*`)
+        )
+      );
 
       return this.success(conversation, "Conversation created successfully");
     } catch (error: unknown) {
@@ -143,7 +180,7 @@ export class ChatService extends BaseService {
 
       // Build where clause
       const where: any = {
-        OR: [{ renterId: userId }, { ownerId: userId }],
+        participants: { some: { userId } },
       };
 
       if (isActive !== undefined) where.isActive = isActive;
@@ -169,22 +206,17 @@ export class ChatService extends BaseService {
                 state: true,
               },
             },
-            renter: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                profilePic: true,
-                isVerified: true,
-              },
-            },
-            owner: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                profilePic: true,
-                isVerified: true,
+            participants: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    profilePic: true,
+                    isVerified: true,
+                  },
+                },
               },
             },
             messages: {
@@ -217,7 +249,7 @@ export class ChatService extends BaseService {
       // Transform conversations to include participant info
       const transformedConversations = conversations.map((conv) => ({
         ...conv,
-        participant: conv.renterId === userId ? conv.owner : conv.renter,
+        participants: conv.participants.map((p) => p.user),
         lastMessage: conv.messages[0] || null,
         unreadCount: conv._count.messages,
       }));
@@ -231,7 +263,7 @@ export class ChatService extends BaseService {
       };
 
       // Cache for 2 minutes
-      await this.setCache(cacheKey, result, 120);
+      await this.setCache(cacheKey, result, 120 as any);
 
       return this.success(result, "Conversations retrieved successfully");
     } catch (error: unknown) {
@@ -259,7 +291,7 @@ export class ChatService extends BaseService {
       const conversation = await this.prisma.conversation.findFirst({
         where: {
           id: conversationId,
-          OR: [{ renterId: userId }, { ownerId: userId }],
+          participants: { some: { userId } },
         },
         include: {
           property: {
@@ -272,22 +304,17 @@ export class ChatService extends BaseService {
               state: true,
             },
           },
-          renter: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePic: true,
-              isVerified: true,
-            },
-          },
-          owner: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePic: true,
-              isVerified: true,
+          participants: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  profilePic: true,
+                  isVerified: true,
+                },
+              },
             },
           },
         },
@@ -299,17 +326,14 @@ export class ChatService extends BaseService {
         ]);
       }
 
-      // Add participant info
+      // Transform conversation to include participant info
       const transformedConversation = {
         ...conversation,
-        participant:
-          conversation.renterId === userId
-            ? conversation.owner
-            : conversation.renter,
+        participants: conversation.participants.map((p) => p.user),
       };
 
       // Cache for 5 minutes
-      await this.setCache(cacheKey, transformedConversation, 300);
+      await this.setCache(cacheKey, transformedConversation, 300 as any);
 
       return this.success(
         transformedConversation,
@@ -383,7 +407,7 @@ export class ChatService extends BaseService {
       };
 
       // Cache for 1 minute
-      await this.setCache(cacheKey, result, 60);
+      await this.setCache(cacheKey, result, 60 as any);
 
       return this.success(result, "Messages retrieved successfully");
     } catch (error: unknown) {
@@ -407,16 +431,22 @@ export class ChatService extends BaseService {
       const conversation = await this.prisma.conversation.findFirst({
         where: {
           id: conversationId,
-          OR: [{ renterId: senderId }, { ownerId: senderId }],
+          participants: { some: { userId: senderId } },
           isActive: true,
         },
         include: {
           property: { select: { id: true, title: true } },
-          renter: {
-            select: { id: true, firstName: true, lastName: true, email: true },
-          },
-          owner: {
-            select: { id: true, firstName: true, lastName: true, email: true },
+          participants: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
+              },
+            },
           },
         },
       });
@@ -459,53 +489,56 @@ export class ChatService extends BaseService {
         data: { updatedAt: new Date() },
       });
 
-      // Determine recipient
-      const recipient =
-        conversation.renterId === senderId
-          ? conversation.owner
-          : conversation.renter;
-      const sender =
-        conversation.renterId === senderId
-          ? conversation.renter
-          : conversation.owner;
+      // Determine recipients (all participants except sender)
+      const recipients = conversation.participants
+        .map((p) => p.user)
+        .filter((user) => user.id !== senderId);
 
       // Publish to real-time subscription
       await (pubSub as RedisPubSub).publish(SUBSCRIPTION_EVENTS.MESSAGE_SENT, {
         message,
         conversationId,
-        recipientId: recipient.id,
+        recipientIds: recipients.map((r) => r.id),
       });
 
-      // Create notification for recipient
-      await this.notificationService.createNotification({
-        userId: recipient.id,
-        title: "New Message",
-        message: `${sender.firstName} ${sender.lastName} sent you a message about "${conversation.property.title}"`,
-        type: NotificationType.NEW_MESSAGE,
-        data: {
-          conversationId,
-          messageId: message.id,
-          senderId,
-          propertyId: conversation.property.id,
-        },
-      });
+      // Create notifications and send emails for recipients
+      await Promise.all(
+        recipients.map(async (recipient) => {
+          const notificationTitle = conversation.property
+            ? `New Message about "${conversation.property.title}"`
+            : `New Message from ${message.sender.firstName} ${message.sender.lastName}`;
 
-      // Send email notification
-      await this.emailService.sendChatNotification(
-        recipient.email,
-        recipient.firstName,
-        `${sender.firstName} ${sender.lastName}`,
-        conversation.property.title,
-        content.substring(0, 100),
-        conversationId
+          await this.notificationService.createNotification({
+            userId: recipient.id,
+            title: notificationTitle,
+            message: `${message.sender.firstName} ${message.sender.lastName} sent you a message`,
+            type: NotificationType.NEW_MESSAGE,
+            data: {
+              conversationId,
+              messageId: message.id,
+              senderId,
+              propertyId: conversation.property?.id,
+            },
+          });
+
+          await this.emailService.sendChatNotification(
+            recipient.email,
+            recipient.firstName,
+            `${message.sender.firstName} ${message.sender.lastName}`,
+            conversation.property?.title || "Direct Message",
+            content.substring(0, 100),
+            conversationId
+          );
+        })
       );
 
-      // Clear caches
-      await Promise.all([
-        this.deleteCachePattern(`conversations:${recipient.id}:*`),
-        this.deleteCachePattern(`conversations:${senderId}:*`),
-        this.deleteCachePattern(`messages:${conversationId}:*`),
-      ]);
+      // Clear caches for all participants
+      await Promise.all(
+        conversation.participants.map((p) =>
+          this.deleteCachePattern(`conversations:${p.user.id}:*`)
+        )
+      );
+      await this.deleteCachePattern(`messages:${conversationId}:*`);
 
       return this.success(message, "Message sent successfully");
     } catch (error: unknown) {
@@ -522,17 +555,15 @@ export class ChatService extends BaseService {
       const conversation = await this.prisma.conversation.findFirst({
         where: {
           id: conversationId,
-          OR: [{ renterId: userId }, { ownerId: userId }],
+          participants: { some: { userId } },
         },
       });
 
       if (!conversation) {
-        return this.failure("Conversation not found or access denied", [
-          StatusCodes.NOT_FOUND,
-        ]);
+        return this.failure("Conversation not found or access denied",);
       }
 
-      // Mark all unread messages from other participant as read
+      // Mark all unread messages from other participants as read
       const updateResult = await this.prisma.message.updateMany({
         where: {
           conversationId,
@@ -569,9 +600,7 @@ export class ChatService extends BaseService {
       });
 
       if (!message) {
-        return this.failure("Message not found or access denied", [
-          StatusCodes.NOT_FOUND,
-        ]);
+        return this.failure("Message not found or access denied", );
       }
 
       // Delete message
@@ -600,14 +629,12 @@ export class ChatService extends BaseService {
       const conversation = await this.prisma.conversation.findFirst({
         where: {
           id: conversationId,
-          OR: [{ renterId: userId }, { ownerId: userId }],
+          participants: { some: { userId } },
         },
       });
 
       if (!conversation) {
-        return this.failure("Conversation not found or access denied", [
-          StatusCodes.NOT_FOUND,
-        ]);
+        return this.failure("Conversation not found or access denied", );
       }
 
       // Archive conversation
@@ -616,8 +643,17 @@ export class ChatService extends BaseService {
         data: { isActive: false },
       });
 
-      // Clear caches
-      await this.deleteCachePattern(`conversations:${userId}:*`);
+      // Clear caches for all participants
+      const participants = await this.prisma.userConversation.findMany({
+        where: { conversationId },
+        select: { userId: true },
+      });
+
+      await Promise.all(
+        participants.map((p) =>
+          this.deleteCachePattern(`conversations:${p.userId}:*`)
+        )
+      );
 
       return this.success(null, "Conversation archived successfully");
     } catch (error: unknown) {
@@ -642,7 +678,7 @@ export class ChatService extends BaseService {
           isRead: false,
           senderId: { not: userId },
           conversation: {
-            OR: [{ renterId: userId }, { ownerId: userId }],
+            participants: { some: { userId } },
             isActive: true,
           },
         },
@@ -651,7 +687,7 @@ export class ChatService extends BaseService {
       const result = { count };
 
       // Cache for 1 minute
-      await this.setCache(cacheKey, result, 60);
+      await this.setCache(cacheKey, result, 60 as any);
 
       return this.success(
         result,
@@ -689,27 +725,25 @@ export class ChatService extends BaseService {
     }>
   > {
     try {
-      // ✅ Check if user is part of the conversation
+      // Verify user is part of the conversation
       const conversation = await this.prisma.conversation.findFirst({
         where: {
           id: conversationId,
-          OR: [{ renterId: userId }, { ownerId: userId }],
+          participants: { some: { userId } },
         },
       });
 
       if (!conversation) {
-        return this.failure("Conversation not found or access denied", [
-          StatusCodes.NOT_FOUND,
-        ]);
+        return this.failure("Conversation not found or access denied", );
       }
 
-      // ✅ Validate pagination
+      // Validate pagination
       const { skip, limit: validatedLimit } = this.validatePagination(
         page,
         limit
       );
 
-      // ✅ Construct message search filter
+      // Construct message search filter
       const where: Prisma.MessageWhereInput = {
         conversationId,
         content: {

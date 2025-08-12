@@ -5,6 +5,7 @@ import {
   Int,
   Float,
   registerEnumType,
+  GraphQLISODateTime,
 } from "type-graphql";
 import {
   PropertyStatus,
@@ -12,6 +13,7 @@ import {
   RentalPeriod,
   RoomType,
   DayOfWeek,
+  PropertyListingType,
 } from "@prisma/client";
 import { User } from "../user/user.types";
 import { PaginationInfo } from "../../types";
@@ -33,15 +35,18 @@ registerEnumType(PropertyStatus, {
 
 registerEnumType(RentalPeriod, {
   name: "RentalPeriod",
-  description:
-    "Rental period for the property (e.g., Daily, Weekly, Monthly, Yearly)",
+  description: "Rental period for the property (e.g., Daily, Monthly)",
+});
+
+registerEnumType(PropertyListingType, {
+  name: "PropertyListingType",
+  description: "Listing type (e.g., RENT, SALE)",
 });
 
 registerEnumType(DayOfWeek, {
   name: "DayOfWeek",
   description: "Days of the week for property visits",
 });
-
 @ArgsType()
 export class GetPropertiesArgs {
   @Field(() => Float, { nullable: true })
@@ -106,41 +111,21 @@ export class GetPropertiesArgs {
 }
 
 @ObjectType()
-export class PropertyResponse {
-  @Field(() => [String], { nullable: true })
-  images?: string[];
-
-  @Field(() => [String], { nullable: true })
-  livingRoomImages?: string[];
-
-  @Field(() => [String], { nullable: true })
-  bedroomImages?: string[];
-
-  @Field(() => [String], { nullable: true })
-  bathroomImages?: string[];
-
-  @Field(() => String, { nullable: true })
-  video?: string;
-
-  @Field(() => [String], { nullable: true })
-  propertyOwnershipDocs?: string[];
-
-  @Field(() => [String], { nullable: true })
-  propertyPlanDocs?: string[];
-
-  @Field(() => [String], { nullable: true })
-  propertyDimensionDocs?: string[];
+export class Property {
   @Field()
   id: string;
 
   @Field()
   title: string;
 
-  @Field(() => String, { nullable: true })
-  description?: string | null;
+  @Field()
+  description: string;
 
   @Field(() => PropertyStatus)
   status: PropertyStatus;
+
+  @Field(() => PropertyListingType)
+  listingType: PropertyListingType;
 
   @Field(() => Float)
   amount: number;
@@ -151,23 +136,23 @@ export class PropertyResponse {
   @Field()
   address: string;
 
-  @Field(() => String, { nullable: true })
-  city?: string | null;
+  @Field(() => String)
+  city: string;
 
-  @Field(() => String, { nullable: true })
-  state?: string | null;
+  @Field(() => String)
+  state: string;
 
-  @Field(() => String, { defaultValue: "Nigeria" })
+  @Field(() => String)
   country: string;
 
   @Field(() => Float, { nullable: true })
-  latitude?: number | null;
+  latitude?: number;
 
   @Field(() => Float, { nullable: true })
-  longitude?: number | null;
+  longitude?: number;
 
   @Field(() => Float, { nullable: true })
-  sqft?: number | null;
+  sqft?: number;
 
   @Field(() => Int)
   bedrooms: number;
@@ -185,10 +170,10 @@ export class PropertyResponse {
   visitingDays: DayOfWeek[];
 
   @Field(() => String, { nullable: true })
-  visitingTimeStart?: string | null;
+  visitingTimeStart?: string;
 
   @Field(() => String, { nullable: true })
-  visitingTimeEnd?: string | null;
+  visitingTimeEnd?: string;
 
   @Field(() => [String])
   amenities: string[];
@@ -199,28 +184,58 @@ export class PropertyResponse {
   @Field(() => Boolean)
   isForStudents: boolean;
 
+  @Field(() => Boolean)
+  featured: boolean;
+
+  @Field(() => Boolean)
+  ownershipVerified: boolean;
+
+  @Field(() => [String])
+  images: string[];
+
+  @Field(() => [String])
+  livingRoomImages: string[];
+
+  @Field(() => [String])
+  bedroomImages: string[];
+
+  @Field(() => [String])
+  bathroomImages: string[];
+
+  @Field(() => String, { nullable: true })
+  video?: string;
+
+  @Field(() => [String])
+  propertyOwnershipDocs: string[];
+
+  @Field(() => [String])
+  propertyPlanDocs: string[];
+
+  @Field(() => [String])
+  propertyDimensionDocs: string[];
+
   @Field(() => String)
   ownerId: string;
 
   @Field(() => User)
   owner: User;
 
-  @Field(() => Int, { defaultValue: 0 })
+  @Field(() => Int)
   viewsCount: number;
 
-  @Field(() => Int, { defaultValue: 0 })
+  @Field(() => Int)
   likesCount: number;
 
-  @Field(() => Boolean, { defaultValue: false })
-  isLiked?: boolean;
+  @Field(() => Boolean)
+  isLiked: boolean;
 
-  @Field(() => Boolean, { defaultValue: false })
-  isViewed?: boolean;
+  @Field(() => Boolean)
+  isViewed: boolean;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   updatedAt: Date;
 
   @Field(() => Float, { nullable: true })
@@ -229,8 +244,8 @@ export class PropertyResponse {
 
 @ObjectType()
 export class PaginatedPropertiesResponse {
-  @Field(() => [PropertyResponse])
-  properties: PropertyResponse[];
+  @Field(() => [Property])
+  properties: Property[];
 
   @Field(() => Int)
   totalCount: number;
@@ -244,7 +259,7 @@ export class PropertyVisitorInfo {
   @Field(() => User)
   user: User;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   viewedAt: Date;
 }
 

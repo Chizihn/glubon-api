@@ -1,3 +1,4 @@
+//src/modules/admin/admin.types.ts
 import {
   DocumentType,
   PropertyStatus,
@@ -11,11 +12,12 @@ import {
   ID,
   registerEnumType,
   Float,
+  GraphQLISODateTime,
 } from "type-graphql";
 import { PaginatedResponse } from "../../types/responses";
 import GraphQLJSON from "graphql-type-json";
 import { User } from "../user/user.types";
-import { PropertyResponse } from "../property/property.types";
+import { Property } from "../property/property.types";
 
 registerEnumType(DocumentType, {
   name: "DocumentType",
@@ -40,40 +42,6 @@ registerEnumType(VerificationStatus, {
 });
 
 @ObjectType()
-export class MonthlyGrowthResponse {
-  @Field(() => Int)
-  users: number;
-
-  @Field(() => Int)
-  properties: number;
-}
-
-// Response Types
-@ObjectType()
-export class AdminStatsResponse {
-  @Field(() => Int)
-  totalUsers: number;
-
-  @Field(() => Int)
-  activeUsers: number;
-
-  @Field(() => Int)
-  totalProperties: number;
-
-  @Field(() => Int)
-  activeProperties: number;
-
-  @Field(() => Int)
-  pendingVerifications: number;
-
-  @Field(() => Int)
-  totalRevenue: number;
-
-  @Field(() => MonthlyGrowthResponse)
-  monthlyGrowth: MonthlyGrowthResponse;
-}
-
-@ObjectType()
 export class AdminUserStatsResponse {
   @Field(() => Int)
   properties: number;
@@ -93,8 +61,8 @@ export class AdminUserResponse extends User {
   @Field(() => AdminUserStatsResponse)
   stats: AdminUserStatsResponse;
 
-  @Field(() => [PropertyResponse], { nullable: true })
-  properties?: PropertyResponse[];
+  @Field(() => [Property], { nullable: true })
+  properties?: Property[];
 
   @Field(() => [VerificationResponse], { nullable: true })
   identityVerifications?: VerificationResponse[];
@@ -174,7 +142,7 @@ export class AdminPropertyResponse {
   @Field(() => Boolean)
   ownershipVerified: boolean;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
   @Field(() => PropertyOwnerResponse)
@@ -222,7 +190,7 @@ export class VerificationResponse {
   @Field(() => VerificationStatus)
   status: VerificationStatus;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   reviewedAt?: Date;
 
   @Field(() => String, { nullable: true })
@@ -231,7 +199,7 @@ export class VerificationResponse {
   @Field(() => String, { nullable: true })
   rejectionReason?: string;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
   @Field(() => VerificationUserResponse)
@@ -273,7 +241,7 @@ export class OwnershipVerificationResponse {
   @Field(() => VerificationStatus)
   status: VerificationStatus;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   reviewedAt?: Date;
 
   @Field(() => String, { nullable: true })
@@ -282,7 +250,7 @@ export class OwnershipVerificationResponse {
   @Field(() => String, { nullable: true })
   rejectionReason?: string;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
   @Field(() => OwnershipVerificationPropertyResponse)
@@ -300,7 +268,7 @@ export class AdminLogResponse {
   @Field(() => GraphQLJSON)
   data: any;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
   @Field(() => User)
@@ -317,54 +285,12 @@ export class ChartDataResponse {
 }
 
 @ObjectType()
-export class AnalyticsOverviewResponse {
-  @Field(() => Int)
-  totalUsers: number;
-
-  @Field(() => Int)
-  newUsers: number;
-
-  @Field(() => Int)
-  totalProperties: number;
-
-  @Field(() => Int)
-  newProperties: number;
-
-  @Field(() => Int)
-  pendingProperties: number;
-
-  @Field(() => Int)
-  activeProperties: number;
-
-  @Field(() => Int)
-  totalConversations: number;
-
-  @Field(() => Int)
-  totalMessages: number;
-
-  @Field(() => Int)
-  pendingVerifications: number;
-
-  @Field(() => Int)
-  approvedVerifications: number;
-}
-
-@ObjectType()
 export class AnalyticsChartsResponse {
   @Field(() => [ChartDataResponse])
   userGrowth: ChartDataResponse[];
 
   @Field(() => [ChartDataResponse])
   propertyGrowth: ChartDataResponse[];
-}
-
-@ObjectType()
-export class DashboardAnalyticsResponse {
-  @Field(() => AnalyticsOverviewResponse)
-  overview: AnalyticsOverviewResponse;
-
-  @Field(() => AnalyticsChartsResponse)
-  charts: AnalyticsChartsResponse;
 }
 
 @ObjectType()
@@ -408,6 +334,21 @@ export class PropertyLikeResponse {
   @Field(() => ID)
   id: string;
 
-  @Field(() => PropertyResponse)
-  property: PropertyResponse;
+  @Field(() => Property)
+  property: Property;
+}
+
+@ObjectType()
+export class ExportResponse {
+  @Field(() => String)
+  downloadUrl: string;
+
+  @Field(() => String)
+  filename: string;
+
+  @Field(() => Int)
+  size: number;
+
+  @Field(() => GraphQLISODateTime)
+  expiresAt: Date;
 }

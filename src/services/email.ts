@@ -5,7 +5,12 @@ import Redis from "ioredis";
 import { config } from "../config";
 import { logger } from "../utils";
 import { ServiceResponse } from "../types";
-import { EmailTemplates } from "../templates/email";
+import { 
+  UserEmailTemplates,
+  PropertyEmailTemplates,
+  AdminEmailTemplates,
+  ChatEmailTemplates
+} from "../templates/email";
 
 interface EmailOptions {
   to: string;
@@ -20,7 +25,7 @@ interface QueuedEmail extends EmailOptions {
   attempts: number;
   maxAttempts: number;
   createdAt: Date;
-  scheduledFor?: Date; // Optional for scheduling
+  scheduledFor?: Date;
 }
 
 export class EmailService extends BaseService {
@@ -33,7 +38,6 @@ export class EmailService extends BaseService {
     this.startEmailProcessor();
   }
 
-  // Singleton instance
   private static _instance: EmailService;
   static getInstance(prisma: PrismaClient, redis: Redis): EmailService {
     if (!EmailService._instance) {
@@ -44,21 +48,19 @@ export class EmailService extends BaseService {
 
   private initializeTransporter(): void {
     if (config.NODE_ENV === "production") {
-      // Use your SMTP production server here (replace with your actual SMTP settings)
       this.transporter = nodemailer.createTransport({
         host: "gmail",
-        port: Number(config.EMAIL_PORT) || 465, // Usually 465 (SSL) or 587 (TLS)
-        secure: true, // true for 465, false for other ports
+        port: Number(config.EMAIL_PORT) || 465,
+        secure: true,
         auth: {
-          user: config.EMAIL_USER, // your SMTP username
-          pass: config.EMAIL_PASS, // your SMTP password
+          user: config.EMAIL_USER,
+          pass: config.EMAIL_PASS,
         },
       });
     } else {
-      // Use Gmail for development
       this.transporter = nodemailer.createTransport({
-        service: "gmail", // e.g., 'gmail'
-        port: Number(config.EMAIL_PORT) || 587, // Usually 587 for TLS
+        service: "gmail",
+        port: Number(config.EMAIL_PORT) || 587,
         auth: {
           user: config.EMAIL_USER,
           pass: config.EMAIL_PASS || config.EMAIL_PASS,
@@ -76,7 +78,6 @@ export class EmailService extends BaseService {
   }
 
   private async startEmailProcessor(): Promise<void> {
-    // Process email queue every 30 seconds
     setInterval(async () => {
       await this.processEmailQueue();
     }, 30000);
@@ -104,7 +105,6 @@ export class EmailService extends BaseService {
       const queueLength = await this.redis.llen(this.emailQueue);
       if (queueLength === 0) return;
 
-      // Process up to 10 emails at a time
       const emailsToProcess = Math.min(queueLength, 10);
 
       for (let i = 0; i < emailsToProcess; i++) {
@@ -113,9 +113,7 @@ export class EmailService extends BaseService {
 
         const queuedEmail: QueuedEmail = JSON.parse(emailData);
 
-        // Check if email is scheduled for future
         if (queuedEmail.scheduledFor && new Date() < queuedEmail.scheduledFor) {
-          // Put back in queue
           await this.redis.lpush(this.emailQueue, emailData);
           continue;
         }
@@ -125,12 +123,9 @@ export class EmailService extends BaseService {
           logger.info(`Email sent successfully: ${queuedEmail.id}`);
         } catch (error) {
           logger.error(`Failed to send email: ${queuedEmail.id}`, error);
-
-          // Retry logic
           queuedEmail.attempts++;
           if (queuedEmail.attempts < queuedEmail.maxAttempts) {
-            // Add delay before retry (exponential backoff)
-            const delay = Math.pow(2, queuedEmail.attempts) * 60000; // 2min, 4min, 8min
+            const delay = Math.pow(2, queuedEmail.attempts) * 60000;
             queuedEmail.scheduledFor = new Date(Date.now() + delay);
             await this.redis.lpush(
               this.emailQueue,
@@ -141,7 +136,6 @@ export class EmailService extends BaseService {
             );
           } else {
             logger.error(`Email failed permanently: ${queuedEmail.id}`);
-            // Could store failed emails in a separate queue or database for manual review
           }
         }
       }
@@ -162,14 +156,12 @@ export class EmailService extends BaseService {
     await this.transporter.sendMail(mailOptions);
   }
 
-  // Public methods for sending specific types of emails
-
   async sendWelcomeEmail(
     email: string,
     firstName: string
   ): Promise<ServiceResponse<void>> {
     try {
-      const template = EmailTemplates.welcomeEmail(firstName);
+      const template = UserEmailTemplates.welcomeEmail(firstName);
       await this.addToQueue({
         to: email,
         ...template,
@@ -182,6 +174,25 @@ export class EmailService extends BaseService {
     }
   }
 
+  async sendAdminWelcomeEmail(
+    email: string,
+    firstName: string,
+    password: string
+  ): Promise<ServiceResponse<void>> {
+    try {
+      const template = AdminEmailTemplates.adminWelcomeEmail(firstName, password);
+      await this.addToQueue({
+        to: email,
+        ...template,
+      });
+
+      return this.success(undefined, "Admin welcome email queued successfully");
+    } catch (error) {
+      logger.error("Error queueing admin welcome email:", error);
+      return this.failure("Failed to queue admin welcome email");
+    }
+  }
+
   async sendVerificationCode(
     email: string,
     firstName: string,
@@ -189,13 +200,12 @@ export class EmailService extends BaseService {
     purpose: "email_verification" | "password_reset"
   ): Promise<ServiceResponse<void>> {
     try {
-      const template = EmailTemplates.verificationCode(
+      const template = UserEmailTemplates.verificationCode(
         firstName,
         code,
         purpose
       );
 
-      // Send verification emails immediately (don't queue)
       await this.sendEmailDirectly({
         to: email,
         ...template,
@@ -216,7 +226,7 @@ export class EmailService extends BaseService {
     alertType: "new_match" | "price_drop" | "status_change"
   ): Promise<ServiceResponse<void>> {
     try {
-      const template = EmailTemplates.propertyAlert(
+      const template = PropertyEmailTemplates.propertyAlert(
         firstName,
         propertyTitle,
         propertyId,
@@ -242,7 +252,7 @@ export class EmailService extends BaseService {
     approved: boolean
   ): Promise<ServiceResponse<void>> {
     try {
-      const template = EmailTemplates.propertyApproval(
+      const template = PropertyEmailTemplates.propertyApproval(
         ownerName,
         propertyTitle,
         propertyId,
@@ -270,7 +280,7 @@ export class EmailService extends BaseService {
     approved: boolean
   ): Promise<ServiceResponse<void>> {
     try {
-      const template = EmailTemplates.identityVerification(
+      const template = AdminEmailTemplates.identityVerification(
         firstName,
         verificationType,
         approved
@@ -290,6 +300,54 @@ export class EmailService extends BaseService {
     }
   }
 
+  async sendUserStatusChangeNotification(
+    email: string,
+    firstName: string,
+    status: string,
+    reason?: string
+  ): Promise<ServiceResponse<void>> {
+    try {
+      const template = UserEmailTemplates.userStatusChangeNotification(
+        firstName,
+        status,
+        reason as string
+      );
+      await this.addToQueue({
+        to: email,
+        ...template,
+      });
+
+      return this.success(
+        undefined,
+        "User status change notification queued successfully"
+      );
+    } catch (error) {
+      logger.error("Error queueing user status change notification:", error);
+      return this.failure("Failed to queue user status change notification");
+    }
+  }
+
+  async sendAdminDeactivationNotification(
+    email: string,
+    firstName: string
+  ): Promise<ServiceResponse<void>> {
+    try {
+      const template = AdminEmailTemplates.adminDeactivationNotification(firstName);
+      await this.addToQueue({
+        to: email,
+        ...template,
+      });
+
+      return this.success(
+        undefined,
+        "Admin deactivation notification queued successfully"
+      );
+    } catch (error) {
+      logger.error("Error queueing admin deactivation notification:", error);
+      return this.failure("Failed to queue admin deactivation notification");
+    }
+  }
+
   async sendChatNotification(
     recipientEmail: string,
     recipientName: string,
@@ -299,7 +357,7 @@ export class EmailService extends BaseService {
     chatId: string
   ): Promise<ServiceResponse<void>> {
     try {
-      const template = EmailTemplates.chatNotification(
+      const template = ChatEmailTemplates.chatNotification(
         recipientName,
         senderName,
         propertyTitle,
@@ -307,8 +365,7 @@ export class EmailService extends BaseService {
         chatId
       );
 
-      // Send chat notifications with slight delay to batch multiple messages
-      const scheduledFor = new Date(Date.now() + 300000); // 5 minutes delay
+      const scheduledFor = new Date(Date.now() + 300000);
       await this.addToQueue(
         {
           to: recipientEmail,
@@ -340,7 +397,6 @@ export class EmailService extends BaseService {
           });
           sent++;
 
-          // Add delay between emails to avoid rate limiting
           if (delayBetween > 0) {
             await new Promise((resolve) => setTimeout(resolve, delayBetween));
           }
@@ -378,7 +434,6 @@ export class EmailService extends BaseService {
     }
   }
 
-  // Method to send immediate email (bypass queue)
   async sendImmediateEmail(
     emailOptions: EmailOptions
   ): Promise<ServiceResponse<void>> {
@@ -399,7 +454,7 @@ export class EmailService extends BaseService {
     type: string
   ): Promise<ServiceResponse<void>> {
     try {
-      const template = EmailTemplates.notificationEmail(
+      const template = UserEmailTemplates.notificationEmail(
         firstName,
         title,
         message,
@@ -417,7 +472,6 @@ export class EmailService extends BaseService {
     }
   }
 
-  // Method to clear the email queue (useful for maintenance)
   async clearQueue(): Promise<ServiceResponse<void>> {
     try {
       await this.redis.del(this.emailQueue);
@@ -429,11 +483,8 @@ export class EmailService extends BaseService {
     }
   }
 
-  // Method to get failed emails (if implemented)
   async getFailedEmails(): Promise<ServiceResponse<QueuedEmail[]>> {
     try {
-      // This would require implementing a failed emails queue
-      // For now, return empty array
       return this.success([], "No failed emails tracking implemented");
     } catch (error) {
       logger.error("Error getting failed emails:", error);
@@ -442,6 +493,5 @@ export class EmailService extends BaseService {
   }
 }
 
-// Export singleton instance for use everywhere (after all class/function definitions)
 import { prisma, redis } from "../config";
 export const emailServiceSingleton = EmailService.getInstance(prisma, redis);

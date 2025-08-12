@@ -64,7 +64,6 @@ export class PaginationInfo {
 export abstract class PaginatedResponse<T> {
   @Field(() => PaginationInfo)
   pagination: PaginationInfo;
-
   items: T[];
 
   constructor(items: T[], page: number, limit: number, totalItems: number) {

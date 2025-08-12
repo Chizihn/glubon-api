@@ -174,8 +174,8 @@ export class UserRepository extends BaseRepository {
             properties: true,
             propertyLikes: true,
             propertyViews: true,
-            chatsAsOwner: true,
-            chatsAsRenter: true,
+            conversations: true,
+            notifications: true,
           },
         },
       },
@@ -198,8 +198,7 @@ export class UserRepository extends BaseRepository {
             properties: true,
             propertyLikes: true,
             propertyViews: true,
-            chatsAsOwner: true,
-            chatsAsRenter: true,
+            conversations: true,
             notifications: { where: { isRead: false } },
           },
         },
@@ -212,8 +211,7 @@ export class UserRepository extends BaseRepository {
       propertiesCount: stats._count.properties,
       likedPropertiesCount: stats._count.propertyLikes,
       viewedPropertiesCount: stats._count.propertyViews,
-      conversationsCount:
-        stats._count.chatsAsOwner + stats._count.chatsAsRenter,
+      conversationsCount: stats._count.conversations,
       unreadNotificationsCount: stats._count.notifications,
     };
 

@@ -1,4 +1,10 @@
-import { NotificationType, RoleEnum } from "@prisma/client";
+import {
+  Booking,
+  NotificationType,
+  Property,
+  RoleEnum,
+  User,
+} from "@prisma/client";
 
 export type EmailNotificationType =
   | "PROPERTY_APPROVED"
@@ -6,7 +12,17 @@ export type EmailNotificationType =
   | "VERIFICATION_APPROVED"
   | "VERIFICATION_REJECTED"
   | "ACCOUNT_SUSPENDED"
-  | "ACCOUNT_REACTIVATED";
+  | "ACCOUNT_REACTIVATED"
+  | "BOOKING_CREATED"
+  | "PAYMENT_CONFIRMED"
+  | "ESCROW_RELEASED"
+  | "WITHDRAWAL_REQUESTED"
+  | "WITHDRAWAL_APPROVED"
+  | "DISPUTE_CREATED"
+  | "DISPUTE_RESOLVED"
+  | "PAYMENT_RECEIVED"
+  | "REFUND_PROCESSED";
+
 export interface CreateNotificationData {
   userId: string;
   title: string;
@@ -33,4 +49,13 @@ export interface NotificationResponseData {
     hasPrev: boolean;
   };
   unreadCount: number;
+}
+
+export interface BookingNotification {
+  booking: Booking;
+  renter: User;
+  property: Property;
+  totalAmount: number;
+  platformFee: number;
+  paymentUrl: string;
 }

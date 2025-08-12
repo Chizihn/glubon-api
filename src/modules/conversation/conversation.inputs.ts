@@ -1,4 +1,4 @@
-import { Field, InputType, registerEnumType } from "type-graphql";
+import { Field, GraphQLISODateTime, InputType, registerEnumType } from "type-graphql";
 import { MessageType } from "@prisma/client";
 
 registerEnumType(MessageType, {
@@ -9,14 +9,11 @@ registerEnumType(MessageType, {
 
 @InputType()
 export class CreateConversationInput {
-  @Field(() => String)
-  propertyId: string;
+  @Field(() => [String])
+  participantIds: string[];
 
-  @Field(() => String)
-  renterId: string;
-
-  @Field(() => String)
-  ownerId: string;
+  @Field(() => String, { nullable: true })
+  propertyId?: string;
 }
 
 @InputType()
@@ -51,9 +48,9 @@ export class MessageFilters {
   @Field(() => MessageType, { nullable: true })
   messageType?: MessageType;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   fromDate?: Date;
 
-  @Field(() => Date, { nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   toDate?: Date;
 }

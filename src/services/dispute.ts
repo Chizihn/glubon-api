@@ -1,0 +1,334 @@
+import { DisputeStatus, PrismaClient } from "@prisma/client";
+import { Redis } from "ioredis";
+import { NotFoundError } from "../utils";
+import { BaseService } from "./base";
+import { DisputeRepository } from "../repository/dispute";
+import { RefundService } from "./refund";
+import { WalletService } from "./wallet";
+import { NotificationService } from "./notification";
+import {
+  CreateDisputeInput,
+  ResolveDisputeInput,
+} from "../types/services/booking";
+import { ServiceResponse } from "../types/responses";
+import { PaginatedDisputes } from "../modules/dispute/dispute.types";
+
+export class DisputeService extends BaseService {
+  private disputeRepo: DisputeRepository;
+  private refundService: RefundService;
+  private walletService: WalletService;
+  private notificationService: NotificationService;
+  
+  private logger: Console;
+
+  constructor(prisma: PrismaClient, redis: Redis) {
+    super(prisma, redis);
+    this.logger = console;
+    this.disputeRepo = new DisputeRepository(prisma, redis);
+    this.refundService = new RefundService(prisma, redis);
+    this.walletService = new WalletService(prisma, redis);
+    this.notificationService = new NotificationService(prisma, redis);
+  }
+
+  async createDispute(data: CreateDisputeInput, initiatorId: string) {
+    try {
+      const booking = await this.prisma.booking.findUnique({
+        where: { id: data.bookingId },
+      });
+      if (!booking || booking.renterId !== initiatorId)
+        return this.failure("Invalid booking");
+
+      if (booking.status === "DISPUTED")
+        return this.failure("Booking already disputed");
+
+      return await this.prisma.$transaction(async (tx) => {
+        const dispute = await tx.dispute.create({
+          data: {
+            bookingId: data.bookingId,
+            initiatorId,
+            reason: data.reason,
+            description: data.description,
+          },
+        });
+
+        const property = await this.prisma.property.findUnique({
+          where: { id: booking.propertyId },
+          include: {
+            owner: true,
+          },
+        });
+
+        if (!property) {
+          throw new NotFoundError("Property not found");
+        }
+
+        await tx.booking.update({
+          where: { id: data.bookingId },
+          data: { status: "DISPUTED" },
+        });
+
+        // Notify initiator
+        await this.notificationService.createNotification({
+          userId: initiatorId,
+          title: "Dispute Created",
+          message: `Your dispute for booking ${data.bookingId} has been created.`,
+          type: "DISPUTE_CREATED",
+          data: { disputeId: dispute.id, bookingId: data.bookingId },
+        });
+
+        // Notify other party (renter or lister)
+        const otherPartyId =
+          booking.renterId === initiatorId
+            ? property.ownerId
+            : booking.renterId;
+        await this.notificationService.createNotification({
+          userId: otherPartyId,
+          title: "Dispute Initiated",
+          message: `A dispute has been initiated for booking ${data.bookingId}.`,
+          type: "DISPUTE_CREATED",
+          data: { disputeId: dispute.id, bookingId: data.bookingId },
+        });
+
+        return dispute;
+      });
+    } catch (error) {
+      return this.handleError(error, "createDispute");
+    }
+  }
+
+  /**
+   * Fetches paginated pending disputes with optional filtering
+   */
+  async getPendingDisputes(
+    page: number = 1,
+    limit: number = 10,
+    filters: {
+      initiatorId?: string;
+      bookingId?: string;
+      startDate?: Date;
+      endDate?: Date;
+    } = {}
+  ): Promise<ServiceResponse<PaginatedDisputes>> {
+    try {
+      const result = await this.disputeRepo.getPendingDisputes(
+        page,
+        limit,
+        {
+          ...filters,
+          status: 'PENDING', // Always filter by PENDING status
+        }
+      );
+
+      return {
+        success: true,
+        message: 'Pending disputes retrieved successfully',
+        data: result as unknown as PaginatedDisputes // Type assertion to handle the complex type
+      };
+    } catch (error) {
+      this.logger.error('Error fetching pending disputes:', error);
+      return this.failure('Failed to retrieve pending disputes');
+    }
+  }
+
+
+  async resolveDispute(data: ResolveDisputeInput, adminId: string) {
+    try {
+      const dispute = await this.disputeRepo.findDisputeById(data.disputeId);
+      if (!dispute || dispute.status !== DisputeStatus.PENDING)
+        return this.failure("Invalid dispute");
+
+      return await this.prisma.$transaction(async (tx) => {
+        const updatedDispute = await tx.dispute.update({
+          where: { id: data.disputeId },
+          data: {
+            status: data.status,
+            resolution: data.resolution,
+            resolvedAt: new Date(),
+            resolvedBy: adminId,
+          },
+        });
+
+        const booking = await tx.booking.findUnique({
+          where: { id: dispute.bookingId },
+          include: { transactions: true, property: true },
+        });
+        if (!booking) throw new NotFoundError("Booking not found");
+
+        let remainingAmount = booking.amount;
+        if (data.refundAmount && data.status === "RESOLVED") {
+          const escrowTx = booking.transactions.find(
+            (t) => t.id === booking.escrowTransactionId
+          );
+          if (!escrowTx) throw new Error("No escrow transaction");
+
+          if (data.refundAmount > booking.amount) {
+            throw new Error("Refund amount exceeds booking amount");
+          }
+
+          if (escrowTx.status === "HELD") {
+            // Refund from held escrow
+            const refundData = {
+              transactionId: escrowTx.id,
+              amount: data.refundAmount,
+              reason: data.resolution,
+            };
+
+            const refundResult = await this.refundService.createRefund(
+              refundData,
+              adminId
+            );
+            if (!refundResult.success) throw new Error(refundResult.message);
+
+            await this.refundService.processRefund(
+              refundResult.data.id,
+              "APPROVE",
+              adminId
+            );
+
+            // Credit renter's wallet
+            await this.walletService.updateBalance(
+              booking.renterId,
+              data.refundAmount,
+              "REFUND",
+              `Refund for dispute ${data.disputeId}`,
+              escrowTx.id
+            );
+
+            // Notify renter
+            await this.notificationService.createNotification({
+              userId: booking.renterId,
+              title: "Refund Processed",
+              message: `A refund of ${data.refundAmount} NGN has been processed for dispute ${data.disputeId}.`,
+              type: "REFUND_PROCESSED",
+              data: { disputeId: data.disputeId, amount: data.refundAmount },
+            });
+
+            // Handle partial release to lister
+            remainingAmount = booking.amount - data.refundAmount;
+            if (remainingAmount > 0) {
+              await tx.transaction.update({
+                where: { id: escrowTx.id },
+                data: { status: "RELEASED" },
+              });
+
+              await this.walletService.updateBalance(
+                booking.property.ownerId,
+                remainingAmount,
+                "ESCROW_RELEASE",
+                `Partial release for dispute ${data.disputeId}`,
+                escrowTx.id
+              );
+
+              // Notify lister
+              await this.notificationService.createNotification({
+                userId: booking.property.ownerId,
+                title: "Partial Escrow Released",
+                message: `Funds of ${remainingAmount} NGN for booking ${booking.id} have been released after dispute resolution.`,
+                type: "ESCROW_RELEASED",
+                data: { bookingId: booking.id, amount: remainingAmount },
+              });
+            } else {
+              await tx.transaction.update({
+                where: { id: escrowTx.id },
+                data: { status: "REFUNDED" },
+              });
+            }
+          } else if (escrowTx.status === "RELEASED") {
+            // Deduct from lister's wallet
+            await this.walletService.updateBalance(
+              booking.property.ownerId,
+              data.refundAmount,
+              "REFUND",
+              `Dispute refund deduction for ${data.disputeId}`,
+              escrowTx.id
+            );
+
+            // Credit renter's wallet
+            await this.walletService.updateBalance(
+              booking.renterId,
+              data.refundAmount,
+              "REFUND",
+              `Refund for dispute ${data.disputeId}`,
+              escrowTx.id
+            );
+
+            // Notify renter
+            await this.notificationService.createNotification({
+              userId: booking.renterId,
+              title: "Refund Processed",
+              message: `A refund of ${data.refundAmount} NGN has been processed for dispute ${data.disputeId}.`,
+              type: "REFUND_PROCESSED",
+              data: { disputeId: data.disputeId, amount: data.refundAmount },
+            });
+
+            // Notify lister
+            await this.notificationService.createNotification({
+              userId: booking.property.ownerId,
+              title: "Dispute Refund Deduction",
+              message: `A refund of ${data.refundAmount} NGN has been deducted from your wallet for dispute ${data.disputeId}.`,
+              type: "REFUND_PROCESSED",
+              data: { disputeId: data.disputeId, amount: data.refundAmount },
+            });
+          }
+        } else {
+          // No refund, release full amount to lister if still held
+          if (
+            booking.transactions.find(
+              (t) => t.id === booking.escrowTransactionId
+            )?.status === "HELD"
+          ) {
+            await tx.transaction.update({
+              where: { id: booking.escrowTransactionId! },
+              data: { status: "RELEASED" },
+            });
+
+            await this.walletService.updateBalance(
+              booking.property.ownerId,
+              booking.amount,
+              "ESCROW_RELEASE",
+              `Full release for dispute ${data.disputeId}`,
+              booking.escrowTransactionId!
+            );
+
+            // Notify lister
+            await this.notificationService.createNotification({
+              userId: booking.property.ownerId,
+              title: "Escrow Released",
+              message: `Funds of ${booking.amount} NGN for booking ${booking.id} have been released after dispute resolution.`,
+              type: "ESCROW_RELEASED",
+              data: { bookingId: booking.id, amount: booking.amount },
+            });
+          }
+        }
+
+        await tx.booking.update({
+          where: { id: dispute.bookingId },
+          data: {
+            status: data.status === "RESOLVED" ? "COMPLETED" : "CANCELLED",
+          },
+        });
+
+        // Notify both parties about dispute resolution
+        await this.notificationService.createNotification({
+          userId: booking.renterId,
+          title: "Dispute Resolved",
+          message: `Dispute ${data.disputeId} for booking ${dispute.bookingId} has been resolved: ${data.resolution}`,
+          type: "DISPUTE_RESOLVED",
+          data: { disputeId: data.disputeId, resolution: data.resolution },
+        });
+
+        await this.notificationService.createNotification({
+          userId: booking.property.ownerId,
+          title: "Dispute Resolved",
+          message: `Dispute ${data.disputeId} for booking ${dispute.bookingId} has been resolved: ${data.resolution}`,
+          type: "DISPUTE_RESOLVED",
+          data: { disputeId: data.disputeId, resolution: data.resolution },
+        });
+
+        return updatedDispute;
+      });
+    } catch (error) {
+      return this.handleError(error, "resolveDispute");
+    }
+  }
+}

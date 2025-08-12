@@ -62,7 +62,7 @@ export class PropertyRepository extends BaseRepository {
     // Record view for authenticated tenants only, and not for property owner
     if (
       user?.id &&
-      user.role === RoleEnum.TENANT &&
+      user.role === RoleEnum.RENTER &&
       property.ownerId !== user.id
     ) {
       logger.info(`Recording view for property ${id} by tenant ${user.id}`);
@@ -82,7 +82,7 @@ export class PropertyRepository extends BaseRepository {
     } else {
       if (!user?.id) {
         logger.info(`No view recorded - user not authenticated`);
-      } else if (user?.role !== RoleEnum.TENANT) {
+      } else if (user?.role !== RoleEnum.RENTER) {
         logger.info(
           `No view recorded - user ${user?.id} is not a tenant (role: ${user?.role})`
         );
@@ -288,13 +288,13 @@ export class PropertyRepository extends BaseRepository {
       this.prisma.propertyView.count({
         where: {
           propertyId,
-          user: { role: RoleEnum.TENANT }, // Only count tenant views
+          user: { role: RoleEnum.RENTER }, // Only count tenant views
         },
       }),
       this.prisma.propertyView.findMany({
         where: {
           propertyId,
-          user: { role: RoleEnum.TENANT }, // Only get tenant views
+          user: { role: RoleEnum.RENTER }, // Only get tenant views
         },
         include: {
           user: {

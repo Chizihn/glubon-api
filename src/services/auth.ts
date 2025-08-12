@@ -83,7 +83,7 @@ export class AuthService extends BaseService {
         lastName,
         password: hashedPassword as string,
         phoneNumber: phoneNumber || "",
-        role: role || RoleEnum.TENANT,
+        role: role || RoleEnum.RENTER,
         provider: provider || ProviderEnum.EMAIL,
       });
 

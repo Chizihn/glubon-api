@@ -21,21 +21,21 @@ import {
   PaginatedMessagesResponse,
   UnreadCountResponse,
   MessageSentPayload,
-} from "./chat.types";
-import { ChatService } from "../../services/chat";
+} from "./conversation.types";
+import { ConversationService } from "../../services/conversation";
 import {
   ConversationFilters,
   CreateConversationInput,
   MessageFilters,
   SendMessageInput,
-} from "./chat.inputs";
+} from "./conversation.inputs";
 
 @Resolver()
 export class ChatResolver {
-  private chatService: ChatService;
+  private conversationService: ConversationService;
 
   constructor() {
-    this.chatService = new ChatService(prisma, redis);
+    this.conversationService = new ConversationService(prisma, redis);
   }
 
   @Mutation(() => ConversationResponse)
@@ -44,7 +44,10 @@ export class ChatResolver {
     @Arg("input") input: CreateConversationInput,
     @Ctx() ctx: Context
   ): Promise<ConversationResponse> {
-    const result = await this.chatService.createConversation(input);
+    const result = await this.conversationService.createConversation({
+      ...input,
+      initiatorId: ctx.user!.id,
+    });
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
@@ -59,7 +62,7 @@ export class ChatResolver {
     @Arg("limit", { defaultValue: 20 }) limit: number,
     @Ctx() ctx: Context
   ): Promise<PaginatedConversationsResponse> {
-    const result = await this.chatService.getConversations(
+    const result = await this.conversationService.getConversations(
       { ...filters, userId: ctx.user!.id },
       page,
       limit
@@ -81,7 +84,7 @@ export class ChatResolver {
     @Arg("conversationId") conversationId: string,
     @Ctx() ctx: Context
   ): Promise<ConversationResponse> {
-    const result = await this.chatService.getConversationById(
+    const result = await this.conversationService.getConversationById(
       conversationId,
       ctx.user!.id
     );
@@ -100,7 +103,7 @@ export class ChatResolver {
     @Arg("limit", { defaultValue: 50 }) limit: number,
     @Ctx() ctx: Context
   ): Promise<PaginatedMessagesResponse> {
-    const result = await this.chatService.getMessages(
+    const result = await this.conversationService.getMessages(
       { ...filters, conversationId },
       page,
       limit
@@ -109,7 +112,7 @@ export class ChatResolver {
       throw new Error(result.message);
     }
     return new PaginatedMessagesResponse(
-      result.data.messages as MessageResponse[], // Type assertion to ensure compatibility
+      result.data.messages as MessageResponse[],
       page,
       limit,
       result.data.totalCount
@@ -122,7 +125,10 @@ export class ChatResolver {
     @Arg("input") input: SendMessageInput,
     @Ctx() ctx: Context
   ): Promise<MessageResponse> {
-    const result = await this.chatService.sendMessage(ctx.user!.id, input);
+    const result = await this.conversationService.sendMessage(
+      ctx.user!.id,
+      input
+    );
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
@@ -135,7 +141,7 @@ export class ChatResolver {
     @Arg("conversationId") conversationId: string,
     @Ctx() ctx: Context
   ): Promise<MarkAsReadResponse> {
-    const result = await this.chatService.markMessagesAsRead(
+    const result = await this.conversationService.markMessagesAsRead(
       conversationId,
       ctx.user!.id
     );
@@ -151,7 +157,7 @@ export class ChatResolver {
     @Arg("messageId") messageId: string,
     @Ctx() ctx: Context
   ): Promise<boolean> {
-    const result = await this.chatService.deleteMessage(
+    const result = await this.conversationService.deleteMessage(
       messageId,
       ctx.user!.id
     );
@@ -167,7 +173,7 @@ export class ChatResolver {
     @Arg("conversationId") conversationId: string,
     @Ctx() ctx: Context
   ): Promise<boolean> {
-    const result = await this.chatService.archiveConversation(
+    const result = await this.conversationService.archiveConversation(
       conversationId,
       ctx.user!.id
     );
@@ -182,7 +188,9 @@ export class ChatResolver {
   async getUnreadMessageCount(
     @Ctx() ctx: Context
   ): Promise<UnreadCountResponse> {
-    const result = await this.chatService.getUnreadMessageCount(ctx.user!.id);
+    const result = await this.conversationService.getUnreadMessageCount(
+      ctx.user!.id
+    );
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
@@ -198,7 +206,7 @@ export class ChatResolver {
     @Arg("limit", { defaultValue: 20 }) limit: number,
     @Ctx() ctx: Context
   ): Promise<PaginatedMessagesResponse> {
-    const result = await this.chatService.searchMessages(
+    const result = await this.conversationService.searchMessages(
       conversationId,
       ctx.user!.id,
       query,
@@ -209,7 +217,7 @@ export class ChatResolver {
       throw new Error(result.message);
     }
     return new PaginatedMessagesResponse(
-      result.data.messages as MessageResponse[], // Type assertion to ensure compatibility
+      result.data.messages as MessageResponse[],
       page,
       limit,
       result.data.totalCount
@@ -225,7 +233,7 @@ export class ChatResolver {
       payload: MessageSentPayload;
       context: Context;
     }) => {
-      return payload.recipientId === context.user?.id;
+      return payload.recipientIds.includes(context.user?.id ?? "");
     },
   })
   async messageSent(

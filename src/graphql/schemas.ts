@@ -8,7 +8,7 @@ import { appConfig } from "../config";
 import { PropertyResolver } from "../modules/property/property.resolver";
 import { AdminResolver } from "../modules/admin/admin.resolver";
 import { NotificationResolver } from "../modules/notification/notification.resolver";
-import { ChatResolver } from "../modules/chat/chat.resolver";
+import { ChatResolver } from "../modules/conversation/conversation.resolver";
 
 export async function createGraphQLSchema() {
   const pubSub = new PubSub() as any;

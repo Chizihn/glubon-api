@@ -1,5 +1,5 @@
 import { ProviderEnum, RoleEnum } from "@prisma/client";
-import { ObjectType, Field, registerEnumType } from "type-graphql";
+import { ObjectType, Field, registerEnumType, GraphQLISODateTime } from "type-graphql";
 import { User } from "../user/user.types";
 
 registerEnumType(RoleEnum, { name: "RoleEnum" });
@@ -13,7 +13,7 @@ export class AuthResponse {
   @Field(() => String)
   refreshToken: string;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   expiresAt: Date;
 
   @Field(() => User)
@@ -28,7 +28,7 @@ export class TokenResponse {
   @Field(() => String)
   refreshToken: string;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   expiresAt: Date;
 }
 

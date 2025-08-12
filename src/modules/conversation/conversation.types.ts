@@ -1,10 +1,10 @@
-import { ObjectType, Field, Int } from "type-graphql";
+import { ObjectType, Field, Int, GraphQLISODateTime } from "type-graphql";
 import { PaginatedResponse } from "../../types/responses";
 import { User } from "../user/user.types";
 import { MessageType } from "@prisma/client";
 
 import { registerEnumType } from "type-graphql";
-import { PropertyResponse } from "../property/property.types";
+import { Property } from "../property/property.types";
 
 registerEnumType(MessageType, {
   name: "MessageType",
@@ -35,7 +35,7 @@ export class MessageResponse {
   @Field(() => Boolean)
   isRead: boolean;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
   @Field(() => User)
@@ -47,35 +47,23 @@ export class ConversationResponse {
   @Field(() => String)
   id: string;
 
-  @Field(() => String)
-  propertyId: string;
-
-  @Field(() => String)
-  renterId: string;
-
-  @Field(() => String)
-  ownerId: string;
+  @Field(() => String, { nullable: true })
+  propertyId?: string;
 
   @Field(() => Boolean)
   isActive: boolean;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
-  @Field(() => Date)
+  @Field(() => GraphQLISODateTime)
   updatedAt: Date;
 
-  @Field(() => PropertyResponse)
-  property: PropertyResponse;
+  @Field(() => Property, { nullable: true })
+  property?: Property;
 
-  @Field(() => User)
-  renter: User;
-
-  @Field(() => User)
-  owner: User;
-
-  @Field(() => User)
-  participant: User;
+  @Field(() => [User])
+  participants: User[];
 
   @Field(() => MessageResponse, { nullable: true })
   lastMessage?: MessageResponse;
@@ -86,8 +74,6 @@ export class ConversationResponse {
 
 @ObjectType()
 export class PaginatedConversationsResponse extends PaginatedResponse<ConversationResponse> {
-  // ...existing code...
-
   constructor(
     items: ConversationResponse[],
     page: number,
@@ -101,8 +87,6 @@ export class PaginatedConversationsResponse extends PaginatedResponse<Conversati
 
 @ObjectType()
 export class PaginatedMessagesResponse extends PaginatedResponse<MessageResponse> {
-  // ...existing code...
-
   constructor(
     items: MessageResponse[],
     page: number,
@@ -134,6 +118,6 @@ export class MessageSentPayload {
   @Field(() => String)
   conversationId: string;
 
-  @Field(() => String)
-  recipientId: string;
+  @Field(() => [String])
+  recipientIds: string[]; // Changed to array for potential multi-user chats
 }
