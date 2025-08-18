@@ -278,9 +278,18 @@ export class BookingService extends BaseService {
     }
   }
 
-  async getUserBookings(userId: string, role?: RoleEnum) {
+  async getUserBookings(
+    targetUserId: string, 
+    currentUserRole?: RoleEnum,
+    currentUserId?: string
+  ) {
     try {
-      const bookings = await this.bookingRepo.findUserBookings(userId, role);
+      // If the requester is not an admin and is trying to access someone else's bookings
+      if (currentUserRole !== 'ADMIN' && currentUserId && currentUserId !== targetUserId) {
+        return this.failure('Unauthorized: You can only view your own bookings');
+      }
+      
+      const bookings = await this.bookingRepo.findUserBookings(targetUserId, currentUserRole);
       return this.success(bookings);
     } catch (error) {
       return this.handleError(error, "getUserBookings");

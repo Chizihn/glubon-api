@@ -67,9 +67,20 @@ export class BookingResolver {
 
   @Query(() => [Booking])
   @UseMiddleware(AuthMiddleware)
-  async getUserBookings(@Ctx() ctx: Context): Promise<Booking[]> {
+  async getUserBookings(
+    @Ctx() ctx: Context,
+    @Arg('userId', () => String, { nullable: true }) userId?: string
+  ): Promise<Booking[]> {
+    // If userId is provided, verify the requester is an admin
+    if (userId && ctx.user?.role !== 'ADMIN') {
+      throw new Error('Unauthorized: Only admins can view other users\' bookings');
+    }
+    
+    const targetUserId = userId || ctx.user!.id;
     const result = await this.bookingService.getUserBookings(
-      ctx.user!.id
+      targetUserId,
+      ctx.user?.role,
+      ctx.user?.id
     ) as ServiceResponse<Booking[]>;
     
     if (!result.success || !result.data) {

@@ -14,7 +14,7 @@ export const registerSchema = z.object({
     ),
   phoneNumber: z.string().optional(),
   role: z.nativeEnum(RoleEnum),
-  provider: z.nativeEnum(ProviderEnum).optional(),
+  provider: z.nativeEnum(ProviderEnum).optional().default(ProviderEnum.EMAIL),
 });
 
 export const loginSchema = z.object({

@@ -5,6 +5,7 @@ import {
   VerificationStatus,
   RoleEnum,
 } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
 import { Redis } from "ioredis";
 import { Prisma } from "@prisma/client";
 import {
@@ -342,27 +343,23 @@ export class AdminStatsRepository extends BaseRepository {
         by: ["state"],
         where: {
           role: { not: RoleEnum.ADMIN },
-          state: { not: null } as unknown as Prisma.StringFilter, // Type assertion to handle null check
+          state: { not: { in: [""] } },
         },
         _count: { id: true },
-        orderBy: { _count: { id: "desc" } },
-        take: 20,
       }),
       this.prisma.property.groupBy({
         by: ["state"],
         where: {
-          state: { not: null } as unknown as Prisma.StringFilter, // Type assertion to handle null check
+          state: { not: { in: [""] } },
           status: PropertyStatus.ACTIVE,
         },
         _count: { id: true },
-        orderBy: { _count: { id: "desc" } },
-        take: 20,
-      })
+      }),
     ]);
 
     // Define interface for state count results
     interface StateCount {
-      state: string | null;
+      state: string;
       _count: {
         id: number;
       };
@@ -412,9 +409,14 @@ export class AdminStatsRepository extends BaseRepository {
   async getActivityAnalytics(
     dateRange?: AnalyticsDateRange
   ): Promise<ActivityData[]> {
-    const startDate =
-      dateRange?.startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const endDate = dateRange?.endDate || new Date();
+    // Set default date range if not provided (last 7 days)
+    const startDate = dateRange?.startDate ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const endDate = dateRange?.endDate ?? new Date();
+
+    // Ensure dates are valid
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new Error('Invalid date range provided');
+    }
 
     const cacheKey = this.generateCacheKey(
       "admin",
@@ -563,8 +565,10 @@ export class AdminStatsRepository extends BaseRepository {
       // Average metrics
       this.prisma.property.aggregate({
         _avg: {
-          // This would need a computed field or separate tracking
-          // For now, we'll calculate it differently
+          amount: true,
+          bedrooms: true,
+          bathrooms: true,
+          sqft: true
         },
         where: { status: PropertyStatus.ACTIVE },
       }),
@@ -625,21 +629,19 @@ export class AdminStatsRepository extends BaseRepository {
     const cached = await this.getCache<RevenueData[]>(cacheKey);
     if (cached) return cached;
 
-    // Placeholder implementation - would integrate with actual payment/transaction system
-    const data: RevenueData[] = this.generateDateRange(startDate, endDate).map(
-      (date) => ({
-        date: new Date(date), // Ensure date is a Date object
-        revenue: 0,
-        transactions: 0,
-        subscriptions: 0,
-        commissions: 0,
-      })
-    );
+    // Generate date range and create placeholder data
+    const dateRangeArray = this.generateDateRange(startDate, endDate);
+    const data: RevenueData[] = dateRangeArray.map((date) => ({
+      date: new Date(date),
+      revenue: new Decimal(0),
+      transactions: 0,
+      subscriptions: 0,
+      commissions: new Decimal(0),
+    }));
 
-    await this.setCache(cacheKey, data, 3600);
+    await this.setCache(cacheKey, data, 3600); // Cache for 1 hour
     return data;
   }
-
   /**
    * Export analytics data
    */

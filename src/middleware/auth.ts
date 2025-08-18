@@ -14,6 +14,8 @@ export const AuthMiddleware: MiddlewareFn<Context> = async (
   }
   const authHeader = context.req.headers.authorization;
 
+  console.log("Auth header:", authHeader);
+
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     throw new UnauthorizedError("Invalid or missing authorization header");
   }

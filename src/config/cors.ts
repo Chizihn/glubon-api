@@ -6,7 +6,7 @@ export const corsConfig: CorsOptions = {
     ? true
     : [appConfig.frontendUrl, appConfig.apiUrl],
   credentials: true,
-  // methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   optionsSuccessStatus: 200,
   allowedHeaders: [
     "Origin",
@@ -14,5 +14,6 @@ export const corsConfig: CorsOptions = {
     "Content-Type",
     "Accept",
     "Authorization",
+    "apollo-require-preflight",
   ],
 };

@@ -18,8 +18,11 @@ export class CreateConversationInput {
 
 @InputType()
 export class SendMessageInput {
-  @Field(() => String)
-  conversationId: string;
+  @Field(() => String, { nullable: true })
+  conversationId?: string;
+
+  @Field(() => [String], { nullable: true })
+  recipientIds?: string[];
 
   @Field(() => String)
   content: string;
@@ -27,8 +30,11 @@ export class SendMessageInput {
   @Field(() => MessageType, { defaultValue: MessageType.TEXT })
   messageType: MessageType;
 
-  @Field(() => [String], { defaultValue: [] })
-  attachments: string[];
+  @Field(() => [String], { nullable: true, defaultValue: [] })
+  attachments?: string[];
+  
+  @Field(() => String, { nullable: true })
+  propertyId?: string;
 }
 
 @InputType()

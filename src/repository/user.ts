@@ -169,12 +169,14 @@ export class UserRepository extends BaseRepository {
         lastLogin: true,
         createdAt: true,
         updatedAt: true,
+
+
         _count: {
           select: {
             properties: true,
             propertyLikes: true,
             propertyViews: true,
-            conversations: true,
+            userConversations: true,
             notifications: true,
           },
         },
@@ -198,7 +200,7 @@ export class UserRepository extends BaseRepository {
             properties: true,
             propertyLikes: true,
             propertyViews: true,
-            conversations: true,
+            userConversations: true,
             notifications: { where: { isRead: false } },
           },
         },
@@ -211,7 +213,7 @@ export class UserRepository extends BaseRepository {
       propertiesCount: stats._count.properties,
       likedPropertiesCount: stats._count.propertyLikes,
       viewedPropertiesCount: stats._count.propertyViews,
-      conversationsCount: stats._count.conversations,
+      conversationsCount: stats._count.userConversations,
       unreadNotificationsCount: stats._count.notifications,
     };
 

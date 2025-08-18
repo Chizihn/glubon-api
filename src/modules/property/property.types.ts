@@ -2,6 +2,7 @@ import {
   ArgsType,
   Field,
   ObjectType,
+  InputType,
   Int,
   Float,
   registerEnumType,
@@ -17,6 +18,51 @@ import {
 } from "@prisma/client";
 import { User } from "../user/user.types";
 import { PaginationInfo } from "../../types";
+
+@InputType()
+export class MyPropertiesFilterInput {
+  @Field(() => PropertyStatus, { nullable: true })
+  status?: PropertyStatus;
+
+  @Field(() => PropertyType, { nullable: true })
+  propertyType?: PropertyType;
+
+  @Field(() => PropertyListingType, { nullable: true })
+  listingType?: PropertyListingType;
+
+  @Field(() => Float, { nullable: true })
+  minAmount?: number;
+
+  @Field(() => Float, { nullable: true })
+  maxAmount?: number;
+
+  @Field({ nullable: true })
+  city?: string;
+
+  @Field({ nullable: true })
+  state?: string;
+
+  @Field(() => Date, { nullable: true })
+  createdAfter?: Date;
+
+  @Field(() => Date, { nullable: true })
+  createdBefore?: Date;
+
+  @Field(() => Date, { nullable: true })
+  updatedAfter?: Date;
+}
+
+@ArgsType()
+export class GetMyPropertiesArgs {
+  @Field(() => Int, { defaultValue: 1 })
+  page: number;
+
+  @Field(() => Int, { defaultValue: 20 })
+  limit: number;
+
+  @Field(() => MyPropertiesFilterInput, { nullable: true })
+  filter?: MyPropertiesFilterInput;
+}
 
 registerEnumType(PropertyType, {
   name: "PropertyType",
@@ -47,8 +93,8 @@ registerEnumType(DayOfWeek, {
   name: "DayOfWeek",
   description: "Days of the week for property visits",
 });
-@ArgsType()
-export class GetPropertiesArgs {
+@InputType()
+export class PropertyFilterInput {
   @Field(() => Float, { nullable: true })
   minAmount?: number;
 
@@ -66,6 +112,9 @@ export class GetPropertiesArgs {
 
   @Field(() => RoomType, { nullable: true })
   roomType?: RoomType;
+
+  @Field(() => PropertyListingType, { nullable: true })
+  listingType?: PropertyListingType;
 
   @Field(() => Boolean, { nullable: true })
   isFurnished?: boolean;
@@ -96,6 +145,12 @@ export class GetPropertiesArgs {
 
   @Field(() => String, { nullable: true })
   search?: string;
+}
+
+@ArgsType()
+export class GetPropertiesArgs {
+  @Field(() => PropertyFilterInput, { nullable: true })
+  filter?: PropertyFilterInput;
 
   @Field(() => String, { nullable: true })
   sortBy?: string;
@@ -240,6 +295,32 @@ export class Property {
 
   @Field(() => Float, { nullable: true })
   distance?: number;
+
+  // Computed fields for frontend compatibility
+  @Field(() => String, { nullable: true })
+  get location(): string {
+    return `${this.address}, ${this.city}, ${this.state}, ${this.country}`;
+  }
+
+  @Field(() => String, { nullable: true })
+  get priceUnit(): string {
+    return 'NGN'; // Default currency
+  }
+
+  @Field(() => String, { nullable: true })
+  get pricePer(): string {
+    return this.rentalPeriod?.toLowerCase() || 'month';
+  }
+
+  @Field(() => String, { nullable: true })
+  get imageUrl(): string | null {
+    return this.images?.[0] || null;
+  }
+
+  @Field(() => String, { nullable: true })
+  get type(): string | null {
+    return this.propertyType?.toLowerCase() || null;
+  }
 }
 
 @ObjectType()

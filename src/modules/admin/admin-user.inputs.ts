@@ -4,6 +4,7 @@ import {
   InputType,
   Int,
   ObjectType,
+  registerEnumType,
 } from "type-graphql";
 import {
   PermissionEnum,
@@ -12,6 +13,11 @@ import {
   UserStatus,
 } from "@prisma/client";
 import { GraphQLJSONObject } from "graphql-type-json";
+
+registerEnumType(PermissionEnum, {
+  name: "PermissionEnum",
+  description: "Permissions for admin users",
+});
 
 @InputType()
 export class CreateAdminUserInput {
@@ -80,6 +86,28 @@ export class AdminUserFilters {
 
   @Field(() => UserStatus, { nullable: true })
   status?: UserStatus;
+
+  @Field(() => Boolean, { nullable: true })
+  isVerified?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  isActive?: boolean;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  createdAfter?: Date;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  createdBefore?: Date;
+
+  @Field(() => String, { nullable: true })
+  search?: string;
+}
+
+@InputType()
+export class AdminListFilters {
+
+  @Field(() => [PermissionEnum], { nullable: true })
+  permissions?: PermissionEnum[];
 
   @Field(() => Boolean, { nullable: true })
   isVerified?: boolean;

@@ -40,21 +40,83 @@ model User {
   propertyOwnershipProofs PropertyOwnershipProof[]
   verificationTokens      VerificationToken[]
   notifications           Notification[]
-  conversations           UserConversation[]
-  sentMessages            Message[]
+  userConversations       UserConversation[]     // Join table for User-Conversation relationship
+  sentMessages            Message[]              @relation("SentMessages")
   adminActionLogs         AdminActionLog[]
   transactions            Transaction[]
-  processedRefunds        Refund[]              @relation("ProcessedRefunds")
-  renterBookings          Booking[]             @relation("RenterBookings")
-  initiatedDisputes       Dispute[]             @relation("InitiatedDisputes")
+  processedRefunds        Refund[]               @relation("ProcessedRefunds")
+  renterBookings          Booking[]              @relation("RenterBookings")
+  initiatedDisputes       Dispute[]              @relation("InitiatedDisputes")
   createdAds              Ad[]
-  auditLogs               AuditLog[]            @relation("UserAuditLogs")
-  settingUpdates          PlatformSetting[]     @relation("SettingUpdates")
-  contentUpdates          ContentPage[]         @relation("ContentUpdates")
-  faqUpdates              FAQ[]                 @relation("FAQUpdates")
-  templateUpdates         EmailTemplate[]       @relation("TemplateUpdates")
+  auditLogs               AuditLog[]             @relation("UserAuditLogs")
+  settingUpdates          PlatformSetting[]      @relation("SettingUpdates")
+  contentUpdates          ContentPage[]          @relation("ContentUpdates")
+  faqUpdates              FAQ[]                  @relation("FAQUpdates")
+  templateUpdates         EmailTemplate[]        @relation("TemplateUpdates")
+  presence                UserPresence?
+  presenceHistory         UserPresenceHistory[]
 
   @@map("users")
+}
+
+model Conversation {
+  id            String             @id @default(uuid())
+  propertyId    String?
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  // Relations
+  property        Property?          @relation(fields: [propertyId], references: [id], onDelete: SetNull, name: "ConversationProperty")
+  participants    UserConversation[] // References User through join table
+  messages        Message[]
+
+  @@map("conversations")
+}
+
+model UserConversation {
+  id             String       @id @default(uuid())
+  userId         String
+  conversationId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime?
+  isArchived     Boolean      @default(false)
+  isMuted        Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([userId, conversationId])
+  @@map("user_conversations")
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id])
+  senderId       String
+  content        String
+  messageType    MessageType  @default(TEXT)
+  attachments    String[]     @default([])
+  isRead         Boolean      @default(false)
+  propertyId     String?
+  property       Property?    @relation(fields: [propertyId], references: [id], name: "MessageProperty")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("messages")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  DOCUMENT
+  LOCATION
+  SYSTEM
 }
 
 model ProviderAccount {
@@ -84,7 +146,7 @@ model Property {
   latitude              Float?
   longitude             Float?
   sqft                  Float?
-  bedrooms              Int
+  bedrooms              Int?
   bathrooms             Int
   propertyType          PropertyType
   roomType              RoomType
@@ -115,9 +177,33 @@ model Property {
   likes                   PropertyLike[]
   views                   PropertyView[]
   ownershipProofs         PropertyOwnershipProof[]
-  conversations           Conversation[]
+  conversations           Conversation[]           @relation("ConversationProperty") // Opposite relation for Conversation
+  messages                Message[]                @relation("MessageProperty")     // Opposite relation for Message
 
   @@map("properties")
+}
+
+model UserPresence {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  isOnline  Boolean  @default(false)
+  lastSeen  DateTime
+  socketId  String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("user_presence")
+}
+
+model UserPresenceHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  status    String   // 'online' or 'offline'
+  timestamp DateTime @default(now())
+  
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("user_presence_history")
 }
 
 model PropertyLike {
@@ -461,49 +547,6 @@ model EmailTemplate {
   @@map("email_templates")
 }
 
-model Conversation {
-  id         String    @id @default(uuid())
-  propertyId String?
-  isActive   Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  // Relations
-  property      Property?         @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  participants  UserConversation[]
-  messages      Message[]
-
-  @@map("conversations")
-}
-
-model UserConversation {
-  userId         String
-  conversationId String
-  joinedAt       DateTime @default(now())
-
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  @@id([userId, conversationId])
-  @@map("user_conversations")
-}
-
-model Message {
-  id             String      @id @default(uuid())
-  conversationId String
-  senderId       String
-  content        String
-  messageType    MessageType @default(TEXT)
-  attachments    String[]    @default([])
-  isRead         Boolean     @default(false)
-  createdAt      DateTime    @default(now())
-
-  // Relations
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
-
-  @@map("messages")
-}
 
 model Notification {
   id        String           @id @default(uuid())
@@ -748,14 +791,8 @@ enum ContentStatus {
   ARCHIVED
 }
 
-enum MessageType {
-  TEXT
-  IMAGE
-  DOCUMENT
-  SYSTEM
-}
-
 enum NotificationType {
+  EMAIL
   PROPERTY_APPROVED
   PROPERTY_REJECTED
   NEW_MESSAGE
@@ -771,6 +808,7 @@ enum NotificationType {
   PAYMENT_CONFIRMED
   PAYMENT_RECEIVED
   ESCROW_RELEASED
+  SYSTEM_AUTO_RELEASE
   DISPUTE_CREATED
   DISPUTE_RESOLVED
   REFUND_CREATED

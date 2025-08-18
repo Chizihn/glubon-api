@@ -1,5 +1,11 @@
 import { DisputeStatus } from "@prisma/client";
-import { Field, ID, InputType, Int } from "type-graphql";
+import { Field, ID, InputType, Int, registerEnumType } from "type-graphql";
+
+registerEnumType(DisputeStatus, {
+  name: "DisputeStatus",
+  description:
+    "The status of dispute",
+});
 
 @InputType()
 export class CreateDisputeInput {

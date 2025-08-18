@@ -49,7 +49,7 @@ export class AuthService extends BaseService {
         password,
         phoneNumber,
         role,
-        provider = ProviderEnum.EMAIL,
+        provider,
       } = input;
 
       if (role === RoleEnum.ADMIN) {
@@ -200,6 +200,87 @@ export class AuthService extends BaseService {
       return this.success(null, "Logout successful");
     } catch (error) {
       return this.handleError(error, "logout");
+    }
+  }
+
+  async resendVerificationEmail(email: string): Promise<ServiceResponse> {
+    try {
+      const user = await this.userRepository.findUserByEmail(email);
+
+      if (!user) {
+        // Don't reveal if user doesn't exist
+        return this.success(null, "If an account exists with this email, a verification email has been sent");
+      }
+
+      if (user.isVerified) {
+        return this.failure("Email is already verified");
+      }
+
+      await this.sendVerificationEmail(user);
+
+      return this.success(
+        null,
+        "If an account exists with this email, a verification email has been sent"
+      );
+    } catch (error) {
+      return this.handleError(error, "resendVerificationEmail");
+    }
+  }
+
+  async resendPasswordReset(email: string): Promise<ServiceResponse> {
+    try {
+      const user = await this.userRepository.findUserByEmail(email);
+
+      if (!user) {
+        // Don't reveal if user doesn't exist
+        return this.success(
+          null,
+          "If an account exists with this email, a password reset link has been sent"
+        );
+      }
+
+      // Generate reset token
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 3600000); // 1 hour
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+
+      // Invalidate any existing reset tokens
+      await this.prisma.verificationToken.updateMany({
+        where: {
+          userId: user.id,
+          type: TokenType.PASSWORD_RESET,
+          used: false,
+        },
+        data: {
+          used: true,
+        },
+      });
+
+      // Create new reset token
+      await this.prisma.verificationToken.create({
+        data: {
+          token: resetToken,
+          type: TokenType.PASSWORD_RESET,
+          userId: user.id,
+          email: user.email,
+          expiresAt,
+        },
+      });
+
+      // Send reset email with link
+      await this.emailService.sendVerificationCode(
+        user.email,
+        user.firstName,
+        resetLink, // This will be the reset link, not just the token
+        "password_reset"
+      );
+
+      return this.success(
+        null,
+        "If an account exists with this email, a password reset link has been sent"
+      );
+    } catch (error) {
+      return this.handleError(error, "resendPasswordReset");
     }
   }
 
@@ -659,26 +740,42 @@ export class AuthService extends BaseService {
     return { accessToken, refreshToken, expiresAt };
   }
 
+  private generateSixDigitCode(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
   private async sendVerificationEmail(user: User): Promise<void> {
     try {
-      // Generate verification token
-      const verificationToken = crypto.randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + 86400000); // 24 hours
+      // Generate 6-digit verification code
+      const verificationCode = this.generateSixDigitCode();
+      const expiresAt = new Date(Date.now() + 3600000); // 1 hour
 
-      // Save verification token
+      // Invalidate any existing verification codes
+      await this.prisma.verificationToken.updateMany({
+        where: {
+          userId: user.id,
+          type: TokenType.EMAIL_VERIFICATION,
+          used: false,
+        },
+        data: {
+          used: true,
+        },
+      });
+
+      // Save verification code
       await this.userRepository.createVerificationToken({
-        token: verificationToken,
+        token: verificationCode,
         type: TokenType.EMAIL_VERIFICATION,
         userId: user.id,
         email: user.email,
         expiresAt,
       });
 
-      // Send email
+      // Send email with 6-digit code
       await this.emailService.sendVerificationCode(
         user.email,
         user.firstName,
-        verificationToken,
+        verificationCode,
         "email_verification"
       );
     } catch (error) {

@@ -1,10 +1,12 @@
 import {
   PropertyStatus,
   PropertyType,
+  PropertyListingType,
   RentalPeriod,
   RoomType,
   DayOfWeek,
 } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
 import { FileUpload, GraphQLUpload } from "graphql-upload-ts";
 import { Field, InputType, Int, Float } from "type-graphql";
 
@@ -21,6 +23,9 @@ export class PropertyFilters {
 
   @Field(() => RoomType, { nullable: true })
   roomType?: RoomType;
+
+  @Field(() => PropertyListingType, { nullable: true })
+  listingType?: PropertyListingType;
 
   @Field(() => RentalPeriod, { nullable: true })
   rentalPeriod?: RentalPeriod;
@@ -76,35 +81,35 @@ export class PropertySortOptions {
 
 @InputType()
 export class CreatePropertyInput {
-  @Field()
+  @Field(() => String)
   title: string;
 
   @Field(() => String, { nullable: true })
   description?: string | null;
 
   @Field(() => Float)
-  amount: number;
+  amount: Decimal;
 
   @Field(() => RentalPeriod)
   rentalPeriod: RentalPeriod;
 
-  @Field()
+  @Field(() => String)
   address: string;
 
-  @Field()
+  @Field(() => String)
   city: string;
 
-  @Field()
+  @Field(() => String)
   state: string;
 
   @Field(() => Float, { nullable: true })
   sqft?: number | null;
 
-  @Field(() => Int)
-  bedrooms: number;
+  @Field(() => Int, { nullable: true })
+  bedrooms?: number | null;
 
-  @Field(() => Int)
-  bathrooms: number;
+  @Field(() => Int, { nullable: true })
+  bathrooms?: number | null;
 
   @Field(() => PropertyType)
   propertyType: PropertyType;
@@ -130,6 +135,9 @@ export class CreatePropertyInput {
   @Field(() => [String])
   amenities: string[];
 
+  @Field(() => PropertyListingType, { defaultValue: 'RENT' })
+  listingType: PropertyListingType;
+
   @Field(() => [GraphQLUpload], { nullable: true })
   files?: FileUpload[];
 }
@@ -143,7 +151,7 @@ export class UpdatePropertyInput {
   description?: string | null;
 
   @Field(() => Float, { nullable: true })
-  amount?: number | null;
+  amount?: Decimal | null;
 
   @Field(() => RentalPeriod, { nullable: true })
   rentalPeriod?: RentalPeriod | null;
@@ -189,6 +197,9 @@ export class UpdatePropertyInput {
 
   @Field(() => [String], { nullable: true })
   amenities?: string[];
+
+  @Field(() => PropertyListingType, { nullable: true })
+  listingType?: PropertyListingType;
 
   @Field(() => [GraphQLUpload], { nullable: true })
   files?: FileUpload[];

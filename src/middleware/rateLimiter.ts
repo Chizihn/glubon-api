@@ -1,86 +1,47 @@
-import type { Request, Response, NextFunction } from "express";
-import { redis } from "../config";
-import { logger } from "../utils";
+// ============================================================================
+// 📁 src/middleware/graphqlRateLimits.ts
+// ============================================================================
 
-// Create a custom rate limiter using Redis
-export class RedisRateLimiter {
-  private windowMs: number;
-  private maxRequests: number;
-  private keyGenerator: (req: Request) => string;
+import { GraphQLRedisRateLimiter } from "../utils/graphqlRedisRateLimiter";
 
-  constructor(
-    windowMs: number,
-    maxRequests: number,
-    keyGenerator?: (req: Request) => string
-  ) {
-    this.windowMs = windowMs;
-    this.maxRequests = maxRequests;
-    this.keyGenerator = keyGenerator || ((req) => req.ip || "unknown");
-  }
+// Convert your existing rate limiters to GraphQL versions
+export const graphqlGeneralRateLimiter = new GraphQLRedisRateLimiter(
+  "general",
+  15 * 60 * 1000, // 15 minutes
+  100 // 100 requests per 15 minutes
+);
 
-  async isAllowed(
-    req: Request
-  ): Promise<{ allowed: boolean; remaining: number; resetTime: number }> {
-    const key = `rate_limit:${this.keyGenerator(req)}`;
-    const now = Date.now();
-    const window = Math.floor(now / this.windowMs);
-    const windowKey = `${key}:${window}`;
+export const graphqlQueryRateLimiter = new GraphQLRedisRateLimiter(
+  "query",
+  60 * 1000, // 1 minute
+  50, // 50 queries per minute
+  (ctx, operation) => `query_${operation}_${ctx.user?.id || ctx.req!.ip}`
+);
 
-    try {
-      const current = await redis.incr(windowKey);
+export const graphqlMutationRateLimiter = new GraphQLRedisRateLimiter(
+  "mutation",
+  60 * 1000, // 1 minute
+  10, // 10 mutations per minute
+  (ctx, operation) => `mutation_${operation}_${ctx.user?.id || ctx.req!.ip}`
+);
 
-      if (current === 1) {
-        await redis.expire(windowKey, Math.ceil(this.windowMs / 1000));
-      }
+export const graphqlAuthRateLimiter = new GraphQLRedisRateLimiter(
+  "auth",
+  15 * 60 * 1000, // 15 minutes
+  10, // 10 auth requests per 15 minutes
+  (ctx, operation) => `auth_${operation}_${ctx.req!.ip}` // Use IP for auth (before user is authenticated)
+);
 
-      const remaining = Math.max(0, this.maxRequests - current);
-      const resetTime = (window + 1) * this.windowMs;
+export const graphqlSensitiveRateLimiter = new GraphQLRedisRateLimiter(
+  "sensitive",
+  5 * 60 * 1000, // 5 minutes
+  3, // 3 sensitive operations per 5 minutes
+  (ctx, operation) => `sensitive_${operation}_${ctx.user?.id}` // Must be authenticated
+);
 
-      return {
-        allowed: current <= this.maxRequests,
-        remaining,
-        resetTime,
-      };
-    } catch (error) {
-      logger.error("Rate limiter error:", error);
-      // Fail open - allow request if Redis is down
-      return {
-        allowed: true,
-        remaining: this.maxRequests,
-        resetTime: now + this.windowMs,
-      };
-    }
-  }
-
-  middleware() {
-    return async (req: Request, res: Response, next: NextFunction) => {
-      const result = await this.isAllowed(req);
-
-      res.set({
-        "X-RateLimit-Limit": this.maxRequests.toString(),
-        "X-RateLimit-Remaining": result.remaining.toString(),
-        "X-RateLimit-Reset": new Date(result.resetTime).toISOString(),
-      });
-
-      if (!result.allowed) {
-        return res.status(429).json({
-          success: false,
-          message: "Too many requests, please try again later",
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      return next();
-    };
-  }
-}
-
-// Default rate limiters
-export const generalRateLimiter = new RedisRateLimiter(15 * 60 * 1000, 100); // 100 requests per 15 minutes
-export const authRateLimiter = new RedisRateLimiter(15 * 60 * 1000, 10); // 10 auth requests per 15 minutes
-export const uploadRateLimiter = new RedisRateLimiter(60 * 60 * 1000, 20); // 20 uploads per hour
-
-// Express middleware
-export const rateLimiterMiddleware = generalRateLimiter.middleware();
-export const authRateLimiterMiddleware = authRateLimiter.middleware();
-export const uploadRateLimiterMiddleware = uploadRateLimiter.middleware();
+export const graphqlUploadRateLimiter = new GraphQLRedisRateLimiter(
+  "upload",
+  60 * 60 * 1000, // 1 hour
+  20, // 20 uploads per hour
+  (ctx, operation) => `upload_${ctx.user?.id || ctx.req!.ip}`
+);

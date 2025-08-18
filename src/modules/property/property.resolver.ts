@@ -15,6 +15,7 @@ import {
   PaginatedVisitorsResponse,
   Property,
   PropertyStatsResponse,
+  GetMyPropertiesArgs, // Added missing import
   // Property,
 } from "./property.types";
 import { PropertyFilters, UpdatePropertyInput } from "./property.inputs";
@@ -53,21 +54,22 @@ export class PropertyResolver {
     @Ctx() ctx: Context
   ): Promise<PaginatedPropertiesResponse> {
     const filters: ServicePropertyFilters = {
-      minAmount: args.minAmount,
-      maxAmount: args.maxAmount,
-      bedrooms: args.bedrooms ?? undefined,
-      bathrooms: args.bathrooms ?? undefined,
-      propertyType: args.propertyType,
-      roomType: args.roomType,
-      isFurnished: args.isFurnished ?? undefined,
-      isForStudents: args.isForStudents ?? undefined,
-      city: args.city,
-      state: args.state,
-      amenities: args.amenities,
-      latitude: args.latitude,
-      longitude: args.longitude,
-      radiusKm: args.radiusKm,
-      status: args.status,
+      minAmount: args.filter?.minAmount,
+      maxAmount: args.filter?.maxAmount,
+      bedrooms: args.filter?.bedrooms,
+      bathrooms: args.filter?.bathrooms,
+      propertyType: args.filter?.propertyType,
+      roomType: args.filter?.roomType,
+      listingType: args.filter?.listingType,
+      isFurnished: args.filter?.isFurnished,
+      isForStudents: args.filter?.isForStudents,
+      city: args.filter?.city,
+      state: args.filter?.state,
+      amenities: args.filter?.amenities,
+      latitude: args.filter?.latitude,
+      longitude: args.filter?.longitude,
+      radiusKm: args.filter?.radiusKm,
+      status: args.filter?.status,
     };
 
     const options: PropertySearchOptions = {
@@ -75,7 +77,7 @@ export class PropertyResolver {
       limit: args.limit,
       sortBy: args.sortBy as any,
       sortOrder: args.sortOrder as any,
-      search: args.search ?? undefined,
+      search: args.filter?.search,
     };
 
     const result = await this.propertyService.getProperties(
@@ -155,27 +157,50 @@ export class PropertyResolver {
   @Query(() => PaginatedPropertiesResponse)
   @UseMiddleware(AuthMiddleware)
   async getMyProperties(
-    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
-    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
-    @Arg("status", () => PropertyStatus, { nullable: true })
-    status: PropertyStatus,
+    @Args() args: GetMyPropertiesArgs,
     @Ctx() ctx: Context
   ): Promise<PaginatedPropertiesResponse> {
-    const options: PropertySearchOptions = { page, limit };
+    const options: PropertySearchOptions = {
+      page: args.page,
+      limit: args.limit,
+      filters: args.filter ? {
+        status: args.filter.status,
+        propertyType: args.filter.propertyType,
+        listingType: args.filter.listingType,
+        minAmount: args.filter.minAmount,
+        maxAmount: args.filter.maxAmount,
+        city: args.filter.city,
+        state: args.filter.state,
+        createdAfter: args.filter.createdAfter,
+        createdBefore: args.filter.createdBefore,
+        updatedAfter: args.filter.updatedAfter,
+      } : undefined,
+    };
 
     const result = await this.propertyService.getMyProperties(
       ctx.user!.id,
       options
     );
-    if (!result.success) throw new Error(result.message);
+    
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to fetch properties');
+    }
 
-    const data = result.data!;
+    const { properties, totalCount, pagination } = result.data!;
+    
+    // Transform each property using the existing transform method
+    const transformedProperties = properties.map(property => 
+      this.transformPropertyToResponse(property)
+    );
+
     return {
-      properties: data.properties.map(
-        this.transformPropertyToResponse.bind(this)
-      ),
-      totalCount: data.totalCount,
-      pagination: data.pagination,
+      properties: transformedProperties,
+      totalCount,
+      pagination: {
+        ...pagination,
+        hasNextPage: pagination.page < pagination.totalPages,
+        hasPreviousPage: pagination.page > 1,
+      },
     };
   }
 
@@ -202,6 +227,24 @@ export class PropertyResolver {
       totalCount: data.totalCount,
       pagination: data.pagination,
     };
+  }
+
+  @Query(() => PaginatedVisitorsResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
+  async getPropertiesVisitors(
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedVisitorsResponse> {
+    const options: PropertySearchOptions = { page, limit };
+
+    const result = await this.propertyService.getPropertiesVisitors(
+      ctx.user!.id,
+      options
+    );
+    if (!result.success) throw new Error(result.message);
+
+    return result.data!;
   }
 
   @Query(() => PaginatedVisitorsResponse)

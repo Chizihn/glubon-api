@@ -39,6 +39,7 @@ export class PaystackService extends BaseService {
     }
   }
 
+
   async initializePayment(
     email: string,
     amount: number,

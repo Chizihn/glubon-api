@@ -12,6 +12,7 @@ import {
   PropertyWithDetails,
   PropertySortByEnum,
   SortOrder,
+  CreatePropertyInput,
 } from "../types/services/properties";
 import { BaseRepository } from "./base";
 import { logger } from "../utils";
@@ -175,6 +176,7 @@ export class PropertyRepository extends BaseRepository {
       limit = 10,
       sortBy = PropertySortByEnum.CREATED_AT,
       sortOrder = SortOrder.DESC,
+      filters,
     } = options;
     const { skip, limit: validatedLimit } = this.validatePagination(
       page,
@@ -193,7 +195,37 @@ export class PropertyRepository extends BaseRepository {
     }>(cacheKey);
     if (cached) return cached;
 
-    const where = { ownerId };
+    // Build the where clause with filters
+    const where: any = { ownerId };
+    
+    // Apply filters if they exist
+    if (filters) {
+      if (filters.status) where.status = filters.status;
+      if (filters.propertyType) where.propertyType = filters.propertyType;
+      if (filters.listingType) where.listingType = filters.listingType;
+      
+      // Handle amount range
+      if (filters.minAmount || filters.maxAmount) {
+        where.amount = {};
+        if (filters.minAmount) where.amount.gte = filters.minAmount;
+        if (filters.maxAmount) where.amount.lte = filters.maxAmount;
+      }
+      
+      // Handle location filters
+      if (filters.city) where.city = { contains: filters.city, mode: 'insensitive' };
+      if (filters.state) where.state = { contains: filters.state, mode: 'insensitive' };
+      
+      // Handle date filters
+      if (filters.createdAfter) where.createdAt = { gte: filters.createdAfter };
+      if (filters.createdBefore) {
+        where.createdAt = {
+          ...(where.createdAt as object || {}),
+          lte: filters.createdBefore
+        };
+      }
+      if (filters.updatedAfter) where.updatedAt = { gte: filters.updatedAfter };
+    }
+    
     const orderBy = this.buildOrderBy(sortBy, sortOrder);
 
     const [totalCount, properties] = await Promise.all([
@@ -259,6 +291,103 @@ export class PropertyRepository extends BaseRepository {
     const result = { properties, totalCount };
     await this.setCache(cacheKey, result, 300);
     return result;
+  }
+
+  async findAllVisitors(
+    ownerId: string,
+    options: PropertySearchOptions
+  ): Promise<{
+    visitors: any[];
+    totalCount: number;
+  }> {
+    const { page = 1, limit = 10 } = options;
+    const { skip, limit: validatedLimit } = this.validatePagination(
+      page,
+      limit
+    );
+
+    // Get all properties owned by the lister
+    const properties = await this.prisma.property.findMany({
+      where: { ownerId },
+      select: { id: true },
+    });
+
+    const propertyIds = properties.map((p) => p.id);
+
+    if (propertyIds.length === 0) {
+      return { visitors: [], totalCount: 0 };
+    }
+
+    const [totalCount, views] = await Promise.all([
+      this.prisma.propertyView.count({
+        where: {
+          propertyId: { in: propertyIds },
+          user: { role: RoleEnum.RENTER }, // Only count tenant views
+        },
+      }),
+      this.prisma.propertyView.findMany({
+        where: {
+          propertyId: { in: propertyIds },
+          user: { role: RoleEnum.RENTER }, // Only get tenant views
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phoneNumber: true,
+              profilePic: true,
+              role: true,
+              status: true,
+              address: true,
+              city: true,
+              state: true,
+              country: true,
+              createdAt: true,
+              updatedAt: true,
+              lastLogin: true,
+            },
+          },
+          property: {
+            select: {
+              id: true,
+              title: true,
+              address: true,
+              city: true,
+              state: true,
+            },
+          },
+        },
+        orderBy: { viewedAt: "desc" },
+        skip,
+        take: validatedLimit,
+      }),
+    ]);
+
+    const visitors = views.map((view) => ({
+      user: {
+        ...view.user,
+        phoneNumber: view.user.phoneNumber ?? null,
+        profilePic: view.user.profilePic ?? null,
+        address: view.user.address ?? null,
+        city: view.user.city ?? null,
+        state: view.user.state ?? null,
+        country: view.user.country ?? null,
+        lastLogin: view.user.lastLogin ?? null,
+      },
+      property: {
+        id: view.property.id,
+        title: view.property.title,
+        address: view.property.address,
+        city: view.property.city,
+        state: view.property.state,
+      },
+      viewedAt: view.viewedAt,
+    }));
+
+    return { visitors, totalCount };
   }
 
   async findVisitors(
@@ -686,6 +815,7 @@ export class PropertyRepository extends BaseRepository {
     if (filters.bathrooms) where.bathrooms = filters.bathrooms;
     if (filters.propertyType) where.propertyType = filters.propertyType;
     if (filters.roomType) where.roomType = filters.roomType;
+    if (filters.listingType) where.listingType = filters.listingType;
     if (filters.isFurnished !== undefined)
       where.isFurnished = filters.isFurnished;
     if (filters.isForStudents !== undefined)

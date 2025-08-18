@@ -3,6 +3,7 @@ import {
   DayOfWeek,
   PropertyStatus,
   PropertyType,
+  PropertyListingType,
   RentalPeriod,
   RoomType,
 } from "@prisma/client";
@@ -59,6 +60,18 @@ export const propertySearchSchema = z.object({
     .enum(["createdAt", "updatedAt", "amount", "bedrooms", "bathrooms"])
     .default("createdAt"),
   sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  filters: z.object({
+    status: z.nativeEnum(PropertyStatus).optional(),
+    propertyType: z.nativeEnum(PropertyType).optional(),
+    listingType: z.nativeEnum(PropertyListingType).optional(),
+    minAmount: z.number().positive().optional(),
+    maxAmount: z.number().positive().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    createdAfter: z.date().optional(),
+    createdBefore: z.date().optional(),
+    updatedAfter: z.date().optional(),
+  }).optional(),
 });
 
 export type CreatePropertyInput = z.infer<typeof createPropertySchema>;

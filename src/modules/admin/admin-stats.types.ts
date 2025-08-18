@@ -357,8 +357,8 @@ export class RevenueData {
   @Field(() => GraphQLISODateTime)
   date: Date;
 
-  @Field(() => Decimal)
-  revenue: number;
+  @Field(() => Float)
+  revenue: Decimal;
 
   @Field(() => Int)
   transactions: number;
@@ -366,6 +366,6 @@ export class RevenueData {
   @Field(() => Int)
   subscriptions: number;
 
-  @Field(() => Decimal)
-  commissions: number;
+  @Field(() => Float)
+  commissions: Decimal;
 }

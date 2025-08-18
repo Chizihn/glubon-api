@@ -4,9 +4,11 @@ import {
   Property,
   PropertyStatus,
   PropertyType,
+  PropertyListingType,
   RentalPeriod,
   RoomType,
 } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
 
 export enum PropertySortByEnum {
   CREATED_AT = "CREATED_AT",
@@ -25,14 +27,14 @@ export enum SortOrder {
 export interface CreatePropertyInput {
   title: string;
   description?: string | null;
-  amount: number;
+  amount: Decimal;
   rentalPeriod: RentalPeriod;
   address: string;
   city: string;
   state: string;
   sqft?: number | null;
-  bedrooms: number;
-  bathrooms: number;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
   propertyType: PropertyType;
   roomType: RoomType;
   isFurnished: boolean;
@@ -41,12 +43,13 @@ export interface CreatePropertyInput {
   visitingTimeStart?: string | null;
   visitingTimeEnd?: string | null;
   amenities: string[];
+  
 }
 
 export interface UpdatePropertyInput {
   title?: string | null;
   description?: string | null | undefined;
-  amount?: number | null;
+  amount?: Decimal | null;
   rentalPeriod?: RentalPeriod | null;
   address?: string | null;
   city?: string | null;
@@ -71,6 +74,7 @@ export interface PropertyFilters {
   bathrooms?: number | undefined;
   propertyType?: PropertyType | undefined;
   roomType?: RoomType | undefined;
+  listingType?: PropertyListingType | undefined;
   isFurnished?: boolean | undefined;
   isForStudents?: boolean | undefined;
   city?: string | undefined;
@@ -88,6 +92,18 @@ export interface PropertySearchOptions {
   sortBy?: PropertySortByEnum | undefined;
   sortOrder?: SortOrder | undefined;
   search?: string | undefined;
+  filters?: {
+    status?: PropertyStatus | undefined;
+    propertyType?: PropertyType | undefined;
+    listingType?: PropertyListingType | undefined;
+    minAmount?: number | undefined;
+    maxAmount?: number | undefined;
+    city?: string | undefined;
+    state?: string | undefined;
+    createdAfter?: Date | undefined;
+    createdBefore?: Date | undefined;
+    updatedAfter?: Date | undefined;
+  } | undefined;
 }
 
 export interface PropertyWithDetails extends Property {

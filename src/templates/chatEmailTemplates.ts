@@ -18,9 +18,6 @@ export class ChatEmailTemplates {
         <p>You've received a new message from <strong>${senderName}</strong> regarding the property <strong>${propertyTitle}</strong>.</p>
         
         <div style="background: #f8fafc; border-left: 4px solid #1d4ed8; padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0;">
-          <p><strong>${senderName}:</strong></p>
-          <p>${messagePreview}</p>
-        </div>
         
         <p>Please log in to your account to view and respond to this message.</p>
       `,
@@ -35,7 +32,7 @@ export class ChatEmailTemplates {
     });
 
     return {
-      subject: `New message from ${senderName} about ${propertyTitle}`,
+      subject: `New message from ${senderName} about your property`,
       html,
       text: `Hello ${recipientName},\n\nYou've received a new message from ${senderName} about the property "${propertyTitle}":\n\n${messagePreview}\n\nView and respond: ${chatUrl}`
     };
@@ -56,10 +53,7 @@ export class ChatEmailTemplates {
         <h2>Hello ${ownerName},</h2>
         <p>You've received a new inquiry for your property <strong>${propertyTitle}</strong> from ${inquirerName}.</p>
         
-        <div style="background: #f8fafc; border-left: 4px solid #1d4ed8; padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0;">
-          <p><strong>Message from ${inquirerName}:</strong></p>
-          <p>${inquiryMessage}</p>
-        </div>
+
         
         <p>Please respond promptly to increase your chances of securing a rental agreement.</p>
       `,
@@ -74,7 +68,7 @@ export class ChatEmailTemplates {
     });
 
     return {
-      subject: `New inquiry for ${propertyTitle} from ${inquirerName}`,
+      subject: `New inquiry for your property from ${inquirerName}`,
       html,
       text: `Hello ${ownerName},\n\nYou've received a new inquiry for your property "${propertyTitle}" from ${inquirerName}:\n\n${inquiryMessage}\n\nRespond now: ${chatUrl}`
     };

@@ -19,6 +19,7 @@ import { User } from "../user/user.types";
 import { Property } from "../property/property.types";
 import { PaginatedResponse } from "../../types";
 import { Dispute } from "../dispute/dispute.types";
+import { Transaction } from "../transaction/transaction.types";
 
 // Register enums for GraphQL
 registerEnumType(BookingStatus, { name: "BookingStatus" });
@@ -29,62 +30,7 @@ registerEnumType(TransactionType, { name: "TransactionType" });
 registerEnumType(RefundStatus, { name: "RefundStatus" });
 registerEnumType(PaymentGateway, { name: "PaymentGateway" });
 
-@ObjectType()
-export class Wallet {
-  @Field(() => ID)
-  id: string;
 
-  @Field(() => ID)
-  userId: string;
-
-  @Field(() => Float)
-  balance: number;
-
-  @Field()
-  currency: string;
-
-  @Field()
-  createdAt: Date;
-
-  @Field()
-  updatedAt: Date;
-
-  @Field(() => [WalletTransaction], { nullable: true })
-  walletTransactions?: WalletTransaction[];
-}
-
-@ObjectType()
-export class WalletTransaction {
-  @Field(() => ID)
-  id: string;
-
-  @Field(() => ID)
-  walletId: string;
-
-  @Field(() => Float)
-  amount: number;
-
-  @Field(() => WalletTransactionType)
-  type: WalletTransactionType;
-
-  @Field(() => TransactionStatus)
-  status: TransactionStatus;
-
-  @Field()
-  reference: string;
-
-  @Field({ nullable: true })
-  description?: string;
-
-  @Field(() => ID, { nullable: true })
-  relatedTransactionId?: string;
-
-  @Field()
-  createdAt: Date;
-
-  @Field()
-  updatedAt: Date;
-}
 
 @ObjectType()
 export class Booking {
@@ -131,82 +77,6 @@ export class Booking {
   disputes?: Dispute[];
 }
 
-
-
-@ObjectType()
-export class Transaction {
-  @Field(() => ID)
-  id: string;
-
-  @Field(() => TransactionType)
-  type: TransactionType;
-
-  @Field(() => Float)
-  amount: number;
-
-  @Field()
-  currency: string;
-
-  @Field(() => TransactionStatus)
-  status: TransactionStatus;
-
-  @Field()
-  reference: string;
-
-  @Field()
-  description: string;
-
-  @Field(() => ID, { nullable: true })
-  userId?: string;
-
-  @Field(() => ID, { nullable: true })
-  propertyId?: string;
-
-  @Field(() => ID, { nullable: true })
-  adId?: string;
-
-  @Field(() => ID, { nullable: true })
-  bookingId?: string;
-
-  @Field(() => String, { nullable: true })
-  metadata?: any;
-
-  @Field({ nullable: true })
-  paymentMethod?: string;
-
-  @Field(() => PaymentGateway, { nullable: true })
-  gateway?: PaymentGateway;
-
-  @Field({ nullable: true })
-  gatewayRef?: string;
-
-  @Field({ nullable: true })
-  failureReason?: string;
-
-  @Field({ nullable: true })
-  processedAt?: Date;
-
-  @Field()
-  createdAt: Date;
-
-  @Field()
-  updatedAt: Date;
-
-  @Field(() => User, { nullable: true })
-  user?: User;
-
-  @Field(() => Property, { nullable: true })
-  property?: Property;
-
-  //   @Field(() => Ad, { nullable: true })
-  //   ad?: Ad;
-
-  @Field(() => Booking, { nullable: true })
-  booking?: Booking;
-
-  @Field(() => [Refund], { nullable: true })
-  refunds?: Refund[];
-}
 
 @ObjectType()
 export class Refund {

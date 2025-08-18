@@ -12,10 +12,10 @@ import { createServices } from "./services";
 import { appConfig, corsConfig, prisma, redis } from "./config";
 import { createApolloServer } from "./graphql/server";
 import { createWebSocketServer } from "./graphql/websocket";
-import { rateLimiterMiddleware } from "./middleware/rateLimiter";
 import { graphqlUploadExpress } from "graphql-upload-ts";
 import { createGraphQLContext } from "./graphql/context";
 import { logger } from "./utils";
+import "./jobs/escrow-release"; // Import the escrow release worker
 
 import { oauthRestRouter } from "./modules/auth";
 import { upload } from "./middleware/multer";
@@ -59,12 +59,19 @@ export async function createApp() {
     // CORS
     app.use(cors(corsConfig));
 
-    // Rate limiting
-    // app.use(rateLimiterMiddleware);
-
     // Body parsing
+
     app.use(express.json({ limit: "10mb" }));
     app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+    // app.use((req, res, next) => {
+    //   if (req.path === "/graphql") {
+    //     return next(); // Skip JSON and URL-encoded parsing for GraphQL
+    //   }
+    //   express.json({ limit: "10mb" })(req, res, () => {
+    //     express.urlencoded({ extended: true, limit: "10mb" })(req, res, next);
+    //   });
+    // });
 
     // OAuth REST endpoints
     app.use("/api/oauth", oauthRestRouter);
@@ -89,18 +96,17 @@ export async function createApp() {
       });
     });
 
+    // app.use(upload);
+
+    // GraphQL endpoint
+    
     app.use(
+      "/graphql",
       graphqlUploadExpress({
         maxFileSize: 50 * 1024 * 1024,
         maxFiles: 21,
         overrideSendResponse: false,
-      })
-    );
-    app.use(upload);
-
-    // GraphQL endpoint
-    app.use(
-      "/graphql",
+      }),
       expressMiddleware(apolloServer, {
         context: async ({ req }) => {
           return createGraphQLContext(services, req);

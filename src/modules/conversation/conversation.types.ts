@@ -1,5 +1,5 @@
 import { ObjectType, Field, Int, GraphQLISODateTime } from "type-graphql";
-import { PaginatedResponse } from "../../types/responses";
+import { PaginatedResponse, PaginationInfo } from "../../types/responses";
 import { User } from "../user/user.types";
 import { MessageType } from "@prisma/client";
 
@@ -38,17 +38,17 @@ export class MessageResponse {
   @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
-  @Field(() => User)
+  @Field(() => User, { nullable: true })
   sender: User;
+  
+  @Field(() => Property, { nullable: true })
+  property?: Property;
 }
 
 @ObjectType()
 export class ConversationResponse {
   @Field(() => String)
   id: string;
-
-  @Field(() => String, { nullable: true })
-  propertyId?: string;
 
   @Field(() => Boolean)
   isActive: boolean;
@@ -58,9 +58,6 @@ export class ConversationResponse {
 
   @Field(() => GraphQLISODateTime)
   updatedAt: Date;
-
-  @Field(() => Property, { nullable: true })
-  property?: Property;
 
   @Field(() => [User])
   participants: User[];
@@ -73,28 +70,40 @@ export class ConversationResponse {
 }
 
 @ObjectType()
-export class PaginatedConversationsResponse extends PaginatedResponse<ConversationResponse> {
+export class PaginatedConversationsResponse {
+  @Field(() => [ConversationResponse])
+  items: ConversationResponse[];
+
+  @Field(() => PaginationInfo)
+  pagination: PaginationInfo;
+
   constructor(
     items: ConversationResponse[],
     page: number,
     limit: number,
     totalItems: number
   ) {
-    super(items, page, limit, totalItems);
     this.items = items;
+    this.pagination = new PaginationInfo(page, limit, totalItems);
   }
 }
 
 @ObjectType()
-export class PaginatedMessagesResponse extends PaginatedResponse<MessageResponse> {
+export class PaginatedMessagesResponse {
+  @Field(() => [MessageResponse])
+  items: MessageResponse[];
+
+  @Field(() => PaginationInfo)
+  pagination: PaginationInfo;
+
   constructor(
     items: MessageResponse[],
     page: number,
     limit: number,
     totalItems: number
   ) {
-    super(items, page, limit, totalItems);
     this.items = items;
+    this.pagination = new PaginationInfo(page, limit, totalItems);
   }
 }
 
@@ -121,3 +130,5 @@ export class MessageSentPayload {
   @Field(() => [String])
   recipientIds: string[]; // Changed to array for potential multi-user chats
 }
+
+

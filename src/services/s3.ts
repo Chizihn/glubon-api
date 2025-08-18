@@ -7,8 +7,12 @@ import { BaseService } from "./base";
 import { PrismaClient } from "@prisma/client";
 import Redis from "ioredis";
 
+interface FileWithOptionalStream extends Omit<Express.Multer.File, 'stream'> {
+  stream?: NodeJS.ReadableStream;
+}
+
 export interface FileUpload {
-  file: Express.Multer.File;
+  file: FileWithOptionalStream;
   type: "image" | "video" | "document";
   category: string; // Now allows any category, not just property-centric
 }

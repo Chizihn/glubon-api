@@ -1,7 +1,14 @@
-import { Field, ObjectType, InputType, Int, ID, GraphQLISODateTime } from "type-graphql";
+import { Field, ObjectType, InputType, Int, ID, GraphQLISODateTime, registerEnumType } from "type-graphql";
 import { Booking, Refund } from "../booking/booking.types";
 import { User } from "../user/user.types";
 import { DisputeStatus } from "@prisma/client";
+import { PaginationMeta } from "../../types";
+
+registerEnumType(DisputeStatus, {
+  name: "DisputeStatus",
+  description:
+    "The status of dispute",
+});
 
 @ObjectType()
 export class Dispute {
@@ -14,16 +21,16 @@ export class Dispute {
   @Field(() => ID)
   initiatorId: string;
 
-  @Field()
+  @Field(() => String)
   reason: string;
 
-  @Field()
+  @Field(() => String)
   description: string;
 
   @Field(() => DisputeStatus)
   status: DisputeStatus;
 
-  @Field()
+  @Field(() => String)
   resolution: string;
 
   @Field(() => GraphQLISODateTime, { nullable: true })
@@ -35,10 +42,10 @@ export class Dispute {
   @Field(() => ID, { nullable: true })
   parentDispute?: string | null;
 
-  @Field()
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
-  @Field()
+  @Field(() => GraphQLISODateTime)
   updatedAt: Date;
 
   @Field(() => Booking)
@@ -66,32 +73,18 @@ export class PaginatedDisputes {
   meta!: PaginationMeta;
 }
 
-@ObjectType()
-export class PaginationMeta {
-  @Field(() => Int)
-  total!: number;
-
-  @Field(() => Int)
-  page!: number;
-
-  @Field(() => Int)
-  limit!: number;
-
-  @Field(() => Int)
-  totalPages!: number;
-}
 
 @InputType()
 export class DisputeFilterInput {
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   initiatorId?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   bookingId?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   startDate?: Date;
 
-  @Field({ nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   endDate?: Date;
 }

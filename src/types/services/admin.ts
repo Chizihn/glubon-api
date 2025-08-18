@@ -7,6 +7,7 @@ import {
   User,
   Property,
 } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
 
 // Base filters and inputs
 export interface AdminUserFilters {
@@ -25,14 +26,14 @@ export interface AdminUserFilters {
   sortOrder?: "asc" | "desc";
 }
 
-export interface AdminListFilters {
-  permissions?: PermissionEnum[];
-  isActive?: boolean;
-  status?: UserStatus;
-  search?: string;
-  createdAfter?: Date;
-  createdBefore?: Date;
-}
+  export interface AdminListFilters {
+    permissions?: PermissionEnum[];
+    isActive?: boolean;
+    status?: UserStatus;
+    search?: string;
+    createdAfter?: Date;
+    createdBefore?: Date;
+  }
 
 export interface AdminPropertyFilters {
   status?: PropertyStatus;
@@ -166,10 +167,10 @@ export interface ActivityData {
 
 export interface RevenueData {
   date: Date;
-  revenue: number;
+  revenue: Decimal;
   transactions: number;
   subscriptions: number;
-  commissions: number;
+  commissions: Decimal;
 }
 
 export interface GeographicData {

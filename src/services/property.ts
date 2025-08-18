@@ -62,6 +62,7 @@ export class PropertyService extends BaseService {
         `${input.address}, ${input.city}, ${input.state}, Nigeria`
       );
 
+
       const property = await this.repository.create({
         ...input,
         ...s3UploadResult,
@@ -70,11 +71,13 @@ export class PropertyService extends BaseService {
         visitingDays: input.visitingDays ?? [],
         visitingTimeStart: input.visitingTimeStart ?? null,
         visitingTimeEnd: input.visitingTimeEnd ?? null,
-        ownerId,
         latitude: coordinates?.latitude ?? null,
         longitude: coordinates?.longitude ?? null,
         country: "Nigeria",
-        status: PropertyStatus.DRAFT,
+        status: PropertyStatus.PENDING_REVIEW,
+        owner: {
+          connect: { id: ownerId },
+        },
       });
 
       return this.success(property, "Property created successfully");
@@ -144,33 +147,52 @@ export class PropertyService extends BaseService {
   }
 
   private async mapGraphQLFilesToS3Files(
-    files: FileUpload[]
+    files: any[]
   ): Promise<FileUpload[]> {
     return Promise.all(
       files.map(async (file: any) => {
-        const { createReadStream, filename, mimetype, encoding } = await file;
-        const stream = createReadStream();
-        const chunks: Buffer[] = [];
-        for await (const chunk of stream) {
-          chunks.push(chunk);
-        }
-        const buffer = Buffer.concat(chunks);
-        return {
-          file: {
-            fieldname: "file",
+        try {
+          const { createReadStream, filename, mimetype, encoding } = await file;
+          const stream = createReadStream();
+          const chunks: Buffer[] = [];
+          
+          // Read the stream into a buffer
+          for await (const chunk of stream) {
+            chunks.push(Buffer.from(chunk));
+          }
+          const buffer = Buffer.concat(chunks);
+
+          // Get file type and category
+          const fileType = this.getFileType(mimetype);
+          const category = this.getFileCategory(filename);
+
+          // Create a file object that matches our S3 service expectations
+          const fileObj: any = {
+            buffer,
             originalname: filename,
-            encoding,
             mimetype,
             size: buffer.length,
-            buffer,
-            stream,
-            destination: "",
-            filename: filename,
-            path: "",
-          },
-          type: this.getFileType(mimetype),
-          category: this.getFileCategory(filename),
-        };
+            fieldname: 'file',
+            encoding,
+            destination: '',
+            filename,
+            path: ''
+          };
+          
+          // Add stream only if needed
+          if (stream) {
+            fileObj.stream = stream;
+          }
+
+          return {
+            file: fileObj,
+            type: fileType,
+            category
+          };
+        } catch (error: any) {
+          console.error('Error processing file:', error);
+          throw new Error(`Failed to process file: ${error?.message || 'Unknown error'}`);
+        }
       })
     );
   }
@@ -374,6 +396,33 @@ export class PropertyService extends BaseService {
       );
     } catch (error) {
       return this.handleError(error, "getLikedProperties");
+    }
+  }
+
+  async getPropertiesVisitors(
+    ownerId: string,
+    options: PropertySearchOptions = {}
+  ): Promise<
+    IBaseResponse<{ visitors: any[]; totalCount: number; pagination: any }>
+  > {
+    try {
+      const { page = 1, limit = 10 } = options;
+      const { visitors, totalCount } = await this.repository.findAllVisitors(
+        ownerId,
+        options
+      );
+      const pagination = this.repository.buildPagination(
+        page,
+        limit,
+        totalCount
+      );
+
+      return this.success(
+        { visitors, totalCount, pagination },
+        "Properties visitors retrieved successfully"
+      );
+    } catch (error) {
+      return this.handleError(error, "getPropertiesVisitors");
     }
   }
 

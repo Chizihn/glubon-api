@@ -169,4 +169,108 @@ export class WalletService extends BaseService {
     if (!wallet) return this.failure("Wallet not found");
     return this.success(wallet);
   }
+
+  async getWalletTransactions(
+    userId: string,
+    filters: {
+      types?: string[];
+      statuses?: string[];
+      startDate?: Date;
+      endDate?: Date;
+      minAmount?: number;
+      maxAmount?: number;
+    } = {},
+    page: number = 1,
+    limit: number = 10
+  ) {
+    try {
+      // Validate pagination parameters
+      if (page < 1) page = 1;
+      if (limit < 1 || limit > 100) limit = 10;
+
+      // Build the where clause for filtering
+      const where: any = { userId };
+
+      // Add type filter
+      if (filters.types && filters.types.length > 0) {
+        where.type = { in: filters.types };
+      }
+
+      // Add status filter
+      if (filters.statuses && filters.statuses.length > 0) {
+        where.status = { in: filters.statuses };
+      }
+
+      // Add date range filter
+      if (filters.startDate || filters.endDate) {
+        where.createdAt = {};
+        if (filters.startDate) {
+          where.createdAt.gte = new Date(filters.startDate);
+        }
+        if (filters.endDate) {
+          where.createdAt.lte = new Date(filters.endDate);
+        }
+      }
+
+      // Add amount range filter
+      if (filters.minAmount !== undefined || filters.maxAmount !== undefined) {
+        where.amount = {};
+        if (filters.minAmount !== undefined) {
+          where.amount.gte = Number(filters.minAmount);
+        }
+        if (filters.maxAmount !== undefined) {
+          where.amount.lte = Number(filters.maxAmount);
+        }
+      }
+
+      // Calculate pagination
+      const skip = (page - 1) * limit;
+      const totalCount = await this.prisma.transaction.count({ where });
+      const totalPages = Math.ceil(totalCount / limit);
+      const hasMore = page < totalPages;
+
+      // Fetch transactions with pagination
+      const transactions = await this.prisma.transaction.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          property: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          booking: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+      // Transform the data for the response
+      const transformedTransactions = transactions.map(tx => ({
+        ...tx,
+        property: tx.property ? {
+          id: tx.property.id,
+          title: tx.property.title || '',
+        } : null,
+        booking: tx.booking ? {
+          id: tx.booking.id,
+        } : null,
+      }));
+
+      return this.success({
+        transactions: transformedTransactions,
+        totalCount,
+        hasMore,
+        page,
+        limit,
+      });
+    } catch (error) {
+      return this.handleError(error, 'getWalletTransactions');
+    }
+  }
 }

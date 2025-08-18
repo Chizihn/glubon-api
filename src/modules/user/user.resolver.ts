@@ -32,10 +32,11 @@ export class UserResolver {
 
   @Query(() => User)
   @UseMiddleware(AuthMiddleware)
-  async getUserProfile(@Ctx() ctx: Context): Promise<Partial<User> | null> {
-    const result = await this.userService.getUserProfile(
-      ctx.user!.id as string
-    );
+  async getUserById(
+    @Arg('userId', () => String) userId: string,
+    @Ctx() ctx: Context
+  ): Promise<Partial<User> | null> {
+    const result = await this.userService.getUserProfile(userId);
     if (!result.success) {
       throw new Error(result.message);
     }
@@ -61,7 +62,7 @@ export class UserResolver {
   @Mutation(() => User)
   @UseMiddleware(AuthMiddleware)
   async uploadProfilePicture(
-    @Arg("file", () => GraphQLUpload) file: any,
+    @Arg("file", () => GraphQLUpload) file: FileUpload,
     @Ctx() ctx: Context
   ): Promise<User> {
     const userId = ctx.user?.id;

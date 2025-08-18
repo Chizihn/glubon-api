@@ -28,6 +28,7 @@ import { EmailService } from "../../services/email";
 import { prisma, redis } from "../../config";
 import { BaseResponse, Context } from "../../types";
 import { AuthMiddleware } from "../../middleware";
+import { registerSchema } from "../../validators";
 
 // const AuthRateLimiter = wrapExpressMiddleware(authRateLimiterMiddleware);
 
@@ -46,7 +47,8 @@ export class AuthResolver {
     @Arg("input") input: RegisterInput,
     @Ctx() ctx: Context
   ): Promise<AuthResponse> {
-    const result = await this.authService.register(input);
+    const validatedInput = registerSchema.parse(input);
+    const result = await this.authService.register({...validatedInput, phoneNumber: validatedInput.phoneNumber || ""});
     if (!result.success) throw new Error(result.message);
     return result.data!;
   }
@@ -107,6 +109,26 @@ export class AuthResolver {
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
     const result = await this.authService.resetPassword({ token, newPassword });
+    if (!result.success) throw new Error(result.message);
+    return new BaseResponse(true, result.message);
+  }
+
+  @Mutation(() => BaseResponse)
+  @UseMiddleware(AuthMiddleware)
+  async resendVerificationEmail(
+    @Ctx() ctx: Context
+  ): Promise<BaseResponse> {
+    const result = await this.authService.resendVerificationEmail(ctx.user!.email as string);
+    if (!result.success) throw new Error(result.message);
+    return new BaseResponse(true, result.message);
+  }
+
+  @Mutation(() => BaseResponse)
+  async resendPasswordReset(
+    @Arg("email") email: string,
+    @Ctx() ctx: Context
+  ): Promise<BaseResponse> {
+    const result = await this.authService.resendPasswordReset(email);
     if (!result.success) throw new Error(result.message);
     return new BaseResponse(true, result.message);
   }

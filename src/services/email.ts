@@ -29,7 +29,8 @@ interface QueuedEmail extends EmailOptions {
 }
 
 export class EmailService extends BaseService {
-  private transporter: Transporter;
+  private static transporter: Transporter | null = null;
+  private static isInitializing: boolean = false;
   private emailQueue = "email_queue";
 
   constructor(prisma: PrismaClient, redis: Redis) {
@@ -47,34 +48,48 @@ export class EmailService extends BaseService {
   }
 
   private initializeTransporter(): void {
-    if (config.NODE_ENV === "production") {
-      this.transporter = nodemailer.createTransport({
-        host: "gmail",
-        port: Number(config.EMAIL_PORT) || 465,
-        secure: true,
-        auth: {
-          user: config.EMAIL_USER,
-          pass: config.EMAIL_PASS,
-        },
-      });
-    } else {
-      this.transporter = nodemailer.createTransport({
-        service: "gmail",
-        port: Number(config.EMAIL_PORT) || 587,
-        auth: {
-          user: config.EMAIL_USER,
-          pass: config.EMAIL_PASS || config.EMAIL_PASS,
-        },
-      });
+    // If already initialized or initializing, return
+    if (EmailService.transporter || EmailService.isInitializing) {
+      return;
     }
 
-    this.transporter.verify((error) => {
-      if (error) {
-        logger.error("Email transporter configuration error:", error);
+    EmailService.isInitializing = true;
+
+    try {
+      if (config.NODE_ENV === "production") {
+        EmailService.transporter = nodemailer.createTransport({
+          host: "gmail",
+          port: Number(config.EMAIL_PORT) || 465,
+          secure: true,
+          auth: {
+            user: config.EMAIL_USER,
+            pass: config.EMAIL_PASS,
+          },
+        });
       } else {
-        logger.info("Email transporter is ready", { service: "graphql-api" });
+        EmailService.transporter = nodemailer.createTransport({
+          service: "gmail",
+          port: Number(config.EMAIL_PORT) || 587,
+          auth: {
+            user: config.EMAIL_USER,
+            pass: config.EMAIL_PASS,
+          },
+        });
       }
-    });
+
+      EmailService.transporter.verify((error) => {
+        EmailService.isInitializing = false;
+        if (error) {
+          logger.error("Email transporter configuration error:", error);
+          EmailService.transporter = null; // Reset on error to allow retry
+        } else {
+          logger.info("Email transporter is ready", { service: "graphql-api" });
+        }
+      });
+    } catch (error) {
+      EmailService.isInitializing = false;
+      logger.error("Failed to initialize email transporter:", error);
+    }
   }
 
   private async startEmailProcessor(): Promise<void> {
@@ -145,15 +160,22 @@ export class EmailService extends BaseService {
   }
 
   private async sendEmailDirectly(emailOptions: EmailOptions): Promise<void> {
-    const mailOptions = {
-      from: emailOptions.from || `"Glubon" <${config.EMAIL_FROM}>`,
-      to: emailOptions.to,
-      subject: emailOptions.subject,
-      html: emailOptions.html,
-      text: emailOptions.text,
-    };
-
-    await this.transporter.sendMail(mailOptions);
+    if (!EmailService.transporter) {
+      throw new Error("Email transporter not initialized");
+    }
+    
+    try {
+      await EmailService.transporter.sendMail({
+        from: emailOptions.from || `"Glubon" <${config.EMAIL_USER}>`,
+        to: emailOptions.to,
+        subject: emailOptions.subject,
+        html: emailOptions.html,
+        text: emailOptions.text,
+      });
+    } catch (error) {
+      logger.error("Error sending email:", error);
+      throw error;
+    }
   }
 
   async sendWelcomeEmail(

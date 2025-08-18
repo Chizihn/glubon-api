@@ -79,7 +79,7 @@ export class AdminUsersRepository extends BaseRepository {
             select: {
               properties: true,
               propertyLikes: true,
-              conversations: true,
+              userConversations: true,
               propertyViews: true,
             },
           },
@@ -373,7 +373,7 @@ export class AdminUsersRepository extends BaseRepository {
           select: {
             properties: true,
             propertyLikes: true,
-            conversations: true, // Using 'conversations' instead of 'chatsAsRenter' and 'chatsAsOwner'
+            userConversations: true, // Using 'conversations' instead of 'chatsAsRenter' and 'chatsAsOwner'
             propertyViews: true,
             adminActionLogs: true,
           },

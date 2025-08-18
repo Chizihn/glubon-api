@@ -21,6 +21,7 @@ import {
   PaginatedVerificationsResponse,
   AdminUserResponse,
   ExportResponse,
+  BulkUpdateResponse,
 } from "./admin.types";
 import {
   AdminPropertyFilters,
@@ -32,13 +33,13 @@ import {
   CreateAdminUserInput,
   ExportRequestInput,
   UpdateAdminUserInput,
+  AdminListFilters,
 } from "./admin-user.inputs";
 import { AppError } from "../../utils";
 import { HttpStatusCode } from "axios";
 import { AdminStatsService } from "../../services/admin-stats";
 import { AdminUsersService } from "../../services/admin-user";
 import {
-  AdminListFilters,
   DashboardAnalyticsResponse as DashboardAnalyticsResponseType,
   UserGrowthData as UserGrowthDataType,
 } from "../../types/services/admin";
@@ -58,7 +59,6 @@ import {
 export class AdminResolver {
   private adminStatsService: AdminStatsService;
   private adminUsersService: AdminUsersService;
-  private adminService: any; // Add this line to fix the missing property error
 
   constructor() {
     this.adminStatsService = new AdminStatsService(prisma, redis);
@@ -189,22 +189,22 @@ export class AdminResolver {
     return result.data!;
   }
 
-  @Query(() => Object) // Use generic Object type for real-time stats
-  async getRealTimeStats(@Ctx() ctx: Context): Promise<any> {
+  @Query(() => AdminStatsResponse)
+  async getRealTimeStats(@Ctx() ctx: Context): Promise<AdminStatsResponse> {
     const result = await this.adminStatsService.getRealTimeStats(ctx.user!.id);
     if (!result.success)
       throw new AppError(result.message, HttpStatusCode.InternalServerError);
     return result.data!;
   }
 
-  @Query(() => Object) // Use generic Object type for custom analytics
+  @Query(() => [ActivityData])
   async getCustomAnalytics(
     @Arg("metrics", () => [String]) metrics: string[],
     @Arg("groupBy") groupBy: "day" | "week" | "month",
     @Arg("dateRange") dateRange: AnalyticsDateRangeInput,
     @Arg("segments", { nullable: true }) segments: string, // JSON string
     @Ctx() ctx: Context
-  ): Promise<any> {
+  ): Promise<ActivityData[]> {
     const parsedSegments = segments ? JSON.parse(segments) : undefined;
     const result = await this.adminStatsService.getCustomAnalytics(
       ctx.user!.id,
@@ -223,7 +223,7 @@ export class AdminResolver {
   // ==================== USER MANAGEMENT QUERIES ====================
 
   @Query(() => PaginatedUsersResponse)
-  async getAdminUsers(
+  async getAllUsers(
     @Arg("filters", { nullable: true }) filters: AdminUserFilters,
     @Arg("page", () => Int, { defaultValue: 1 }) page: number,
     @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
@@ -240,7 +240,6 @@ export class AdminResolver {
       throw new AppError(result.message, HttpStatusCode.InternalServerError);
     }
     
-    // Create a new PaginatedUsersResponse with the correct structure
     return new PaginatedUsersResponse(
       result.data?.items || [],
       page,
@@ -249,8 +248,8 @@ export class AdminResolver {
     );
   }
 
-  @Query(() => PaginatedUsersResponse)
-  async getAdminAdmins(
+  @Query(() => PaginatedUsersResponse, { name: "getAdminUsers" })
+  async getAdminUsers(
     @Arg("filters", { nullable: true }) filters: AdminListFilters,
     @Arg("page", () => Int, { defaultValue: 1 }) page: number,
     @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
@@ -267,7 +266,6 @@ export class AdminResolver {
       throw new AppError(result.message, HttpStatusCode.InternalServerError);
     }
     
-    // Create a new PaginatedUsersResponse with the correct structure
     return new PaginatedUsersResponse(
       result.data?.items || [],
       page,
@@ -293,12 +291,12 @@ export class AdminResolver {
     return result.data!;
   }
 
-  @Query(() => Object) // Use generic Object type for user activity
+  @Query(() => [ActivityData])
   async getUserActivity(
     @Arg("userId") userId: string,
     @Arg("days", () => Int, { defaultValue: 30 }) days: number,
     @Ctx() ctx: Context
-  ): Promise<any> {
+  ): Promise<ActivityData[]> {
     const result = await this.adminUsersService.getUserActivity(
       ctx.user!.id,
       userId,
@@ -312,7 +310,7 @@ export class AdminResolver {
   // ==================== PROPERTIES, VERIFICATIONS & LOGS (Legacy) ====================
 
   @Query(() => PaginatedPropertiesResponse)
-  async getAdminProperties(
+  async getAllProperties(
     @Arg("filters", { nullable: true }) filters: AdminPropertyFilters,
     @Arg("page", () => Int, { defaultValue: 1 }) page: number,
     @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
@@ -463,13 +461,13 @@ export class AdminResolver {
     return new BaseResponse(true, result.message);
   }
 
-  @Mutation(() => Object) // Generic object for bulk update result
+  @Mutation(() => BulkUpdateResponse)
   async bulkUpdateUserStatus(
     @Arg("userIds", () => [String]) userIds: string[],
-    @Arg("status") status: UserStatus,
+    @Arg("status", () => UserStatus)  status: UserStatus,
     @Arg("reason", { nullable: true }) reason: string,
     @Ctx() ctx: Context
-  ): Promise<{ updated: number; failed: string[] }> {
+  ): Promise<BulkUpdateResponse> {
     const result = await this.adminUsersService.bulkUpdateUserStatus(
       ctx.user!.id,
       userIds,
@@ -518,7 +516,7 @@ export class AdminResolver {
     @Arg("input") input: ReviewVerificationInput,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.adminService.reviewVerification(
+    const result = await this.adminUsersService.reviewVerification(
       ctx.user!.id,
       input
     );
@@ -534,7 +532,7 @@ export class AdminResolver {
     @Arg("reason", { nullable: true }) reason: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.adminService.reviewOwnershipVerification(
+    const result = await this.adminUsersService.reviewOwnershipVerification(
       ctx.user!.id,
       verificationId,
       approved,
@@ -550,7 +548,7 @@ export class AdminResolver {
     @Arg("propertyId") propertyId: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.adminService.togglePropertyFeatured(
+    const result = await this.adminUsersService.togglePropertyFeatured(
       ctx.user!.id,
       propertyId
     );

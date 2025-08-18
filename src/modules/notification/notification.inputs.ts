@@ -1,5 +1,5 @@
 import { NotificationType } from "@prisma/client";
-import { Field, InputType } from "type-graphql";
+import { Field, InputType, registerEnumType } from "type-graphql";
 
 // Input Types
 @InputType()

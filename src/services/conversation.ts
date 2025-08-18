@@ -4,6 +4,7 @@ import {
   NotificationType,
   RoleEnum,
   Prisma,
+  User
 } from "@prisma/client";
 import Redis from "ioredis";
 import { IBaseResponse } from "../types/responses";
@@ -30,7 +31,11 @@ export class ConversationService extends BaseService {
     this.emailService = new EmailService(prisma, redis);
   }
 
-  async createConversation(
+  /**
+   * Internal method to create a conversation
+   * @private
+   */
+  private async createConversation(
     input: CreateConversationInput & { initiatorId: string }
   ): Promise<IBaseResponse<any>> {
     try {
@@ -388,8 +393,21 @@ export class ConversationService extends BaseService {
                 firstName: true,
                 lastName: true,
                 profilePic: true,
+
               },
             },
+            property: {
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                images: true,
+                amount: true,
+                listingType: true,
+                rentalPeriod: true,
+                address: true,
+              }
+            }
           },
           skip,
           take: validatedLimit,
@@ -420,17 +438,61 @@ export class ConversationService extends BaseService {
     input: SendMessageInput
   ): Promise<IBaseResponse<any>> {
     try {
-      const {
-        conversationId,
-        content,
-        messageType = MessageType.TEXT,
-        attachments = [],
-      } = input;
+      const { conversationId, content, messageType, attachments, propertyId, recipientIds } = input;
+      
+      let conversation;
+      
+      // If no conversationId is provided, create a new conversation
+      if (!conversationId) {
+        if (!recipientIds || recipientIds.length === 0) {
+          return this.failure("Recipient IDs are required when creating a new conversation", [
+            StatusCodes.BAD_REQUEST,
+          ]);
+        }
+        
+        // Create a new conversation with the sender and recipients
+        const createInput: CreateConversationInput & { initiatorId: string } = {
+          participantIds: [senderId, ...(recipientIds || [])],
+          initiatorId: senderId,
+        };
+        
+        // Only add propertyId if it exists
+        if (propertyId) {
+          createInput.propertyId = propertyId;
+        }
+        
+        const createResult = await this.createConversation(createInput);
+        
+        if (!createResult.success || !createResult.data) {
+          return createResult;
+        }
+        
+        conversation = createResult.data;
+      } else {
+        // Get existing conversation
+        conversation = await this.prisma.conversation.findFirst({
+          where: {
+            id: conversationId,
+            participants: { some: { userId: senderId } },
+          },
+          include: {
+            participants: {
+              select: { userId: true },
+            },
+          },
+        });
+
+        if (!conversation) {
+          return this.failure("Conversation not found or access denied", [
+            StatusCodes.NOT_FOUND,
+          ]);
+        }
+      }
 
       // Verify conversation exists and user is participant
-      const conversation = await this.prisma.conversation.findFirst({
+      const conversationData = await this.prisma.conversation.findFirst({
         where: {
-          id: conversationId,
+          id: conversation.id,
           participants: { some: { userId: senderId } },
           isActive: true,
         },
@@ -457,53 +519,72 @@ export class ConversationService extends BaseService {
         ]);
       }
 
-      // Create message
-      const message = await this.prisma.message.create({
-        data: {
-          conversationId,
+      // Create message with transaction to ensure data consistency
+      const message = await this.prisma.$transaction(async (prisma) => {
+        // Prepare message data with only the propertyId reference
+        const messageData: any = {
+          conversationId: conversation.id, // Use the new conversation's ID
           senderId,
           content,
           messageType,
-          attachments,
-        },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              profilePic: true,
+          attachments: attachments || [],
+          propertyId: propertyId || null, // Store only the ID or null
+        };
+
+        // Create the message
+        const createdMessage = await prisma.message.create({
+          data: messageData,
+          include: {
+            sender: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                profilePic: true,
+              },
             },
+            // Include property details if propertyId exists
+            ...(propertyId ? {
+              property: {
+                select: {
+                  id: true,
+                  title: true,
+                  images: true,
+                  amount: true,
+                  city: true,
+                  state: true,
+                  address: true,
+                  rentalPeriod: true
+                },
+              },
+            } : {}),
           },
-          conversation: {
-            include: {
-              property: { select: { id: true, title: true } },
-            },
-          },
-        },
+        });
+
+        return createdMessage;
       });
 
-      // Update conversation timestamp
+      // Update conversation timestamp using the correct conversation ID
       await this.prisma.conversation.update({
-        where: { id: conversationId },
+        where: { id: conversation.id },
         data: { updatedAt: new Date() },
       });
 
       // Determine recipients (all participants except sender)
       const recipients = conversation.participants
-        .map((p) => p.user)
-        .filter((user) => user.id !== senderId);
+        .map((p: { user: User }) => p.user)
+        .filter((user: User) => user.id !== senderId);
 
       // Publish to real-time subscription
       await (pubSub as RedisPubSub).publish(SUBSCRIPTION_EVENTS.MESSAGE_SENT, {
         message,
         conversationId,
-        recipientIds: recipients.map((r) => r.id),
+        recipientIds: recipients.map((r: User) => r.id),
       });
 
       // Create notifications and send emails for recipients
       await Promise.all(
-        recipients.map(async (recipient) => {
+        recipients.map(async (recipient: User) => {
           const notificationTitle = conversation.property
             ? `New Message about "${conversation.property.title}"`
             : `New Message from ${message.sender.firstName} ${message.sender.lastName}`;
@@ -514,7 +595,7 @@ export class ConversationService extends BaseService {
             message: `${message.sender.firstName} ${message.sender.lastName} sent you a message`,
             type: NotificationType.NEW_MESSAGE,
             data: {
-              conversationId,
+              conversationId: conversationId as string,
               messageId: message.id,
               senderId,
               propertyId: conversation.property?.id,
@@ -527,14 +608,14 @@ export class ConversationService extends BaseService {
             `${message.sender.firstName} ${message.sender.lastName}`,
             conversation.property?.title || "Direct Message",
             content.substring(0, 100),
-            conversationId
+            conversationId as string
           );
         })
       );
 
       // Clear caches for all participants
       await Promise.all(
-        conversation.participants.map((p) =>
+        conversation.participants.map((p: { user: User }) =>
           this.deleteCachePattern(`conversations:${p.user.id}:*`)
         )
       );

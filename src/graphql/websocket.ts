@@ -1,4 +1,4 @@
-import { useServer } from "graphql-ws/use/ws"; // Correct import path
+import { useServer } from "graphql-ws/use/ws";
 import type { Disposable } from "graphql-ws";
 import { WebSocketServer } from "ws";
 import { GraphQLSchema } from "graphql";
@@ -6,57 +6,61 @@ import { Services } from "../services";
 import { WebSocketContext } from "../types";
 import { prisma, redis } from "../config";
 import { logger } from "../utils";
+import { PresenceService } from "../services/presence.service";
 
 export async function createWebSocketServer(
   wsServer: WebSocketServer,
   schema: GraphQLSchema,
   services: Services
 ): Promise<Disposable> {
+  const presenceService = new PresenceService(prisma, redis);
+
+  // Clean up stale connections periodically
+  const cleanupInterval = setInterval(
+    () => presenceService.cleanupStaleConnections(),
+    5 * 60 * 1000 // Every 5 minutes
+  );
+
   const serverCleanup = useServer(
     {
       schema,
-      context: async (
-        ctx: { connectionParams?: Record<string, any> },
-        msg: any,
-        args: any
-      ): Promise<WebSocketContext> => {
-        const token = ctx.connectionParams?.authorization?.replace(
-          "Bearer ",
-          ""
-        );
-        let user = null;
-
-        if (token) {
-          try {
-            const decoded = await services.authService.verifyToken(token);
-            user = await prisma.user.findUnique({
-              where: { id: decoded.userId },
-              select: {
-                id: true,
-                email: true,
-                firstName: true,
-                lastName: true,
-                role: true,
-                permissions: true,
-                isVerified: true,
-                isActive: true,
-              },
-            });
-          } catch (error) {
-            logger.warn("Invalid WebSocket token:", error);
-          }
-        }
-
+      context: async (ctx): Promise<WebSocketContext> => {
         const context: WebSocketContext = {
-          user,
           prisma,
-          redis: redis,
+          redis,
           services,
+          user: null,
         };
 
-        // Only add connectionParams if it exists
-        if (ctx.connectionParams !== undefined) {
-          context.connectionParams = ctx.connectionParams;
+        try {
+          const authHeader = ctx.connectionParams?.authorization;
+          if (typeof authHeader === 'string') {
+            const token = authHeader.replace('Bearer ', '');
+            if (token) {
+              const decoded = await services.authService.verifyToken(token);
+              const user = await prisma.user.findUnique({
+                where: { id: decoded.userId },
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                  role: true,
+                  permissions: true,
+                  isVerified: true,
+                  isActive: true,
+                },
+              });
+              
+              if (user) {
+                context.user = user;
+                const socketId = (ctx.extra?.socket as any)?.id || 'unknown';
+                await presenceService.userConnected(user.id, socketId);
+              }
+            }
+          }
+        } catch (error) {
+          logger.warn("WebSocket authentication error:", error);
         }
 
         return context;
@@ -66,12 +70,26 @@ export async function createWebSocketServer(
           connectionParams: ctx.connectionParams,
         });
       },
-      onDisconnect: (ctx, code, reason) => {
-        logger.info(
-          `WebSocket client disconnected: ${code || "unknown"} ${
-            reason || "unknown reason"
-          }`
-        );
+      onDisconnect: async (ctx) => {
+        try {
+          const userId = (ctx.extra?.user as any)?.id;
+          if (userId) {
+            await presenceService.userDisconnected(userId);
+            logger.info(`User ${userId} disconnected from WebSocket`);
+          }
+        } catch (error) {
+          logger.error("Error in onDisconnect:", error);
+        }
+      },
+      onClose: async (ctx) => {
+        try {
+          const userId = (ctx.extra?.user as any)?.id;
+          if (userId) {
+            await presenceService.userDisconnected(userId);
+          }
+        } catch (error) {
+          logger.error("Error in onClose:", error);
+        }
       },
       onError: (ctx, id, payload, errors) => {
         logger.error("WebSocket error:", { id, payload, errors });
@@ -80,5 +98,11 @@ export async function createWebSocketServer(
     wsServer
   );
 
-  return serverCleanup;
+  // Return cleanup function
+  return {
+    dispose: async () => {
+      clearInterval(cleanupInterval);
+      await serverCleanup.dispose();
+    },
+  };
 }

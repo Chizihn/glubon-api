@@ -3,6 +3,7 @@ import {
   DocumentType,
   PropertyStatus,
   RoleEnum,
+  UserStatus,
   VerificationStatus,
 } from "@prisma/client";
 import {
@@ -15,6 +16,23 @@ import {
   GraphQLISODateTime,
 } from "type-graphql";
 import { PaginatedResponse } from "../../types/responses";
+
+registerEnumType(UserStatus, {
+  name: "UserStatus",
+  description: "Status of a user (e.g., active, inactive, suspended)",
+});
+
+
+
+@ObjectType()
+export class BulkUpdateResponse {
+  @Field(() => Int)
+  updated: number;
+
+  @Field(() => [String])
+  failed: string[];
+}
+
 import GraphQLJSON from "graphql-type-json";
 import { User } from "../user/user.types";
 import { Property } from "../property/property.types";

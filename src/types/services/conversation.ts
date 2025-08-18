@@ -6,10 +6,12 @@ export interface CreateConversationInput {
 }
 
 export interface SendMessageInput {
-  conversationId: string;
+  conversationId?: string;
+  recipientIds?: string[];
   content: string;
   messageType?: MessageType;
   attachments?: string[];
+  propertyId?: string;
 }
 
 export interface ConversationFilters {

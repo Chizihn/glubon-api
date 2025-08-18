@@ -1,4 +1,4 @@
-import { DocumentType, RoleEnum } from "@prisma/client";
+import { DocumentType, RoleEnum, VerificationStatus } from "@prisma/client";
 import {
   Field,
   GraphQLISODateTime,
@@ -11,34 +11,34 @@ import { PaginatedResponse, PaginationInfo } from "../../types";
 
 @InputType()
 export class UpdateProfileInput {
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   firstName?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   lastName?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   phoneNumber?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   address?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   city?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   state?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   profilePic?: string;
 }
 
 @InputType()
 export class ChangePasswordInput {
-  @Field()
+  @Field(() => String)
   currentPassword: string;
 
-  @Field()
+  @Field(() => String)
   newPassword: string;
 }
 
@@ -111,22 +111,22 @@ export class UserProfileResponse {
 
 @ObjectType()
 export class IdentityVerificationStatusResponse {
-  @Field({ nullable: true })
+  @Field(() => ID, { nullable: true })
   id?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   documentType?: string;
 
-  @Field({ nullable: true })
-  status?: string;
+  @Field(() => VerificationStatus, { nullable: true })
+  status?: VerificationStatus;
 
-  @Field({ nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   reviewedAt?: Date;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   rejectionReason?: string;
 
-  @Field({ nullable: true })
+  @Field(() => GraphQLISODateTime, { nullable: true })
   createdAt?: Date;
 }
 
@@ -135,25 +135,25 @@ export class UserSearchItem {
   @Field(() => ID)
   id: string;
 
-  @Field({ nullable: true })
+  @Field(() => String,{ nullable: true })
   firstName?: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   lastName?: string;
 
-  @Field()
+  @Field(() => String)
   email: string;
 
-  @Field({ nullable: true })
+  @Field(() => String,{ nullable: true })
   profilePic?: string;
 
-  @Field()
-  role: string;
+  @Field(() => RoleEnum)
+  role: RoleEnum;
 
-  @Field()
+  @Field(() => Boolean)
   isVerified: boolean;
 
-  @Field()
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 }
 

@@ -7,6 +7,8 @@ import {
   Arg,
   Ctx,
   Root,
+  Int,
+  ID,
 } from "type-graphql";
 import type { Context } from "../../types/context";
 import { prisma } from "../../config/database";
@@ -25,7 +27,6 @@ import {
 import { ConversationService } from "../../services/conversation";
 import {
   ConversationFilters,
-  CreateConversationInput,
   MessageFilters,
   SendMessageInput,
 } from "./conversation.inputs";
@@ -38,21 +39,7 @@ export class ChatResolver {
     this.conversationService = new ConversationService(prisma, redis);
   }
 
-  @Mutation(() => ConversationResponse)
-  @UseMiddleware(AuthMiddleware)
-  async createConversation(
-    @Arg("input") input: CreateConversationInput,
-    @Ctx() ctx: Context
-  ): Promise<ConversationResponse> {
-    const result = await this.conversationService.createConversation({
-      ...input,
-      initiatorId: ctx.user!.id,
-    });
-    if (!result.success || !result.data) {
-      throw new Error(result.message);
-    }
-    return result.data;
-  }
+  // Removed createConversation mutation as it's now handled internally by sendMessage
 
   @Query(() => PaginatedConversationsResponse)
   @UseMiddleware(AuthMiddleware)
@@ -97,10 +84,10 @@ export class ChatResolver {
   @Query(() => PaginatedMessagesResponse)
   @UseMiddleware(AuthMiddleware)
   async getMessages(
-    @Arg("conversationId") conversationId: string,
-    @Arg("filters") filters: MessageFilters,
-    @Arg("page", { defaultValue: 1 }) page: number,
-    @Arg("limit", { defaultValue: 50 }) limit: number,
+    @Arg("conversationId", () => ID) conversationId: string,
+    @Arg("filters", () => MessageFilters, {nullable: true}) filters: MessageFilters,
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 50 }) limit: number,
     @Ctx() ctx: Context
   ): Promise<PaginatedMessagesResponse> {
     const result = await this.conversationService.getMessages(
@@ -125,10 +112,16 @@ export class ChatResolver {
     @Arg("input") input: SendMessageInput,
     @Ctx() ctx: Context
   ): Promise<MessageResponse> {
+    // Ensure either conversationId or recipientIds is provided
+    if (!input.conversationId && (!input.recipientIds || input.recipientIds.length === 0)) {
+      throw new Error("Either conversationId or recipientIds must be provided");
+    }
+
     const result = await this.conversationService.sendMessage(
       ctx.user!.id,
       input
     );
+    
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
