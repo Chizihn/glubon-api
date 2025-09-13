@@ -1,7 +1,8 @@
 import express from "express";
 import { ProviderEnum } from "@prisma/client";
-import { OAuthService } from "../../services/oauth";
-import { prisma, redis } from "../../config";
+import { OAuthService } from "../services/oauth";
+import { prisma, redis } from "../config";
+
 
 const router = express.Router();
 const oAuthService = new OAuthService(prisma, redis);
@@ -47,4 +48,4 @@ router.get("/:provider/callback", async (req, res) => {
   );
 });
 
-export default router;
+export {router as oauthRestRouter};

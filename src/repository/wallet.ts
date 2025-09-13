@@ -1,10 +1,6 @@
-import {
-  PrismaClient,
-  TransactionStatus,
-  Wallet,
-  WalletTransactionType,
-} from "@prisma/client";
+import { Prisma, PrismaClient, TransactionStatus, Wallet, WalletTransactionType } from "@prisma/client";
 import { Redis } from "ioredis";
+import { Decimal } from "@prisma/client/runtime/library";
 import { BaseRepository } from "./base";
 
 export class WalletRepository extends BaseRepository {
@@ -47,12 +43,12 @@ export class WalletRepository extends BaseRepository {
 
   async updateBalance(
     userId: string,
-    amount: number,
+    amount: Decimal | number | string,
     type: WalletTransactionType,
     description: string,
     relatedTransactionId?: string,
     status: TransactionStatus = TransactionStatus.COMPLETED
-  ) {
+  ): Promise<{ updatedWallet: Wallet; walletTransaction: any }> {
     return await this.prisma.$transaction(async (tx) => {
       let wallet = await tx.wallet.findUnique({ where: { userId } });
 
@@ -62,14 +58,26 @@ export class WalletRepository extends BaseRepository {
         });
       }
 
-      const increment =
-        type === WalletTransactionType.DEPOSIT || type === WalletTransactionType.REFUND ? amount : -amount;
-      const updatedWallet = await tx.wallet.update({
+      const amountValue = new Decimal(amount);
+      const increment = type === WalletTransactionType.DEPOSIT || type === WalletTransactionType.REFUND 
+        ? amountValue 
+        : amountValue.negated();
+      // Use Prisma.sql for type-safe raw queries
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "Wallet" 
+        SET 
+          balance = balance + ${increment.toNumber()}::decimal,
+          "updatedAt" = NOW()
+        WHERE id = ${wallet.id}
+      `);
+
+      // Get the updated wallet with the new balance
+      const updatedWallet = await tx.wallet.findUniqueOrThrow({
         where: { id: wallet.id },
-        data: { balance: { increment } },
       });
 
-      if (updatedWallet.balance < 0) {
+      // Verify the balance is not negative
+      if (new Decimal(updatedWallet.balance).lessThan(0)) {
         throw new Error("Insufficient balance");
       }
 
@@ -77,7 +85,7 @@ export class WalletRepository extends BaseRepository {
       const walletTransaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
-          amount,
+          amount: amountValue.toNumber(),
           type,
           status,
           reference,

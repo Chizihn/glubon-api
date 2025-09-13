@@ -10,6 +10,7 @@ import {
   Ctx,
 } from "type-graphql";
 import {
+  AccountResolveInput,
   ChangePasswordInput,
   IdentityVerificationStatusResponse,
   SubmitIdentityVerificationInput,
@@ -18,16 +19,20 @@ import {
 } from "./user.inputs";
 import { UserService } from "../../services/user";
 import { prisma, redis } from "../../config";
-import { AuthMiddleware } from "../../middleware";
+import { AuthMiddleware, RequireRole } from "../../middleware";
 import { BaseResponse, Context } from "../../types";
-import { User, UserStatsResponse } from "./user.types";
+import { AccountDetails, User, UserStatsResponse } from "./user.types";
+import { RoleEnum } from "@prisma/client";
+import { PaystackService } from "../../services/payment";
 
 @Resolver()
 export class UserResolver {
   private userService: UserService;
+  private paystackService: PaystackService;
 
   constructor() {
     this.userService = new UserService(prisma, redis);
+    this.paystackService = new PaystackService(prisma, redis)
   }
 
   @Query(() => User)
@@ -159,4 +164,27 @@ export class UserResolver {
       result.data.pagination.totalItems
     );
   }
+
+  // @Query(() => AccountDetails)
+  // @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
+  // async resolveAccountDetails(
+  //   @Arg("input") input: AccountResolveInput
+  // ): Promise<AccountDetails> {
+  //   try {
+  //     const accountDetails = await this.paystackService.resolveAccountNumber(
+  //       input.accountNumber,
+  //       input.bankCode
+  //     );
+
+  //     const data = {
+  //       accountNumber: accountDetails.data?.account_number as string,
+  //       accountName: accountDetails.data?.account_name as string,
+  //       bankCode: accountDetails.data?.bank_code as string,
+  //     };
+
+  //     return data;
+  //   } catch (error) {
+  //     throw new Error("Failed to resolve account details");
+  //   }
+  // }
 }

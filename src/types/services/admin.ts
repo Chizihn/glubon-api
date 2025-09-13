@@ -6,6 +6,7 @@ import {
   PropertyStatus,
   User,
   Property,
+  PropertyType,
 } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -37,13 +38,14 @@ export interface AdminUserFilters {
 
 export interface AdminPropertyFilters {
   status?: PropertyStatus;
+  propertyType?: PropertyType
   ownerId?: string;
   city?: string;
   state?: string;
   minAmount?: number;
   maxAmount?: number;
-  ownershipVerified?: boolean;
-  featured?: boolean;
+  ownershipVerified?: boolean | null;
+  featured?: boolean | null;
   createdAfter?: Date;
   createdBefore?: Date;
   sortBy?: "title" | "amount" | "createdAt" | "status" | "views";
@@ -348,8 +350,9 @@ export interface DashboardAnalyticsResponse {
 
 // Analytics and Statistics
 export interface AnalyticsDateRange {
-  startDate?: Date;
-  endDate?: Date;
+  startDate?: Date | string;
+  endDate?: Date | string;
+  period?: 'day' | 'week' | 'month' | 'year' | 'custom';
 }
 
 // Export types

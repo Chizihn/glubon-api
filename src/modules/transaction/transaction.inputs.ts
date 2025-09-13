@@ -1,14 +1,15 @@
-import { InputType, Field, Float, ID } from 'type-graphql';
+import { InputType, Field, ID } from 'type-graphql';
 import { TransactionType, TransactionStatus, PaymentGateway } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { GraphQLJSONObject } from 'graphql-type-json';
+import { GraphQLDecimal } from '../../graphql/scalars/Decimal';
 
 @InputType()
 export class CreateTransactionInput {
   @Field(() => TransactionType)
   type!: TransactionType;
 
-  @Field(() => Float)
+  @Field(() => GraphQLDecimal)
   amount!: Decimal;
 
   @Field(() => String, { defaultValue: 'NGN' })
@@ -68,7 +69,7 @@ export class InitiatePaymentInput {
   @Field(() => String)
   email!: string;
 
-  @Field(() => Float)
+  @Field(() => GraphQLDecimal)
   amount!: Decimal;
 
   @Field(() => String)
@@ -86,7 +87,7 @@ export class InitiateWithdrawalInput {
   @Field(() => ID)
   userId!: string;
 
-  @Field(() => Float)
+  @Field(() => GraphQLDecimal)
   amount!: Decimal;
 
   @Field(() => String)

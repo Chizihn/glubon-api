@@ -1,3 +1,4 @@
+// src/services/notification.ts
 import { PrismaClient, NotificationType, RoleEnum } from "@prisma/client";
 import { Redis } from "ioredis";
 import { RedisPubSub } from "graphql-redis-subscriptions";

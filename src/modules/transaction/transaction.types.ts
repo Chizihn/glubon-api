@@ -97,19 +97,6 @@ export class Transaction {
   refunds?: Refund[];
 }
 
-// Paginated transactions response
-@ObjectType()
-export class PaginatedTransactions {
-  @Field(() => [Transaction])
-  transactions!: Transaction[];
-
-  @Field(() => Int)
-  totalCount!: number;
-
-  @Field(() => Boolean)
-  hasMore!: boolean;
-}
-
 // Transaction statistics
 @ObjectType()
 export class TransactionStats {
@@ -128,6 +115,24 @@ export class TransactionStats {
   @Field(() => Int)
   failedTransactions!: number;
 }
+
+
+// Paginated transactions response
+@ObjectType()
+export class PaginatedTransactions {
+  @Field(() => [Transaction])
+  transactions!: Transaction[];
+
+  @Field(() => Int)
+  totalCount!: number;
+
+  @Field(() => Boolean)
+  hasMore!: boolean;
+
+  @Field(() => TransactionStats, { nullable: true })
+  stats?: TransactionStats;
+}
+
 
 // Transaction filter input
 @InputType()

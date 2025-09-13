@@ -1,7 +1,6 @@
 import { GraphQLJSONObject } from "graphql-type-json";
 import { Field, Float, GraphQLISODateTime, ID, InputType, Int, ObjectType, registerEnumType } from "type-graphql";
-import {  TransactionType, TransactionStatus, WalletTransactionType } from "@prisma/client";
-import { Decimal } from "@prisma/client/runtime/library";
+import { TransactionType, TransactionStatus } from "@prisma/client";
 
 registerEnumType(TransactionType, {
   name: 'TransactionType',
@@ -13,86 +12,80 @@ registerEnumType(TransactionStatus, {
   description: 'The status of a transaction',
 });
 
-registerEnumType(WalletTransactionType, { name: "WalletTransactionType", description: "The type of wallet transaction" });
-
-
 @ObjectType()
-export class Wallet {
+export class Transaction {
   @Field(() => ID)
   id: string;
 
-  @Field(() => ID)
-  userId: string;
-
-  @Field(() => Float)
-  balance: number;
-
-  @Field()
-  currency: string;
-
-  @Field()
-  createdAt: Date;
-
-  @Field()
-  updatedAt: Date;
-
-  @Field(() => [WalletTransaction], { nullable: true })
-  walletTransactions?: WalletTransaction[];
-}
-
-@ObjectType()
-export class WalletTransaction {
-  @Field(() => ID)
-  id: string;
-
-  @Field(() => ID)
-  walletId: string;
+  @Field(() => TransactionType)
+  type: TransactionType;
 
   @Field(() => Float)
   amount: number;
 
-  @Field(() => WalletTransactionType)
-  type: WalletTransactionType;
+  @Field()
+  currency: string;
 
   @Field(() => TransactionStatus)
   status: TransactionStatus;
 
-  @Field(() => String)
+  @Field()
   reference: string;
 
   @Field(() => String, { nullable: true })
   description?: string;
 
   @Field(() => ID, { nullable: true })
-  relatedTransactionId?: string;
+  userId?: string;
+
+  @Field(() => ID, { nullable: true })
+  propertyId?: string;
+
+  @Field(() => ID, { nullable: true })
+  bookingId?: string;
+
+  @Field(() => GraphQLJSONObject, { nullable: true })
+  metadata?: any;
+
+  @Field(() => String, { nullable: true })
+  paymentMethod?: string;
+
+  @Field(() => String, { nullable: true })
+  gatewayRef?: string;
+
+  @Field(() => String, { nullable: true })
+  failureReason?: string;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  processedAt?: Date;
 
   @Field(() => GraphQLISODateTime)
-  createdAt!: Date;
+  createdAt: Date;
 
   @Field(() => GraphQLISODateTime)
-  updatedAt!: Date;
+  updatedAt: Date;
 }
 
 @ObjectType()
-export class PaginatedWalletTransactions {
-  @Field(() => [WalletTransaction])
-  transactions!: WalletTransaction[];
+export class PaginatedTransactions {
+  @Field(() => [Transaction])
+  transactions: Transaction[];
 
   @Field(() => Int)
-  totalCount!: number;
+  totalCount: number;
 
   @Field(() => Boolean)
-  hasMore!: boolean;
+  hasMore: boolean;
 
   @Field(() => Int)
-  page!: number;
+  page: number;
 
   @Field(() => Int)
-  limit!: number;
+  limit: number;
 }
 
 @InputType()
-export class WalletTransactionFilterInput {
+export class TransactionFilterInput {
   @Field(() => [TransactionType], { nullable: true })
   types?: TransactionType[];
 
@@ -112,16 +105,11 @@ export class WalletTransactionFilterInput {
   maxAmount?: number;
 }
 
-
-
 @InputType()
-export class RequestWithdrawalInput {
-  @Field(() => Float)
-  amount: number;
+export class PaginationInput {
+  @Field(() => Int, { defaultValue: 1 })
+  page: number;
 
-  @Field(() => String)
-  paymentMethod: string;
-
-  @Field(() => GraphQLJSONObject, { nullable: true })
-  details?: string;
+  @Field(() => Int, { defaultValue: 10 })
+  limit: number;
 }

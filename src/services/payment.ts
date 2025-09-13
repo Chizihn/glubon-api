@@ -1,9 +1,11 @@
-//src/services/payment
+//src/services/payment.ts
 import axios from "axios";
 import { PrismaClient } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
 import { Redis } from "ioredis";
-import { BaseService } from "./base";
+import { BaseService, CACHE_TTL } from "./base";
 import { ServiceResponse } from "../types";
+import { logger } from "../utils";
 
 interface PaystackInitializeResponse {
   status: boolean;
@@ -24,7 +26,82 @@ interface PaystackVerifyResponse {
     currency: string;
     customer: { email: string };
     gateway_response: string;
+    reference: string;
+    paid_at: string;
+    created_at: string;
+    channel: string;
+    ip_address: string;
+    fees: number;
+    split: {
+      type: string;
+      currency: string;
+      subaccounts: Array<{
+        subaccount: string;
+        share: number;
+      }>;
+      bearer_type: string;
+      bearer_subaccount?: string;
+    };
   };
+}
+
+interface AccountResolveResponse {
+  account_number?: string;
+  account_name?: string;
+  bank_code?: string;
+}
+
+interface PaystackSubaccountResponse {
+  status: boolean;
+  message: string;
+  data: {
+    id: number;
+    subaccount_code: string;
+    business_name: string;
+    description: string;
+    primary_contact_email: string | null;
+    primary_contact_name: string | null;
+    primary_contact_phone: string | null;
+    metadata: any;
+    percentage_charge: number;
+    is_verified: boolean;
+    settlement_bank: string;
+    account_number: string;
+    settlement_schedule: string;
+    active: boolean;
+    migrate: boolean;
+    domain: string;
+    split_config: any;
+    createdAt: string;
+    updatedAt: string;
+  };
+}
+
+interface PaystackSubaccountBalance {
+  status: boolean;
+  message: string;
+  data: {
+    balance: number;
+    currency: string;
+  };
+}
+
+interface SubaccountValidationResult {
+  isValid: boolean;
+  accountName?: string;
+}
+
+interface UpdateSubaccountData {
+  business_name?: string;
+  settlement_bank?: string;
+  account_number?: string;
+  active?: boolean;
+  percentage_charge?: number;
+  description?: string;
+  primary_contact_email?: string;
+  primary_contact_name?: string;
+  primary_contact_phone?: string;
+  settlement_schedule?: string;
 }
 
 export class PaystackService extends BaseService {
@@ -39,22 +116,30 @@ export class PaystackService extends BaseService {
     }
   }
 
-
   async initializePayment(
     email: string,
-    amount: number,
+    amount: Decimal | number,
     reference: string,
-    channels: string[] = ["card", "bank_transfer", "ussd", "qr", "mobile_money"]
+    channels: string[] = ["card", "bank_transfer", "ussd", "qr", "mobile_money"],
+    subaccountCode?: string
   ): Promise<ServiceResponse<PaystackInitializeResponse>> {
     try {
+      const payload: any = {
+        email,
+        amount: new Decimal(amount).mul(100).toNumber(), // Convert to kobo
+        reference,
+        channels,
+      };
+
+      // Add subaccount if provided
+      if (subaccountCode) {
+        payload.subaccount = subaccountCode;
+        payload.bearer = "subaccount"; // Subaccount bears the transaction fee
+      }
+
       const response = await axios.post(
         `${this.baseUrl}/transaction/initialize`,
-        {
-          email,
-          amount: amount * 100,
-          reference,
-          channels,
-        },
+        payload,
         {
           headers: {
             Authorization: `Bearer ${this.apiKey}`,
@@ -62,11 +147,13 @@ export class PaystackService extends BaseService {
           },
         }
       );
+
       return this.success(
         response.data,
         "Payment initialized with Paystack successfully"
       );
     } catch (error: any) {
+      logger.error("Error initializing payment:", error);
       return this.handleError(error, "initializePayment");
     }
   }
@@ -84,12 +171,398 @@ export class PaystackService extends BaseService {
           },
         }
       );
+
       return this.success(
         response.data,
         "Payment with Paystack verified successfully"
       );
     } catch (error) {
+      logger.error("Error verifying payment:", error);
       return this.handleError(error, "verifyPayment");
+    }
+  }
+
+  async resolveAccountNumber(
+    accountNumber: string,
+    bankCode: string
+  ): Promise<ServiceResponse<AccountResolveResponse>> {
+    try {
+      if (!this.apiKey) {
+        throw new Error("Paystack secret key not configured");
+      }
+
+      const response = await axios.get<{ 
+        status: boolean;
+        message: string;
+        data: AccountResolveResponse 
+      }>(
+        `${this.baseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Account resolution failed");
+      }
+
+      return this.success(
+        response.data.data,
+        "Account number resolved successfully"
+      );
+    } catch (error: any) {
+      logger.error("Error resolving account number:", error);
+      
+      // Handle specific error cases
+      if (error.response?.status === 400) {
+        return this.failure("Invalid account number or bank code");
+      }
+      
+      return this.handleError(error, "resolveAccountNumber");
+    }
+  }
+
+  async validateSubaccountDetails(
+    accountNumber: string,
+    bankCode: string,
+    businessName: string
+  ): Promise<ServiceResponse<SubaccountValidationResult>> {
+    try {
+      // First, resolve the account number
+      const resolveResult = await this.resolveAccountNumber(accountNumber, bankCode);
+      
+      if (!resolveResult.success) {
+        return this.failure(resolveResult.message);
+      }
+
+      const accountData = resolveResult.data!;
+      
+      // Basic validation
+      if (!accountData.account_name) {
+        return this.failure("Could not retrieve account name");
+      }
+
+      // You can add more validation logic here
+      // For example, checking if account name matches business name partially
+      
+      return this.success({
+        isValid: true,
+        accountName: accountData.account_name
+      }, "Account details validated successfully");
+
+    } catch (error) {
+      logger.error("Error validating subaccount details:", error);
+      return this.handleError(error, "validateSubaccountDetails");
+    }
+  }
+
+  async createSubaccount(
+    businessName: string,
+    accountNumber: string,
+    bankCode: string,
+    percentageCharge: number = 85,
+    description?: string,
+    primaryContactEmail?: string,
+    primaryContactName?: string,
+    primaryContactPhone?: string
+  ): Promise<ServiceResponse<PaystackSubaccountResponse>> {
+    try {
+      const payload = {
+        business_name: businessName,
+        settlement_bank: bankCode,
+        account_number: accountNumber,
+        percentage_charge: percentageCharge,
+        description: description || `Subaccount for ${businessName}`,
+        primary_contact_email: primaryContactEmail,
+        primary_contact_name: primaryContactName,
+        primary_contact_phone: primaryContactPhone,
+      };
+
+      const response = await axios.post<PaystackSubaccountResponse>(
+        `${this.baseUrl}/subaccount`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Failed to create subaccount");
+      }
+
+      return this.success(
+        response.data,
+        "Subaccount created successfully"
+      );
+    } catch (error: any) {
+      logger.error("Error creating subaccount:", error);
+      
+      // Handle specific error cases
+      if (error.response?.status === 400) {
+        const errorMessage = error.response.data?.message || "Invalid subaccount data";
+        return this.failure(errorMessage);
+      }
+      
+      return this.handleError(error, "createSubaccount");
+    }
+  }
+
+  async updateSubaccount(
+    subaccountCode: string,
+    updateData: UpdateSubaccountData
+  ): Promise<ServiceResponse<PaystackSubaccountResponse>> {
+    try {
+      const response = await axios.put<PaystackSubaccountResponse>(
+        `${this.baseUrl}/subaccount/${subaccountCode}`,
+        updateData,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Failed to update subaccount");
+      }
+
+      return this.success(
+        response.data,
+        "Subaccount updated successfully"
+      );
+    } catch (error: any) {
+      logger.error("Error updating subaccount:", error);
+      
+      if (error.response?.status === 404) {
+        return this.failure("Subaccount not found");
+      }
+      
+      if (error.response?.status === 400) {
+        const errorMessage = error.response.data?.message || "Invalid update data";
+        return this.failure(errorMessage);
+      }
+      
+      return this.handleError(error, "updateSubaccount");
+    }
+  }
+
+  async getSubaccount(
+    subaccountCode: string
+  ): Promise<ServiceResponse<PaystackSubaccountResponse>> {
+    try {
+      const response = await axios.get<PaystackSubaccountResponse>(
+        `${this.baseUrl}/subaccount/${subaccountCode}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Failed to fetch subaccount");
+      }
+
+      return this.success(
+        response.data,
+        "Subaccount fetched successfully"
+      );
+    } catch (error: any) {
+      logger.error("Error fetching subaccount:", error);
+      
+      if (error.response?.status === 404) {
+        return this.failure("Subaccount not found");
+      }
+      
+      return this.handleError(error, "getSubaccount");
+    }
+  }
+
+  async getSubaccountBalance(
+    subaccountCode: string
+  ): Promise<ServiceResponse<PaystackSubaccountBalance>> {
+    try {
+      const response = await axios.get<PaystackSubaccountBalance>(
+        `${this.baseUrl}/balance/subaccounts/${subaccountCode}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Failed to fetch balance");
+      }
+
+      return this.success(
+        response.data,
+        "Subaccount balance fetched successfully"
+      );
+    } catch (error: any) {
+      logger.error("Error fetching subaccount balance:", error);
+      
+      if (error.response?.status === 404) {
+        return this.failure("Subaccount not found");
+      }
+      
+      return this.handleError(error, "getSubaccountBalance");
+    }
+  }
+
+  async listBanks(): Promise<ServiceResponse<any>> {
+    try {
+      const cacheKey = "paystack:banks";
+      const cached = await this.getCache<any>(cacheKey);
+      
+      if (cached) {
+        return this.success(cached, "Banks fetched from cache");
+      }
+
+      const response = await axios.get(
+        `${this.baseUrl}/bank`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Failed to fetch banks");
+      }
+
+      // Cache for 24 hours (banks don't change frequently)
+      await this.setCache(cacheKey, response.data, CACHE_TTL.VERY_LONG as any);
+
+      return this.success(
+        response.data,
+        "Banks fetched successfully"
+      );
+    } catch (error) {
+      logger.error("Error fetching banks:", error);
+      return this.handleError(error, "listBanks");
+    }
+  }
+
+  async getTransactionsBySubaccount(
+    subaccountCode: string,
+    page: number = 1,
+    limit: number = 50
+  ): Promise<ServiceResponse<any>> {
+    try {
+      const response = await axios.get(
+        `${this.baseUrl}/transaction?subaccount=${subaccountCode}&page=${page}&perPage=${limit}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Failed to fetch transactions");
+      }
+
+      return this.success(
+        response.data,
+        "Transactions fetched successfully"
+      );
+    } catch (error) {
+      logger.error("Error fetching transactions:", error);
+      return this.handleError(error, "getTransactionsBySubaccount");
+    }
+  }
+
+  async splitPayment(
+    email: string,
+    amount: Decimal | number,
+    reference: string,
+    splitConfig: {
+      type: string;
+      currency: string;
+      subaccounts: Array<{
+        subaccount: string;
+        share: number;
+      }>;
+      bearer_type: string;
+      bearer_subaccount?: string;
+    }
+  ): Promise<ServiceResponse<PaystackInitializeResponse>> {
+    try {
+      const payload = {
+        email,
+        amount: new Decimal(amount).mul(100).toNumber(), // Convert to kobo
+        reference,
+        split: splitConfig,
+      };
+
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/initialize`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(response.data.message || "Failed to initialize split payment");
+      }
+
+      return this.success(
+        response.data,
+        "Split payment initialized successfully"
+      );
+    } catch (error: any) {
+      logger.error("Error initializing split payment:", error);
+      return this.handleError(error, "splitPayment");
+    }
+  }
+
+  async createSplitPayment(
+    email: string,
+    totalAmount: Decimal | number,
+    reference: string,
+    subaccountCode: string,
+    subaccountPercentage: number,
+    platformPercentage: number
+  ): Promise<ServiceResponse<PaystackInitializeResponse>> {
+    try {
+      const amount = new Decimal(totalAmount);
+      const subaccountShare = amount.mul(subaccountPercentage).div(100);
+      const platformShare = amount.mul(platformPercentage).div(100);
+
+      const splitConfig = {
+        type: "percentage",
+        currency: "NGN",
+        subaccounts: [
+          {
+            subaccount: subaccountCode,
+            share: subaccountPercentage
+          }
+        ],
+        bearer_type: "subaccount",
+        bearer_subaccount: subaccountCode
+      };
+
+      return await this.splitPayment(email, amount, reference, splitConfig);
+    } catch (error: any) {
+      logger.error("Error creating split payment:", error);
+      return this.handleError(error, "createSplitPayment");
     }
   }
 }

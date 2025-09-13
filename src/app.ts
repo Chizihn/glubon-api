@@ -15,11 +15,10 @@ import { createWebSocketServer } from "./graphql/websocket";
 import { graphqlUploadExpress } from "graphql-upload-ts";
 import { createGraphQLContext } from "./graphql/context";
 import { logger } from "./utils";
-import "./jobs/escrow-release"; // Import the escrow release worker
-
-import { oauthRestRouter } from "./modules/auth";
+// Escrow release job removed - Paystack handles split automatically
 import { upload } from "./middleware/multer";
-import { WebhookController } from "./api/webhook";
+import { WebhookController } from "./routes/webhook";
+import { oauthRestRouter } from "./routes/oauth";
 
 export async function createApp() {
   try {

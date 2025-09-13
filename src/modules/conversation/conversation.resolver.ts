@@ -9,6 +9,8 @@ import {
   Root,
   Int,
   ID,
+  ArgsType,
+  Field,
 } from "type-graphql";
 import type { Context } from "../../types/context";
 import { prisma } from "../../config/database";
@@ -23,8 +25,16 @@ import {
   PaginatedMessagesResponse,
   UnreadCountResponse,
   MessageSentPayload,
+  PaginatedBroadcastMessagesResponse,
+  BroadcastMessageResponse,
 } from "./conversation.types";
+import { MessageType, RoleEnum, Prisma } from "@prisma/client";
 import { ConversationService } from "../../services/conversation";
+import { BroadcastMessageInput, BroadcastMessageFilter } from "./broadcast.inputs";
+
+import { PubSub } from "graphql-subscriptions";
+
+
 import {
   ConversationFilters,
   MessageFilters,
@@ -32,14 +42,14 @@ import {
 } from "./conversation.inputs";
 
 @Resolver()
-export class ChatResolver {
+export class ConversationResolver {
   private conversationService: ConversationService;
 
   constructor() {
     this.conversationService = new ConversationService(prisma, redis);
   }
 
-  // Removed createConversation mutation as it's now handled internally by sendMessage
+
 
   @Query(() => PaginatedConversationsResponse)
   @UseMiddleware(AuthMiddleware)
@@ -254,4 +264,188 @@ export class ChatResolver {
   ): Promise<MessageResponse> {
     return payload.message;
   }
+
+  // Broadcast endpoints
+  @Query(() => PaginatedBroadcastMessagesResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getBroadcastMessages(
+    @Arg("filters", { nullable: true }) filters: BroadcastMessageFilter,
+    @Arg("page", { defaultValue: 1 }) page: number,
+    @Arg("limit", { defaultValue: 20 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedBroadcastMessagesResponse> {
+    if (!ctx.user?.permissions.includes("SUPER_ADMIN") && ctx.user?.role !== RoleEnum.ADMIN) {
+      throw new Error("Unauthorized: Only admins can view broadcast messages");
+    }
+
+    const where: Prisma.BroadcastMessageWhereInput = {};
+
+    if (filters?.roles?.length) {
+      where.recipientRoles = { hasSome: filters.roles };
+    }
+
+    if (filters?.search) {
+      where.content = { contains: filters.search, mode: "insensitive" };
+    }
+
+    if (filters?.startDate && filters?.endDate) {
+      where.createdAt = {
+        gte: filters.startDate,
+        lte: filters.endDate,
+      };
+    }
+
+    const [broadcastMessages, totalCount] = await prisma.$transaction([
+      prisma.broadcastMessage.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          sender: true,
+          recipients: { select: { id: true } },
+        },
+      }),
+      prisma.broadcastMessage.count({ where }),
+    ]);
+
+    const response = broadcastMessages.map(
+      (msg) =>
+        new BroadcastMessageResponse({
+          ...msg,
+          sentToUserIds: msg.recipients.map((r) => r.id),
+        })
+    );
+
+    return new PaginatedBroadcastMessagesResponse(response, page, limit, totalCount);
+  }
+
+  @Query(() => BroadcastMessageResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getBroadcastMessage(
+    @Arg("broadcastId", () => ID) broadcastId: string,
+    @Ctx() ctx: Context
+  ): Promise<BroadcastMessageResponse> {
+    // Ensure user has appropriate permissions or is a recipient
+    const broadcast = await prisma.broadcastMessage.findUnique({
+      where: { id: broadcastId },
+      include: {
+        sender: true,
+        recipients: { select: { id: true } },
+      },
+    });
+
+    if (!broadcast) {
+      throw new Error("Broadcast message not found");
+    }
+
+    const isRecipient = broadcast.recipients.some((r) => r.id === ctx.user!.id);
+    const isAdmin = ctx.user?.permissions.includes("SUPER_ADMIN") || ctx.user?.role === RoleEnum.ADMIN;
+
+    if (!isRecipient && !isAdmin) {
+      throw new Error("Unauthorized: You are not a recipient or admin");
+    }
+
+    return new BroadcastMessageResponse({
+      ...broadcast,
+      sentToUserIds: broadcast.recipients.map((r) => r.id),
+    });
+  }
+
+  @Mutation(() => BroadcastMessageResponse)
+  @UseMiddleware(AuthMiddleware)
+  async sendBroadcastMessage(
+    @Arg("input") input: BroadcastMessageInput,
+    @Ctx() ctx: Context
+  ): Promise<BroadcastMessageResponse> {
+    // Ensure user has appropriate permissions
+    if (!ctx.user?.permissions.includes("SUPER_ADMIN") && ctx.user?.role !== RoleEnum.ADMIN) {
+      throw new Error("Unauthorized: Only admins can send broadcast messages");
+    }
+
+    const recipients = await prisma.user.findMany({
+      where: { role: { in: input.recipientRoles } },
+      select: { id: true },
+    });
+
+    const broadcast = await prisma.broadcastMessage.create({
+      data: {
+        content: input.content,
+        messageType: input.messageType,
+        senderId: ctx.user!.id,
+        recipientRoles: input.recipientRoles,
+        recipients: {
+          connect: recipients.map((r) => ({ id: r.id })),
+        },
+        totalRecipients: recipients.length,
+        attachments: input.attachments || [],
+      },
+      include: {
+        sender: true,
+        recipients: { select: { id: true } },
+      },
+    });
+
+    // Publish to subscribers
+    const pubSub = new PubSub();
+    await pubSub.publish(SUBSCRIPTION_EVENTS.BROADCAST_MESSAGE_SENT, {
+      broadcastMessage: {
+        ...broadcast,
+        sentToUserIds: broadcast.recipients.map((r) => r.id),
+      },
+    });
+
+    return new BroadcastMessageResponse({
+      ...broadcast,
+      sentToUserIds: broadcast.recipients.map((r) => r.id),
+    });
+  }
+
+  @Mutation(() => Boolean)
+  @UseMiddleware(AuthMiddleware)
+  async deleteBroadcastMessage(
+    @Arg("broadcastId", () => ID) broadcastId: string,
+    @Ctx() ctx: Context
+  ): Promise<boolean> {
+    // Ensure user has appropriate permissions
+    if (!ctx.user?.permissions.includes("SUPER_ADMIN") && ctx.user?.role !== RoleEnum.ADMIN) {
+      throw new Error("Unauthorized: Only admins can delete broadcast messages");
+    }
+
+    const broadcast = await prisma.broadcastMessage.findUnique({
+      where: { id: broadcastId },
+    });
+
+    if (!broadcast) {
+      throw new Error("Broadcast message not found");
+    }
+
+    await prisma.broadcastMessage.delete({
+      where: { id: broadcastId },
+    });
+
+    return true;
+  }
+
+  @Subscription(() => BroadcastMessageResponse, {
+    topics: SUBSCRIPTION_EVENTS.BROADCAST_MESSAGE_SENT,
+    filter: ({
+      payload,
+      context,
+    }: {
+      payload: { broadcastMessage: BroadcastMessageResponse };
+      context: Context;
+    }) => {
+      return payload.broadcastMessage.sentToUserIds.includes(context.user?.id ?? "");
+    },
+  })
+  async broadcastMessageSent(
+    @Root() payload: { broadcastMessage: BroadcastMessageResponse },
+    @Ctx() ctx: Context
+  ): Promise<BroadcastMessageResponse> {
+    return payload.broadcastMessage;
+  }
 }
+
+
+

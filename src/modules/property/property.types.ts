@@ -1,3 +1,4 @@
+//src/modules/property/property.types.ts
 import {
   ArgsType,
   Field,
@@ -7,6 +8,7 @@ import {
   Float,
   registerEnumType,
   GraphQLISODateTime,
+  ID,
 } from "type-graphql";
 import {
   PropertyStatus,
@@ -18,6 +20,22 @@ import {
 } from "@prisma/client";
 import { User } from "../user/user.types";
 import { PaginationInfo } from "../../types";
+import { MapSearchInput } from "./property.map.inputs";
+
+@ObjectType()
+export class MapSearchResponse {
+  @Field(() => Boolean)
+  success: boolean;
+
+  @Field(() => [Property], { nullable: true })
+  data?: any[]; // Using any[] to handle the service response type
+
+  @Field(() => String, { nullable: true })
+  message?: string;
+
+  @Field(() => Int, { nullable: true })
+  total?: number;
+}
 
 @InputType()
 export class MyPropertiesFilterInput {
@@ -167,13 +185,13 @@ export class GetPropertiesArgs {
 
 @ObjectType()
 export class Property {
-  @Field()
+  @Field(() => ID)
   id: string;
 
-  @Field()
+  @Field(() => String)
   title: string;
 
-  @Field()
+  @Field(() => String)
   description: string;
 
   @Field(() => PropertyStatus)
@@ -188,7 +206,7 @@ export class Property {
   @Field(() => RentalPeriod)
   rentalPeriod: RentalPeriod;
 
-  @Field()
+  @Field(() => String)
   address: string;
 
   @Field(() => String)
@@ -197,17 +215,17 @@ export class Property {
   @Field(() => String)
   state: string;
 
-  @Field(() => String)
+  @Field(() => String, { defaultValue: "Nigeria" })
   country: string;
 
   @Field(() => Float, { nullable: true })
-  latitude?: number;
+  latitude: number | null;
 
   @Field(() => Float, { nullable: true })
-  longitude?: number;
+  longitude: number | null;
 
   @Field(() => Float, { nullable: true })
-  sqft?: number;
+  sqft: number | null;
 
   @Field(() => Int)
   bedrooms: number;
@@ -225,40 +243,46 @@ export class Property {
   visitingDays: DayOfWeek[];
 
   @Field(() => String, { nullable: true })
-  visitingTimeStart?: string;
+  visitingTimeStart: string | null;
 
   @Field(() => String, { nullable: true })
-  visitingTimeEnd?: string;
+  visitingTimeEnd: string | null;
 
   @Field(() => [String])
   amenities: string[];
 
-  @Field(() => Boolean)
+  @Field(() => Boolean, { defaultValue: false })
   isFurnished: boolean;
 
-  @Field(() => Boolean)
+  @Field(() => Boolean, { defaultValue: false })
   isForStudents: boolean;
 
-  @Field(() => Boolean)
-  featured: boolean;
+  @Field(() => Boolean, { defaultValue: false })
+  isStandalone: boolean;
 
-  @Field(() => Boolean)
-  ownershipVerified: boolean;
+  @Field(() => Int, { nullable: true })
+  totalUnits: number | null;
+
+  @Field(() => Int, { nullable: true })
+  availableUnits: number | null;
 
   @Field(() => [String])
   images: string[];
 
-  @Field(() => [String])
+  @Field(() => [String], { defaultValue: [] })
+  sampleUnitImages: string[];
+
+  @Field(() => [String], { defaultValue: [] })
   livingRoomImages: string[];
 
-  @Field(() => [String])
+  @Field(() => [String], { defaultValue: [] })
   bedroomImages: string[];
 
-  @Field(() => [String])
+  @Field(() => [String], { defaultValue: [] })
   bathroomImages: string[];
 
   @Field(() => String, { nullable: true })
-  video?: string;
+  video: string | null;
 
   @Field(() => [String])
   propertyOwnershipDocs: string[];
@@ -269,22 +293,28 @@ export class Property {
   @Field(() => [String])
   propertyDimensionDocs: string[];
 
+  @Field(() => Boolean, { defaultValue: false })
+  featured: boolean;
+
+  @Field(() => Boolean, { defaultValue: false })
+  ownershipVerified: boolean;
+
   @Field(() => String)
   ownerId: string;
 
   @Field(() => User)
   owner: User;
 
-  @Field(() => Int)
+  @Field(() => Int, { defaultValue: 0 })
   viewsCount: number;
 
-  @Field(() => Int)
+  @Field(() => Int, { defaultValue: 0 })
   likesCount: number;
 
-  @Field(() => Boolean)
+  @Field(() => Boolean, { defaultValue: false })
   isLiked: boolean;
 
-  @Field(() => Boolean)
+  @Field(() => Boolean, { defaultValue: false })
   isViewed: boolean;
 
   @Field(() => GraphQLISODateTime)
@@ -294,9 +324,9 @@ export class Property {
   updatedAt: Date;
 
   @Field(() => Float, { nullable: true })
-  distance?: number;
+  distanceInKm?: number;
 
-  // Computed fields for frontend compatibility
+  // Computed fields
   @Field(() => String, { nullable: true })
   get location(): string {
     return `${this.address}, ${this.city}, ${this.state}, ${this.country}`;

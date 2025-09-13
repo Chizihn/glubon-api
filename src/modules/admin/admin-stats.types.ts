@@ -1,11 +1,6 @@
 import { Decimal } from "@prisma/client/runtime/library";
-import {
-  ObjectType,
-  Field,
-  Int,
-  Float,
-  GraphQLISODateTime,
-} from "type-graphql";
+import { Field, ObjectType, Int, Float, GraphQLISODateTime } from "type-graphql";
+import { RecentTransaction } from "./admin.types";
 
 @ObjectType()
 export class MonthlyGrowthResponse {
@@ -14,6 +9,9 @@ export class MonthlyGrowthResponse {
 
   @Field(() => Int)
   properties: number;
+  
+  @Field(() => Int, { nullable: true })
+  revenue?: number;
 }
 
 @ObjectType()
@@ -251,7 +249,7 @@ export class PropertyGrowthData {
 }
 
 @ObjectType()
-export class ActivityData {
+export class GqlActivityData {
   @Field()
   date: string;
 
@@ -333,8 +331,8 @@ export class DashboardAnalyticsCharts {
   @Field(() => [PropertyGrowthData])
   propertyGrowth: PropertyGrowthData[];
 
-  @Field(() => [ActivityData])
-  activity: ActivityData[];
+  @Field(() => [GqlActivityData])
+  activity: GqlActivityData[];
 
   @Field(() => [GeographicData])
   geographic: GeographicData[];
@@ -350,6 +348,12 @@ export class DashboardAnalyticsResponse {
 
   @Field(() => PerformanceMetrics)
   performance: PerformanceMetrics;
+  
+  @Field(() => [GqlActivityData], { nullable: true })
+  recentActivity?: GqlActivityData[];
+  
+  @Field(() => [RecentTransaction], { nullable: true })
+  recentTransactions?: RecentTransaction[];
 }
 
 @ObjectType()

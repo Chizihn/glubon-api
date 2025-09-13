@@ -106,6 +106,79 @@ export class PlatformFeeService extends BaseService {
     }
   }
 
+  async recordPlatformFeeCollection(
+    baseAmount: number,
+    platformFee: number,
+    bookingId: string,
+    userId: string,
+    subaccountCode: string
+  ) {
+    try {
+      // This method records that platform fee was collected via Paystack split
+      // The actual fee collection is handled by Paystack's split payment feature
+      const platformAccountId = await this.getPlatformAccountId();
+
+      return await this.prisma.$transaction(async (tx) => {
+        // Create a record of the platform fee collection
+        const feeTransaction = await tx.transaction.create({
+          data: {
+            type: "PLATFORM_FEE",
+            amount: platformFee,
+            currency: "NGN",
+            status: "COMPLETED",
+            reference: this.generateReference("PFEE"),
+            description: `Platform fee collected via split for booking ${bookingId}`,
+            userId: platformAccountId,
+            bookingId,
+            metadata: {
+              originalUserId: userId,
+              originalAmount: baseAmount,
+              subaccountCode,
+              collectionMethod: "PAYSTACK_SPLIT",
+            },
+          },
+        });
+
+        // Credit platform account wallet
+        let platformWallet = await tx.wallet.findUnique({
+          where: { userId: platformAccountId },
+        });
+
+        if (!platformWallet) {
+          platformWallet = await tx.wallet.create({
+            data: { userId: platformAccountId, currency: "NGN" },
+          });
+        }
+
+        await tx.wallet.update({
+          where: { id: platformWallet.id },
+          data: { balance: { increment: platformFee } },
+        });
+
+        // Create wallet transaction
+        await tx.walletTransaction.create({
+          data: {
+            walletId: platformWallet.id,
+            amount: platformFee,
+            type: "PLATFORM_FEE",
+            status: "COMPLETED",
+            reference: this.generateReference("WFEE"),
+            description: `Platform fee from split payment for booking ${bookingId}`,
+            relatedTransactionId: feeTransaction.id,
+          },
+        });
+
+        return {
+          success: true,
+          fee: platformFee,
+          transactionId: feeTransaction.id,
+        };
+      });
+    } catch (error) {
+      return this.handleError(error, "recordPlatformFeeCollection");
+    }
+  }
+
   private generateReference(prefix: string): string {
     return `${prefix}-${Date.now()}-${Math.random()
       .toString(36)

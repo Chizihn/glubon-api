@@ -1,3 +1,4 @@
+//src/modules/property/property.resolver.ts
 import {
   Resolver,
   Query,
@@ -15,10 +16,11 @@ import {
   PaginatedVisitorsResponse,
   Property,
   PropertyStatsResponse,
-  GetMyPropertiesArgs, // Added missing import
-  // Property,
+  GetMyPropertiesArgs,
+  MapSearchResponse,
 } from "./property.types";
 import { PropertyFilters, UpdatePropertyInput } from "./property.inputs";
+import { MapSearchInput } from "./property.map.inputs";
 import { PropertyStatus, RoleEnum } from "@prisma/client";
 import { CreatePropertyInput } from "./property.inputs";
 import { PropertyService } from "../../services/property";
@@ -45,6 +47,55 @@ export class PropertyResolver {
     return {
       ...property,
     };
+  }
+
+  @Query(() => MapSearchResponse)
+  @UseMiddleware(AuthMiddleware)
+  async searchPropertiesOnMap(
+    @Arg("input") input: MapSearchInput,
+    @Ctx() ctx: Context,
+    @Arg("take", () => Int, { nullable: true }) take?: number,
+    @Arg("skip", () => Int, { nullable: true }) skip?: number
+  ): Promise<MapSearchResponse> {
+    try {
+      const filters: {
+        propertyTypes?: string[];
+        amenities?: string[];
+        minPrice?: number;
+        maxPrice?: number;
+        roomTypes?: string[];
+      } = {};
+      
+      if (input.propertyTypes?.length) filters.propertyTypes = input.propertyTypes;
+      if (input.amenities?.length) filters.amenities = input.amenities;
+      if (input.minPrice !== undefined) filters.minPrice = input.minPrice;
+      if (input.maxPrice !== undefined) filters.maxPrice = input.maxPrice;
+      if (input.roomTypes?.length) filters.roomTypes = input.roomTypes;
+      
+      const options: { take?: number; skip?: number } = {};
+      if (take !== undefined) options.take = take;
+      if (skip !== undefined) options.skip = skip;
+      
+      const result = await this.propertyService.searchPropertiesOnMap(
+        input.latitude,
+        input.longitude,
+        input.radiusInKm || 10,
+        filters,
+        options
+      );
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to search properties on map');
+      }
+
+      return result;
+    } catch (error) {
+      logger.error("Error in searchPropertiesOnMap:", error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to search properties on map'
+      };
+    }
   }
 
   @Query(() => PaginatedPropertiesResponse)
@@ -287,7 +338,7 @@ export class PropertyResolver {
   }
 
   @Mutation(() => Property)
-  @UseMiddleware(AuthMiddleware)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
   async updateProperty(
     @Arg("id") id: string,
     @Arg("input") input: UpdatePropertyInput,
@@ -307,7 +358,7 @@ export class PropertyResolver {
   }
 
   @Mutation(() => Boolean)
-  @UseMiddleware(AuthMiddleware)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
   async deleteProperty(
     @Arg("id") id: string,
     @Ctx() ctx: Context
@@ -379,7 +430,7 @@ export class PropertyResolver {
   }
 
   @Query(() => PropertyStatsResponse)
-  @UseMiddleware(AuthMiddleware)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
   async getPropertyStats(): Promise<PropertyStatsResponse> {
     const result = await this.propertyService.getPropertyStats();
     if (!result.success) throw new Error(result.message);
@@ -387,7 +438,7 @@ export class PropertyResolver {
   }
 
   @Query(() => [Property])
-  @UseMiddleware(AuthMiddleware)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.RENTER, RoleEnum.ADMIN))
   async getTrendingProperties(
     @Arg("limit", () => Int, { defaultValue: 10 }) limit: number,
     @Ctx() ctx: Context

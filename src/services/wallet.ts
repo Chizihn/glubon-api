@@ -1,6 +1,7 @@
 //src/services/payment
 import { PrismaClient, TransactionType, WalletTransactionType } from "@prisma/client";
 import { Redis } from "ioredis";
+import { Decimal } from "@prisma/client/runtime/library";
 import { BaseService } from "./base";
 import { WalletRepository } from "../repository/wallet";
 import { NotificationService } from "./notification";
@@ -29,7 +30,7 @@ export class WalletService extends BaseService {
    */
   async updateBalance(
     userId: string,
-    amount: number,
+    amount: Decimal | number | string,
     type: WalletTransactionType,
     description: string,
     reference?: string
@@ -50,11 +51,11 @@ export class WalletService extends BaseService {
 
       const { updatedWallet, walletTransaction } = result;
 
-      // Create transaction record
+      // Create transaction record with amount as number
       const transaction = await this.transactionService.createTransaction(
         {
           type,
-          amount: Math.abs(amount),
+          amount: new Decimal(amount).abs().toNumber(),
           currency: updatedWallet.currency,
           description,
           userId,
@@ -80,12 +81,12 @@ export class WalletService extends BaseService {
       const wallet = await this.walletRepo.getWalletByUserId(userId);
       if (!wallet) return this.failure("Wallet not found");
 
-      if (wallet.balance < data.amount)
+      if (new Decimal(wallet.balance).lessThan(new Decimal(data.amount)))
         return this.failure("Insufficient balance");
 
       const transactionData = {
         type: TransactionType.WITHDRAWAL,
-        amount: data.amount,
+        amount: new Decimal(data.amount).toNumber(),
         currency: wallet.currency,
         description: "Withdrawal request",
         userId,

@@ -1,6 +1,6 @@
 import { Resolver, Query, Mutation, Args, ID, Ctx, Arg } from 'type-graphql';
-import { TransactionService } from '../../services/transaction';
 import { Context } from '../../types/context';
+import { TransactionService } from '../../services/transaction';
 import { 
   Transaction, 
   PaginatedTransactions, 
@@ -15,16 +15,22 @@ import {
   VerifyTransactionInput,
   GenerateTransactionReportInput
 } from './transaction.inputs';
-import { TransactionStatus, TransactionType } from '@prisma/client';
+import { RoleEnum, TransactionStatus, TransactionType } from '@prisma/client';
+import { Services } from '../../services';
+import { prisma, redis } from '../../config';
 
 @Resolver(() => Transaction)
 export class TransactionResolver {
-  constructor(private readonly transactionService: TransactionService) {}
+  private transactionService: TransactionService;
+
+constructor() {
+  this.transactionService = new TransactionService(prisma, redis);
+}
 
   @Query(() => Transaction, { nullable: true })
   async transaction(
     @Arg('id') id: string,
-    @Ctx() { user }: Context
+    @Ctx() context: Context
   ) {
     const result = await this.transactionService.getTransactionById(id);
     if (!result.success) {
@@ -35,7 +41,7 @@ export class TransactionResolver {
 
   @Query(() => PaginatedTransactions)
   async transactions(
-    @Ctx() { user }: Context,
+    @Ctx() context: Context,
     @Arg('filter', { nullable: true }) filter?: TransactionFilterInput,
     @Arg('sort', { nullable: true }) sort?: TransactionSortInput,
     @Arg('pagination', { nullable: true }) pagination?: PaginationInput
@@ -46,39 +52,51 @@ export class TransactionResolver {
     const query: any = {
       page,
       limit,
-      // Copy filter properties if they exist
       ...(filter || {}),
-      // Override with sort if provided
       ...(sort || {})
     };
     
     // Ensure users can only see their own transactions unless they're admins
-    if (user?.role !== 'ADMIN' && user?.id) {
-      query.userId = user.id;
+    if (context.user?.role !== RoleEnum.ADMIN && context.user?.id) {
+      query.userId = context.user.id;
     }
     
-    const result = await this.transactionService.getTransactions(query);
+    const [transactionsResult, statsResult] = await Promise.all([
+      this.transactionService.getTransactions(query),
+      this.transactionService.getTransactionStats(query.userId)
+    ]);
 
-    if (!result.success) {
-      throw new Error(result.message);
+    if (!transactionsResult.success) {
+      throw new Error(transactionsResult.message);
+    }
+
+    if (!statsResult.success) {
+      console.error('Failed to fetch transaction stats:', statsResult.message);
     }
 
     return {
-      transactions: result.data?.transactions || [],
-      totalCount: result.data?.pagination?.total || 0,
-      hasMore: result.data?.pagination?.hasNextPage || false,
+      transactions: transactionsResult.data?.transactions || [],
+      totalCount: transactionsResult.data?.pagination?.total || 0,
+      hasMore: transactionsResult.data?.pagination?.hasNextPage || false,
+      stats: statsResult.success ? {
+        totalTransactions: statsResult.data?.total || 0,
+        totalAmount: statsResult.data?.totalAmount || 0,
+        pendingTransactions: statsResult.data?.pending || 0,
+        completedTransactions: statsResult.data?.completed || 0,
+        failedTransactions: statsResult.data?.failed || 0,
+      } : undefined,
     };
   }
 
   @Query(() => PaginatedTransactions)
   async transactionsByUser(
-    @Ctx() { user }: Context,
+    @Ctx() context: Context,
     @Arg('userId') userId: string,
     @Arg('status', { nullable: true }) status?: string,
     @Arg('pagination', { nullable: true }) pagination?: PaginationInput
   ) {
     // Normal users can only see their own transactions
-    if (user?.role !== 'ADMIN' && user?.id !== userId) {
+    if (context.user?.role !== 'ADMIN' && context.user?.id !== userId) {
       throw new Error('Unauthorized');
     }
 
@@ -107,7 +125,7 @@ export class TransactionResolver {
 
   @Query(() => [Transaction])
   async transactionsByProperty(
-    @Ctx() { user }: Context,
+    @Ctx() context: Context,
     @Arg('propertyId') propertyId: string
   ) {
     const result = await this.transactionService.getTransactionsByProperty(propertyId);
@@ -119,7 +137,7 @@ export class TransactionResolver {
 
   @Query(() => [Transaction])
   async transactionsByBooking(
-    @Ctx() { user }: Context,
+    @Ctx() context: Context,
     @Arg('bookingId') bookingId: string
   ) {
     const result = await this.transactionService.getTransactionsByBooking(bookingId);
@@ -131,16 +149,16 @@ export class TransactionResolver {
 
   @Query(() => TransactionStats)
   async transactionStats(
-    @Ctx() { user }: Context,
+    @Ctx() context: Context,
     @Arg('userId', { nullable: true }) userId?: string
   ) {
     // Normal users can only see their own stats
-    if (user?.role !== 'ADMIN' && userId && userId !== user?.id) {
+    if (context.user?.role !== 'ADMIN' && userId && userId !== context.user?.id) {
       throw new Error('Unauthorized');
     }
 
     const result = await this.transactionService.getTransactionStats(
-      userId || user?.id
+      userId || context.user?.id
     );
     
     if (!result.success) {
@@ -159,9 +177,9 @@ export class TransactionResolver {
   @Mutation(() => Transaction)
   async updateTransactionStatus(
     @Arg('input') input: UpdateTransactionStatusInput,
-    @Ctx() { user }: Context
+    @Ctx() context: Context
   ) {
-    if (!user) {
+    if (!context.user) {
       throw new Error('Authentication required');
     }
 
@@ -170,9 +188,9 @@ export class TransactionResolver {
       input.status,
       {
         ...(input.gatewayRef && { gatewayRef: input.gatewayRef }),
-        updatedBy: user.id,
+        updatedBy: context.user.id,
       },
-      user.id
+      context.user.id
     );
 
     if (!result.success) {
@@ -185,7 +203,7 @@ export class TransactionResolver {
   @Mutation(() => VerifyTransactionResponse)
   async verifyTransaction(
     @Arg('input') input: VerifyTransactionInput,
-    @Ctx() { user }: Context
+    @Ctx() context: Context
   ) {
     const result = await this.transactionService.verifyTransaction(
       input.reference
@@ -205,9 +223,11 @@ export class TransactionResolver {
   @Query(() => String)
   async generateTransactionReport(
     @Arg('input') input: GenerateTransactionReportInput,
-    @Ctx() { user }: Context
+    @Ctx() context: Context
   ) {
-    if (user?.role !== 'ADMIN') {
+    // Service is available through constructor injection
+    
+    if (context.user?.role !== 'ADMIN') {
       throw new Error('Unauthorized: Admin access required');
     }
 

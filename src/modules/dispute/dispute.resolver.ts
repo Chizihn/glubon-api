@@ -17,6 +17,7 @@ import { CreateDisputeInput, ResolveDisputeInput } from "./dispute.inputs";
 import { ResolveDisputeInput as ServiceResolveDisputeInput } from "../../types/services/booking";
 import { ServiceResponse } from "../../types";
 import { Dispute, PaginatedDisputes } from "./dispute.types";
+import { User } from "../user/user.types";
 
 @Resolver(() => Dispute)
 export class DisputeResolver {
@@ -24,14 +25,26 @@ export class DisputeResolver {
 
   @FieldResolver(() => Booking, { nullable: true })
   async booking(@Root() dispute: Dispute): Promise<Booking | null> {
-    // This will be automatically populated by the GraphQL resolver
-    return (dispute as any).booking || null;
+    // If booking is already loaded, return it
+    if ((dispute as any).booking) {
+      return (dispute as any).booking;
+    }
+    
+    // Otherwise, fetch it from the database
+    const booking = await this.disputeService.getDisputeWithRelations(dispute.id);
+    return booking?.booking || null;
   }
 
-  @FieldResolver(() => Object, { nullable: true })
-  async initiator(@Root() dispute: Dispute): Promise<Record<string, any> | null> {
-    // This will be automatically populated by the GraphQL resolver
-    return (dispute as any).initiator || null;
+  @FieldResolver(() => User, { nullable: true })
+  async initiator(@Root() dispute: Dispute): Promise<User | null> {
+    // If initiator is already loaded, return it
+    if ((dispute as any).initiator) {
+      return (dispute as any).initiator;
+    }
+    
+    // Otherwise, fetch it from the database
+    const disputeWithInitiator = await this.disputeService.getDisputeWithRelations(dispute.id);
+    return disputeWithInitiator?.initiator || null;
   }
 
   @Mutation(() => Dispute)
@@ -43,9 +56,21 @@ export class DisputeResolver {
     const result = await this.disputeService.createDispute(input, ctx.user!.id);
     if (result && 'success' in result) {
       if (!result.success) throw new Error(result.message);
-      return result.data as Dispute;
+      // The service returns a plain object, we need to ensure it matches the Dispute type
+      const disputeData = result.data as any;
+      return {
+        ...disputeData,
+        booking: null, // Will be resolved by the field resolver
+        initiator: null // Will be resolved by the field resolver
+      } as unknown as Dispute;
     }
-    return result as Dispute;
+    // If it's not a ServiceResponse, it's already a Dispute
+    const dispute = result as any;
+    return {
+      ...dispute,
+      booking: null,
+      initiator: null
+    } as unknown as Dispute;
   }
 
   @Mutation(() => Dispute)
@@ -73,9 +98,21 @@ export class DisputeResolver {
 
     if (result && 'success' in result) {
       if (!result.success) throw new Error(result.message);
-      return result.data as Dispute;
+      // The service returns a plain object, we need to ensure it matches the Dispute type
+      const disputeData = result.data as any;
+      return {
+        ...disputeData,
+        booking: null, // Will be resolved by the field resolver
+        initiator: null // Will be resolved by the field resolver
+      } as unknown as Dispute;
     }
-    return result as Dispute;
+    // If it's not a ServiceResponse, it's already a Dispute
+    const dispute = result as any;
+    return {
+      ...dispute,
+      booking: null,
+      initiator: null
+    } as unknown as Dispute;
   }
 
   @Query(() => PaginatedDisputes)

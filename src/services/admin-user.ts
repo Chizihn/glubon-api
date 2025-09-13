@@ -4,7 +4,6 @@ import {
   RoleEnum,
   PermissionEnum,
   NotificationType,
-  PropertyStatus,
 } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
@@ -19,22 +18,23 @@ import {
   UpdateUserStatusInput,
   AdminUserResponse,
   PaginatedUsersResponse,
-  AdminPropertyFilters,
   ReviewVerificationInput,
-  UpdatePropertyStatusInput,
 } from "../types/services/admin";
 import { ForbiddenError, NotFoundError, ValidationError } from "../utils";
 import { AdminUsersRepository } from "../repository/admin-user";
+import { SubaccountService } from "./subaccount";
 
 export class AdminUsersService extends BaseService {
   private emailService = emailServiceSingleton;
   private notificationService: NotificationService;
   private repository: AdminUsersRepository;
+  private subaccountService: SubaccountService;
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
     this.notificationService = new NotificationService(prisma, redis);
     this.repository = new AdminUsersRepository(prisma, redis);
+    this.subaccountService = new SubaccountService(prisma, redis);
   }
 
   /**
@@ -96,17 +96,6 @@ export class AdminUsersService extends BaseService {
     limit = 20
   ): Promise<IBaseResponse<PaginatedUsersResponse>> {
     try {
-      // Check if requester has permission to view other admins
-      const requester = await this.prisma.user.findUnique({
-        where: { id: adminId },
-        select: { permissions: true },
-      });
-
-      if (!requester?.permissions.includes(PermissionEnum.SUPER_ADMIN)) {
-        throw new ForbiddenError(
-          "Insufficient permissions to view admin users"
-        );
-      }
 
       await this.repository.logAdminAction(adminId, "VIEW_ADMINS", {
         filters,
@@ -393,145 +382,7 @@ export class AdminUsersService extends BaseService {
       return this.handleError(error, "deactivateAdminUser");
     }
   }
-
-  async updatePropertyStatus(
-    adminId: string,
-    input: UpdatePropertyStatusInput
-  ): Promise<IBaseResponse<null>> {
-    try {
-      const { propertyId, status, reason } = input;
-      const property = await this.prisma.property.findUnique({
-        where: { id: propertyId },
-        include: {
-          owner: {
-            select: { id: true, firstName: true, lastName: true, email: true },
-          },
-        },
-      });
-
-      if (!property) throw new NotFoundError("Property not found");
-
-      await this.repository.updatePropertyStatus(propertyId, status);
-      await this.repository.logAdminAction(adminId, "UPDATE_PROPERTY_STATUS", {
-        propertyId,
-        oldStatus: property.status,
-        newStatus: status,
-        reason,
-      });
-
-      let notificationType: NotificationType;
-      let notificationTitle: string;
-      let notificationMessage: string;
-
-      switch (status) {
-        case PropertyStatus.ACTIVE:
-          notificationType = NotificationType.PROPERTY_APPROVED;
-          notificationTitle = "Property Approved";
-          notificationMessage = `Your property "${property.title}" has been approved and is now live.`;
-          break;
-        case PropertyStatus.REJECTED:
-          notificationType = NotificationType.PROPERTY_REJECTED;
-          notificationTitle = "Property Rejected";
-          notificationMessage = reason
-            ? `Your property "${property.title}" has been rejected. Reason: ${reason}`
-            : `Your property "${property.title}" has been rejected.`;
-          break;
-        case PropertyStatus.SUSPENDED:
-          notificationType = NotificationType.PROPERTY_REJECTED;
-          notificationTitle = "Property Suspended";
-          notificationMessage = reason
-            ? `Your property "${property.title}" has been suspended. Reason: ${reason}`
-            : `Your property "${property.title}" has been suspended.`;
-          break;
-        default:
-          notificationType = NotificationType.SYSTEM_UPDATE;
-          notificationTitle = "Property Status Updated";
-          notificationMessage = `Your property "${property.title}" status has been updated to ${status}.`;
-      }
-
-      await this.notificationService.createNotification({
-        userId: property.ownerId,
-        title: notificationTitle,
-        message: notificationMessage,
-        type: notificationType,
-        data: { propertyId, reason, adminId },
-      });
-
-      if (
-        status === PropertyStatus.ACTIVE ||
-        status === PropertyStatus.REJECTED
-      ) {
-        await this.emailService.sendPropertyApprovalNotification(
-          property.owner.email,
-          property.owner.firstName,
-          property.title,
-          propertyId,
-          status === PropertyStatus.ACTIVE
-        );
-      }
-
-      return this.success(null, `Property status updated to ${status}`);
-    } catch (error: unknown) {
-      return this.handleError(error, "updatePropertyStatus");
-    }
-  }
-
-  async getPendingVerifications(
-    adminId: string,
-    page = 1,
-    limit = 20
-  ): Promise<
-    IBaseResponse<{ verifications: any[]; totalCount: number; pagination: any }>
-  > {
-    try {
-      await this.repository.logAdminAction(
-        adminId,
-        "VIEW_PENDING_VERIFICATIONS"
-      );
-      const { verifications, totalCount } =
-        await this.repository.getPendingVerifications(page, limit);
-      const pagination = this.repository.buildPagination(
-        page,
-        limit,
-        totalCount
-      );
-      return this.success(
-        { verifications, totalCount, pagination },
-        "Pending verifications retrieved successfully"
-      );
-    } catch (error: unknown) {
-      return this.handleError(error, "getPendingVerifications");
-    }
-  }
-
-  async getPendingOwnershipVerifications(
-    adminId: string,
-    page = 1,
-    limit = 20
-  ): Promise<
-    IBaseResponse<{ verifications: any[]; totalCount: number; pagination: any }>
-  > {
-    try {
-      await this.repository.logAdminAction(
-        adminId,
-        "VIEW_PENDING_OWNERSHIP_VERIFICATIONS"
-      );
-      const { verifications, totalCount } =
-        await this.repository.getPendingOwnershipVerifications(page, limit);
-      const pagination = this.repository.buildPagination(
-        page,
-        limit,
-        totalCount
-      );
-      return this.success(
-        { verifications, totalCount, pagination },
-        "Pending ownership verifications retrieved successfully"
-      );
-    } catch (error: unknown) {
-      return this.handleError(error, "getPendingOwnershipVerifications");
-    }
-  }
-
+  
   async getAdminLogs(
     adminId: string,
     page = 1,
@@ -579,6 +430,79 @@ export class AdminUsersService extends BaseService {
         reason,
       });
 
+      // If approved and user is a LISTER, check if they need a subaccount
+      if (approved) {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          include: { subaccount: true }
+        });
+
+        // If user is a lister and doesn't have a subaccount, create one
+        if (user?.role === "LISTER" && !user.subaccount) {
+          // Check if user has provided bank details during verification
+          const verification = await this.prisma.identityVerification.findUnique({
+            where: { id: verificationId },
+          });
+
+          const metadata = (verification as any)?.metadata;
+          
+          if (metadata?.bankDetails) {
+            const { accountNumber, bankCode, businessName } = metadata.bankDetails;
+            
+            // Create subaccount automatically
+            const subaccountResult = await this.subaccountService.createSubaccount({
+              userId,
+              accountNumber,
+              bankCode,
+              businessName: businessName || `${userFirstName}'s Properties`,
+              percentageCharge: 85, // Default: lister gets 85%, platform gets 15%
+            });
+
+            if (!subaccountResult.success) {
+              // Log the error but don't fail the verification
+              console.error(`Failed to create subaccount for user ${userId}:`, subaccountResult.message);
+              
+              // Send notification to admin about subaccount creation failure
+              await this.notificationService.createNotification({
+                userId: adminId,
+                title: "Subaccount Creation Failed",
+                message: `Failed to create subaccount for ${userFirstName} (${userEmail}). Reason: ${subaccountResult.message}`,
+                type: NotificationType.ADMIN_ALERT,
+                data: { 
+                  userId, 
+                  verificationId, 
+                  error: subaccountResult.message 
+                },
+              });
+            } else {
+              // Notify user about subaccount creation
+              await this.notificationService.createNotification({
+                userId,
+                title: "Payment Setup Complete",
+                message: "Your payment account has been set up successfully. You can now receive payments for your property bookings.",
+                type: NotificationType.PAYMENT_SETUP_COMPLETE,
+                data: { 
+                  subaccountId: subaccountResult.data?.id,
+                  subaccountCode: subaccountResult.data?.subaccountCode
+                },
+              });
+            }
+          } else {
+            // Bank details not provided, notify user to complete payment setup
+            await this.notificationService.createNotification({
+              userId,
+              title: "Complete Payment Setup",
+              message: "Your verification is approved! Please complete your payment setup to start receiving payments for bookings.",
+              type: NotificationType.ACTION_REQUIRED,
+              data: { 
+                action: "COMPLETE_PAYMENT_SETUP",
+                verificationId 
+              },
+            });
+          }
+        }
+      }
+
       await this.notificationService.createNotification({
         userId,
         title: approved
@@ -608,96 +532,6 @@ export class AdminUsersService extends BaseService {
       );
     } catch (error: unknown) {
       return this.handleError(error, "reviewVerification");
-    }
-  }
-
-  async reviewOwnershipVerification(
-    adminId: string,
-    verificationId: string,
-    approved: boolean,
-    reason?: string
-  ): Promise<IBaseResponse<null>> {
-    try {
-      const { propertyId, ownerId, propertyTitle } =
-        await this.repository.reviewOwnershipVerification(
-          verificationId,
-          approved,
-          adminId,
-          reason
-        );
-
-      await this.repository.logAdminAction(
-        adminId,
-        approved ? "APPROVE_OWNERSHIP" : "REJECT_OWNERSHIP",
-        {
-          verificationId,
-          propertyId,
-          ownerId,
-          reason,
-        }
-      );
-
-      await this.notificationService.createNotification({
-        userId: ownerId,
-        title: approved
-          ? "Property Ownership Verified"
-          : "Property Ownership Verification Rejected",
-        message: approved
-          ? `Ownership of "${propertyTitle}" has been verified and is now active.`
-          : `Ownership verification for "${propertyTitle}" has been rejected.${
-              reason ? ` Reason: ${reason}` : ""
-            }`,
-        type: approved
-          ? NotificationType.PROPERTY_APPROVED
-          : NotificationType.PROPERTY_REJECTED,
-        data: { propertyId, verificationId, reason, adminId },
-      });
-
-      return this.success(
-        null,
-        `Property ownership verification ${
-          approved ? "approved" : "rejected"
-        } successfully`
-      );
-    } catch (error: unknown) {
-      return this.handleError(error, "reviewOwnershipVerification");
-    }
-  }
-
-  async togglePropertyFeatured(
-    adminId: string,
-    propertyId: string
-  ): Promise<IBaseResponse<{ featured: boolean }>> {
-    try {
-      const { featured, ownerId, title } =
-        await this.repository.togglePropertyFeatured(propertyId);
-
-      await this.repository.logAdminAction(
-        adminId,
-        "TOGGLE_PROPERTY_FEATURED",
-        {
-          propertyId,
-          oldFeatured: !featured,
-          newFeatured: featured,
-        }
-      );
-
-      await this.notificationService.createNotification({
-        userId: ownerId,
-        title: featured ? "Property Featured" : "Property Unfeatured",
-        message: featured
-          ? `Your property "${title}" has been featured and will get more visibility.`
-          : `Your property "${title}" is no longer featured.`,
-        type: NotificationType.SYSTEM_UPDATE,
-        data: { propertyId, featured, adminId },
-      });
-
-      return this.success(
-        { featured },
-        `Property ${featured ? "featured" : "unfeatured"} successfully`
-      );
-    } catch (error: unknown) {
-      return this.handleError(error, "togglePropertyFeatured");
     }
   }
 
@@ -801,36 +635,31 @@ export class AdminUsersService extends BaseService {
     }
   }
 
-  async getAllProperties(
+  async getPendingVerifications(
     adminId: string,
-    filters: AdminPropertyFilters = {},
     page = 1,
     limit = 20
   ): Promise<
-    IBaseResponse<{ properties: any[]; totalCount: number; pagination: any }>
+    IBaseResponse<{ verifications: any[]; totalCount: number; pagination: any }>
   > {
     try {
-      await this.repository.logAdminAction(adminId, "VIEW_PROPERTIES", {
-        filters,
-        page,
-        limit,
-      });
-      const { properties, totalCount } = await this.repository.getAllProperties(
-        filters,
-        page,
-        limit
+      await this.repository.logAdminAction(
+        adminId,
+        "VIEW_PENDING_VERIFICATIONS"
       );
+      const { verifications, totalCount } =
+        await this.repository.getPendingVerifications(page, limit);
       const pagination = this.repository.buildPagination(
         page,
         limit,
         totalCount
       );
       return this.success(
-        { properties, totalCount, pagination },
-        "Properties retrieved successfully"
+        { verifications, totalCount, pagination },
+        "Pending verifications retrieved successfully"
       );
     } catch (error: unknown) {
-      return this.handleError(error, "getAllProperties");
+      return this.handleError(error, "getPendingVerifications");
     }
   }
 

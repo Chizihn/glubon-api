@@ -5,7 +5,6 @@ import {
   RoleEnum,
   PermissionEnum,
   VerificationStatus,
-  PropertyStatus,
 } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseRepository } from "./base";
@@ -14,7 +13,6 @@ import {
   AdminListFilters,
   CreateAdminUserInput,
   UpdateAdminUserInput,
-  AdminPropertyFilters,
 } from "../types/services/admin";
 import { logger } from "../utils";
 
@@ -68,32 +66,31 @@ export class AdminUsersRepository extends BaseRepository {
           country: true,
           role: true,
           permissions: true,
-          provider: true,
           isVerified: true,
           isActive: true,
           status: true,
           lastLogin: true,
           createdAt: true,
           updatedAt: true,
-          _count: {
-            select: {
-              properties: true,
-              propertyLikes: true,
-              userConversations: true,
-              propertyViews: true,
-            },
-          },
-          identityVerifications: {
-            select: {
-              id: true,
-              status: true,
-              documentType: true,
-              createdAt: true,
-              reviewedAt: true,
-            },
-            orderBy: { createdAt: "desc" },
-            take: 1,
-          },
+          // _count: {
+          //   select: {
+          //     properties: true,
+          //     propertyLikes: true,
+          //     userConversations: true,
+          //     propertyViews: true,
+          //   },
+          // },
+          // identityVerifications: {
+          //   select: {
+          //     id: true,
+          //     status: true,
+          //     documentType: true,
+          //     createdAt: true,
+          //     reviewedAt: true,
+          //   },
+          //   orderBy: { createdAt: "desc" },
+          //   take: 1,
+          // },
         },
         skip,
         take: validatedLimit,
@@ -152,75 +149,6 @@ export class AdminUsersRepository extends BaseRepository {
       userEmail: verification.user.email,
       userFirstName: verification.user.firstName,
       documentType: verification.documentType,
-    };
-  }
-
-  async reviewOwnershipVerification(
-    verificationId: string,
-    approved: boolean,
-    adminId: string,
-    reason?: string
-  ): Promise<{ propertyId: string; ownerId: string; propertyTitle: string }> {
-    const verification = await this.prisma.propertyOwnershipProof.findUnique({
-      where: { id: verificationId },
-      include: { property: true },
-    });
-
-    if (!verification) throw new Error("Ownership verification not found");
-
-    await Promise.all([
-      this.prisma.propertyOwnershipProof.update({
-        where: { id: verificationId },
-        data: {
-          status: approved
-            ? VerificationStatus.APPROVED
-            : VerificationStatus.REJECTED,
-          reviewedAt: new Date(),
-          reviewedBy: adminId,
-          rejectionReason: { set: approved ? null : reason ?? null },
-        },
-      }),
-      ...(approved
-        ? [
-            this.prisma.property.update({
-              where: { id: verification.propertyId },
-              data: { ownershipVerified: true, status: PropertyStatus.ACTIVE },
-            }),
-          ]
-        : []),
-    ]);
-
-    await this.deleteCachePattern(`property:${verification.propertyId}:*`);
-    await this.deleteCachePattern("properties:*");
-    return {
-      propertyId: verification.propertyId,
-      ownerId: verification.property.ownerId,
-      propertyTitle: verification.property.title,
-    };
-  }
-
-  async togglePropertyFeatured(
-    propertyId: string
-  ): Promise<{ featured: boolean; ownerId: string; title: string }> {
-    const property = await this.prisma.property.findUnique({
-      where: { id: propertyId },
-      select: { id: true, title: true, featured: true, ownerId: true },
-    });
-
-    if (!property) throw new Error("Property not found");
-
-    const newFeaturedStatus = !property.featured;
-    await this.prisma.property.update({
-      where: { id: propertyId },
-      data: { featured: newFeaturedStatus },
-    });
-
-    await this.deleteCachePattern(`property:${propertyId}:*`);
-    await this.deleteCachePattern("properties:*");
-    return {
-      featured: newFeaturedStatus,
-      ownerId: property.ownerId,
-      title: property.title,
     };
   }
 
@@ -373,7 +301,7 @@ export class AdminUsersRepository extends BaseRepository {
           select: {
             properties: true,
             propertyLikes: true,
-            userConversations: true, // Using 'conversations' instead of 'chatsAsRenter' and 'chatsAsOwner'
+            userConversations: true,
             propertyViews: true,
             adminActionLogs: true,
           },
@@ -646,80 +574,6 @@ export class AdminUsersRepository extends BaseRepository {
     };
   }
 
-  async getAllProperties(
-    filters: AdminPropertyFilters,
-    page: number,
-    limit: number
-  ): Promise<{ properties: any[]; totalCount: number }> {
-    const { skip, limit: validatedLimit } = this.validatePagination(
-      page,
-      limit
-    );
-    const cacheKey = this.generateCacheKey(
-      "admin",
-      "properties",
-      JSON.stringify(filters),
-      page.toString(),
-      limit.toString()
-    );
-    const cached = await this.getCache<{
-      properties: any[];
-      totalCount: number;
-    }>(cacheKey);
-    if (cached) return cached;
-
-    const where = this.buildPropertyWhereClause(filters);
-
-    const [propertiesRaw, totalCount] = await Promise.all([
-      this.prisma.property.findMany({
-        where,
-        include: {
-          owner: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              phoneNumber: true,
-              isVerified: true,
-            },
-          },
-          _count: { select: { likes: true, views: true, conversations: true } },
-        },
-        skip,
-        take: validatedLimit,
-        orderBy: { createdAt: "desc" },
-      }),
-      this.prisma.property.count({ where }),
-    ]);
-
-    // Transform properties to match frontend expectations (stats only)
-    const properties = propertiesRaw.map((property) => ({
-      ...property,
-      stats: {
-        likes: property._count.likes,
-        views: property._count.views,
-        conversations: property._count.conversations,
-      },
-    }));
-
-    const result = { properties, totalCount };
-    await this.setCache(cacheKey, result, 300);
-    return result;
-  }
-
-  async updatePropertyStatus(
-    propertyId: string,
-    status: PropertyStatus
-  ): Promise<void> {
-    await this.prisma.property.update({
-      where: { id: propertyId },
-      data: { status },
-    });
-    await this.deleteCachePattern(`property:${propertyId}:*`);
-    await this.deleteCachePattern("properties:*");
-  }
-
   async getPendingVerifications(
     page: number,
     limit: number
@@ -760,56 +614,6 @@ export class AdminUsersRepository extends BaseRepository {
         orderBy: { createdAt: "asc" },
       }),
       this.prisma.identityVerification.count({
-        where: { status: VerificationStatus.PENDING },
-      }),
-    ]);
-
-    const result = { verifications, totalCount };
-    await this.setCache(cacheKey, result, 300);
-    return result;
-  }
-
-  async getPendingOwnershipVerifications(
-    page: number,
-    limit: number
-  ): Promise<{ verifications: any[]; totalCount: number }> {
-    const { skip, limit: validatedLimit } = this.validatePagination(
-      page,
-      limit
-    );
-    const cacheKey = this.generateCacheKey(
-      "admin",
-      "pending_ownership_verifications",
-      page.toString(),
-      limit.toString()
-    );
-    const cached = await this.getCache<{
-      verifications: any[];
-      totalCount: number;
-    }>(cacheKey);
-    if (cached) return cached;
-
-    const [verifications, totalCount] = await Promise.all([
-      this.prisma.propertyOwnershipProof.findMany({
-        where: { status: VerificationStatus.PENDING },
-        include: {
-          property: {
-            select: {
-              id: true,
-              title: true,
-              address: true,
-              city: true,
-              state: true,
-              amount: true,
-              owner: true,
-            },
-          },
-        },
-        skip,
-        take: validatedLimit,
-        orderBy: { createdAt: "asc" },
-      }),
-      this.prisma.propertyOwnershipProof.count({
         where: { status: VerificationStatus.PENDING },
       }),
     ]);
@@ -904,28 +708,6 @@ export class AdminUsersRepository extends BaseRepository {
       ];
     }
 
-    return where;
-  }
-
-  private buildPropertyWhereClause(filters: AdminPropertyFilters): any {
-    const where: any = {};
-    if (filters.status) where.status = filters.status;
-    if (filters.ownerId) where.ownerId = filters.ownerId;
-    if (filters.city)
-      where.city = { contains: filters.city, mode: "insensitive" };
-    if (filters.state)
-      where.state = { contains: filters.state, mode: "insensitive" };
-    if (filters.minAmount)
-      where.amount = { ...where.amount, gte: filters.minAmount };
-    if (filters.maxAmount)
-      where.amount = { ...where.amount, lte: filters.maxAmount };
-    if (filters.ownershipVerified !== undefined)
-      where.ownershipVerified = filters.ownershipVerified;
-    if (filters.featured !== undefined) where.featured = filters.featured;
-    if (filters.createdAfter)
-      where.createdAt = { ...where.createdAt, gte: filters.createdAfter };
-    if (filters.createdBefore)
-      where.createdAt = { ...where.createdAt, lte: filters.createdBefore };
     return where;
   }
 

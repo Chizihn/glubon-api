@@ -357,6 +357,75 @@ export class PropertyLikeResponse {
 }
 
 @ObjectType()
+export class RecentActivity {
+  @Field(() => ID)
+  id: string;
+
+  @Field(() => String)
+  type: string;
+
+  @Field(() => String)
+  description: string;
+
+  @Field(() => GraphQLISODateTime)
+  timestamp: Date;
+
+  @Field(() => String)
+  userId: string;
+
+  @Field(() => String, { nullable: true })
+  userName?: string | null;
+
+  @Field(() => String, { nullable: true })
+  userAvatar?: string | null;
+}
+
+@ObjectType()
+export class RecentTransaction {
+  @Field(() => ID)
+  id: string;
+
+  @Field(() => String)
+  type: string;
+
+  @Field(() => Float)
+  amount: number;
+
+  @Field(() => String)
+  currency: string;
+
+  @Field(() => String)
+  status: string;
+
+  @Field(() => GraphQLISODateTime)
+  timestamp: Date;
+
+  @Field(() => String, { nullable: true })
+  userId?: string | null;
+
+  @Field(() => String, { nullable: true })
+  userName?: string | null;
+
+  @Field(() => String, { nullable: true })
+  userAvatar?: string | null;
+
+  @Field(() => String)
+  reference: string;
+
+  @Field(() => String)
+  description: string;
+}
+
+@ObjectType()
+export class RecentDataResponse {
+  @Field(() => [RecentActivity])
+  recentActivity: RecentActivity[];
+
+  @Field(() => [RecentTransaction])
+  recentTransactions: RecentTransaction[];
+}
+
+@ObjectType()
 export class ExportResponse {
   @Field(() => String)
   downloadUrl: string;

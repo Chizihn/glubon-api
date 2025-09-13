@@ -1,7 +1,7 @@
 import { Resolver, Query, Arg, Subscription, Root, Mutation, Ctx, UseMiddleware } from 'type-graphql';
 import { Service } from 'typedi';
 import { UserPresence, TypingStatus } from './presence.types';
-import { PresenceService } from '../../services/presence.service';
+import { PresenceService } from '../../services/presence';
 import { pubSub, SUBSCRIPTION_EVENTS } from '../../utils/pubsub';
 import { Context } from '../../types/context';
 import { AuthMiddleware } from '../../middleware/auth';

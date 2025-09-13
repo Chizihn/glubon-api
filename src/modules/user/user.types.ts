@@ -71,7 +71,7 @@ export class User {
   @Field(() => String, { nullable: true })
   state?: string | null;
 
-  @Field(() => String)
+  @Field(() => String, { nullable: true })
   country?: string | null;
 
   @Field(() => GraphQLISODateTime)
@@ -126,3 +126,17 @@ export class IdentityVerificationStatusResponse {
 export class UsersSearchResponse extends PaginatedResponse<User> {
   // ...existing code...
 }
+
+@ObjectType()
+export class AccountDetails {
+  @Field(() => String)
+  accountNumber!: string;
+
+  @Field(() => String)
+  accountName!: string;
+
+  @Field(() => String)
+  bankCode!: string;
+}
+
+

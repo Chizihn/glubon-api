@@ -1,3 +1,4 @@
+//src/modules/property/property.inputs.ts
 import {
   PropertyStatus,
   PropertyType,

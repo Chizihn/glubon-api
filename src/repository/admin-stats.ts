@@ -4,21 +4,45 @@ import {
   UserStatus,
   VerificationStatus,
   RoleEnum,
+  Prisma,
+  type User,
+  type Property,
+  type Transaction
 } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { Redis } from "ioredis";
-import { Prisma } from "@prisma/client";
 import {
-  AnalyticsDateRange,
-  DashboardStats,
-  UserGrowthData,
-  PropertyGrowthData,
-  RevenueData,
-  ActivityData,
-  GeographicData,
-  PerformanceMetrics,
+  type AnalyticsDateRange,
+  type DashboardStats,
+  type UserGrowthData,
+  type PropertyGrowthData,
+  type RevenueData,
+  type ActivityData,
+  type GeographicData,
+  type PerformanceMetrics,
 } from "../types/services/admin";
+import { 
+  type RecentDataResponse as GraphQLRecentDataResponse, 
+  type RecentActivity, 
+  type RecentTransaction 
+} from "../modules/admin/admin.types";
 import { BaseRepository } from "../repository/base";
+
+// Helper function to safely convert to Date with proper type narrowing
+type DateInput = string | Date | undefined | null;
+
+function toDate(date: DateInput): Date {
+  if (!date) return new Date();
+  if (date instanceof Date) return date;
+  
+  const parsed = new Date(date);
+  return isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+// Helper function to format date as ISO string with proper type safety
+const formatDate = (date: DateInput): string => {
+  return toDate(date).toISOString();
+};
 
 export class AdminStatsRepository extends BaseRepository {
   constructor(prisma: PrismaClient, redis: Redis) {
@@ -34,7 +58,7 @@ export class AdminStatsRepository extends BaseRepository {
     if (cached) return cached;
 
     const now = new Date();
-    const today = new Date(now);
+    const today = toDate(now); 
     today.setHours(0, 0, 0, 0);
     
     const startOfDay = new Date(today);
@@ -265,15 +289,27 @@ export class AdminStatsRepository extends BaseRepository {
   async getUserGrowthAnalytics(
     dateRange?: AnalyticsDateRange
   ): Promise<UserGrowthData[]> {
-    const startDate =
-      dateRange?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const endDate = dateRange?.endDate || new Date();
+    // Ensure we have valid dates, defaulting to last 30 days
+    const defaultStartDate = new Date();
+    defaultStartDate.setDate(defaultStartDate.getDate() - 30);
+    
+    const start = dateRange?.startDate ? toDate(dateRange.startDate) : defaultStartDate;
+    const end = dateRange?.endDate ? toDate(dateRange.endDate) : new Date();
+
+    // Ensure dates are valid
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new Error('Invalid date range provided');
+    }
+
+    // Format dates for cache key using our safe formatDate helper
+    const startStr = formatDate(start).split('T')[0];
+    const endStr = formatDate(end).split('T')[0];
 
     const cacheKey = this.generateCacheKey(
       "admin",
       "user_growth",
-      startDate.toISOString(),
-      endDate.toISOString()
+      startStr || '',
+      endStr || ''
     );
 
     const cached = await this.getCache<UserGrowthData[]>(cacheKey);
@@ -282,14 +318,14 @@ export class AdminStatsRepository extends BaseRepository {
     const userGrowth = await this.prisma.user.groupBy({
       by: ["createdAt", "role"],
       where: {
-        createdAt: { gte: startDate, lte: endDate },
+        createdAt: { gte: start, lte: end },
         role: { not: RoleEnum.ADMIN },
       },
       _count: { id: true },
       orderBy: { createdAt: "asc" },
     });
 
-    const data = this.aggregateUserGrowthByDate(userGrowth, startDate, endDate);
+    const data = this.aggregateUserGrowthByDate(userGrowth, start, end);
     await this.setCache(cacheKey, data, 3600);
     return data;
   }
@@ -300,15 +336,27 @@ export class AdminStatsRepository extends BaseRepository {
   async getPropertyGrowthAnalytics(
     dateRange?: AnalyticsDateRange
   ): Promise<PropertyGrowthData[]> {
-    const startDate =
-      dateRange?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const endDate = dateRange?.endDate || new Date();
+    // Ensure we have valid dates, defaulting to last 30 days
+    const defaultStartDate = new Date();
+    defaultStartDate.setDate(defaultStartDate.getDate() - 30);
+    
+    const start = dateRange?.startDate ? toDate(dateRange.startDate) : defaultStartDate;
+    const end = dateRange?.endDate ? toDate(dateRange.endDate) : new Date();
+
+    // Ensure dates are valid
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new Error('Invalid date range provided');
+    }
+
+    // Format dates for cache key using our safe formatDate helper
+    const startStr = formatDate(start).split('T')[0];
+    const endStr = formatDate(end).split('T')[0];
 
     const cacheKey = this.generateCacheKey(
       "admin",
       "property_growth",
-      startDate.toISOString(),
-      endDate.toISOString()
+      startStr || '',
+      endStr || ''
     );
 
     const cached = await this.getCache<PropertyGrowthData[]>(cacheKey);
@@ -316,16 +364,12 @@ export class AdminStatsRepository extends BaseRepository {
 
     const propertyGrowth = await this.prisma.property.groupBy({
       by: ["createdAt", "status"],
-      where: { createdAt: { gte: startDate, lte: endDate } },
+      where: { createdAt: { gte: start, lte: end } },
       _count: { id: true },
       orderBy: { createdAt: "asc" },
     });
 
-    const data = this.aggregatePropertyGrowthByDate(
-      propertyGrowth,
-      startDate,
-      endDate
-    );
+    const data = this.aggregatePropertyGrowthByDate(propertyGrowth, start, end);
     await this.setCache(cacheKey, data, 3600);
     return data;
   }
@@ -410,8 +454,8 @@ export class AdminStatsRepository extends BaseRepository {
     dateRange?: AnalyticsDateRange
   ): Promise<ActivityData[]> {
     // Set default date range if not provided (last 7 days)
-    const startDate = dateRange?.startDate ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const endDate = dateRange?.endDate ?? new Date();
+    const startDate = toDate(dateRange?.startDate ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+    const endDate = toDate(dateRange?.endDate ?? new Date());
 
     // Ensure dates are valid
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
@@ -421,8 +465,8 @@ export class AdminStatsRepository extends BaseRepository {
     const cacheKey = this.generateCacheKey(
       "admin",
       "activity_data",
-      startDate.toISOString(),
-      endDate.toISOString()
+      formatDate(startDate),
+      formatDate(endDate)
     );
 
     const cached = await this.getCache<ActivityData[]>(cacheKey);
@@ -615,15 +659,21 @@ export class AdminStatsRepository extends BaseRepository {
   async getRevenueAnalytics(
     dateRange?: AnalyticsDateRange
   ): Promise<RevenueData[]> {
-    const startDate =
-      dateRange?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const endDate = dateRange?.endDate || new Date();
+    const startDate = toDate(
+      dateRange?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    );
+    const endDate = toDate(dateRange?.endDate || new Date());
+
+    // Ensure dates are valid
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      throw new Error('Invalid date range provided');
+    }
 
     const cacheKey = this.generateCacheKey(
       "admin",
       "revenue_data",
-      startDate.toISOString(),
-      endDate.toISOString()
+      formatDate(startDate),
+      formatDate(endDate)
     );
 
     const cached = await this.getCache<RevenueData[]>(cacheKey);
@@ -632,7 +682,7 @@ export class AdminStatsRepository extends BaseRepository {
     // Generate date range and create placeholder data
     const dateRangeArray = this.generateDateRange(startDate, endDate);
     const data: RevenueData[] = dateRangeArray.map((date) => ({
-      date: new Date(date),
+      date: toDate(date),
       revenue: new Decimal(0),
       transactions: 0,
       subscriptions: 0,
@@ -879,5 +929,202 @@ export class AdminStatsRepository extends BaseRepository {
     ].join("\n");
 
     return csvContent;
+  }
+
+  /**
+   * Get recent activity and transactions
+   * @param limit Number of items to return (default: 10)
+   * @returns Promise containing recent activities and transactions
+   */
+  async getRecentData(limit: number = 10): Promise<GraphQLRecentDataResponse> {
+    try {
+      const cacheKey = this.generateCacheKey("recent_data", limit.toString());
+      const cached = await this.getCache<GraphQLRecentDataResponse>(cacheKey);
+      if (cached) return cached;
+
+      // Get recent signups
+      const recentSignups = await this.prisma.user.findMany({
+        where: {
+          role: { not: RoleEnum.ADMIN },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          profilePic: true,
+          role: true,
+          createdAt: true,
+        },
+      });
+
+      // Get recent properties (exclude INACTIVE status instead of DELETED)
+      const recentProperties = await this.prisma.property.findMany({
+        where: {
+          status: { not: PropertyStatus.INACTIVE },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: {
+          owner: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              profilePic: true,
+            },
+          },
+        },
+      });
+
+      // Get recent verifications (using identityVerifications instead of verification)
+      const recentVerifications = await this.prisma.identityVerification.findMany({
+        where: {
+          status: { not: VerificationStatus.REJECTED },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              profilePic: true,
+            },
+          },
+        },
+      });
+
+      // Get recent transactions
+      const recentTransactions = await this.prisma.transaction.findMany({
+        where: {
+          status: { not: "FAILED" },
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              profilePic: true,
+            },
+          },
+        },
+      });
+
+      // Process signups into activities with proper date handling
+      const signupActivities: RecentActivity[] = recentSignups.map((user) => {
+        const timestamp = toDate(user.createdAt);
+        return {
+          id: user.id,
+          type: 'USER_SIGNUP',
+          description: `New user signup: ${user.firstName} ${user.lastName || ''}`.trim(),
+          userId: user.id,
+          userName: user.firstName && user.lastName
+            ? `${user.firstName} ${user.lastName}`
+            : user.email || 'Unknown User',
+          userAvatar: user.profilePic || null,
+          timestamp: timestamp,
+          metadata: JSON.stringify({
+            email: user.email || '',
+            role: user.role || 'USER',
+          }),
+        };
+      });
+
+      // Process properties into activities with proper date handling
+      const propertyActivities: RecentActivity[] = recentProperties.map((property) => {
+        const timestamp = toDate(property.createdAt);
+        return {
+          id: property.id,
+          type: 'PROPERTY_ADDED',
+          description: `New property listed: ${property.title || 'Untitled Property'}`,
+          userId: property.ownerId || 'unknown',
+          userName: property.owner?.firstName && property.owner?.lastName
+            ? `${property.owner.firstName} ${property.owner.lastName}`
+            : property.owner?.email || 'Unknown User',
+          userAvatar: property.owner?.profilePic || null,
+          timestamp: timestamp,
+          metadata: JSON.stringify({
+            propertyId: property.id,
+            status: property.status || 'UNKNOWN',
+          }),
+        };
+      });
+
+      // Process verifications into activities with proper typing and date handling
+      const verificationActivities: RecentActivity[] = recentVerifications.map((verification: any) => {
+        const user = verification.user || {};
+        const timestamp = toDate(verification.createdAt);
+        return {
+          id: verification.id,
+          type: 'VERIFICATION_SUBMITTED',
+          description: `Verification submitted by ${user.firstName || 'User'}`,
+          userId: user.id || 'unknown',
+          userName: user.firstName && user.lastName
+            ? `${user.firstName} ${user.lastName}`
+            : 'Unknown User',
+          userAvatar: user.profilePic || null,
+          timestamp: timestamp,
+          metadata: JSON.stringify({
+            status: verification.status || 'PENDING',
+            type: verification.type || 'IDENTITY',
+          }),
+        };
+      });
+
+      // Combine and sort all activities with proper date handling
+      const allActivities = [
+        ...signupActivities,
+        ...propertyActivities,
+        ...verificationActivities,
+      ].sort((a, b) => {
+        const timeA = a.timestamp.getTime();
+        const timeB = b.timestamp.getTime();
+        return timeB - timeA; // Sort in descending order (newest first)
+      }).slice(0, limit);
+
+      // Process transactions with proper date handling
+      const transactions: RecentTransaction[] = recentTransactions.map((tx) => {
+        const timestamp = toDate(tx.createdAt);
+        return {
+          id: tx.id,
+          type: (tx.type || 'DEPOSIT') as 'SUBSCRIPTION' | 'COMMISSION' | 'REFUND' | 'WITHDRAWAL' | 'DEPOSIT',
+          amount: tx.amount ? Number(tx.amount) : 0,
+          currency: tx.currency || 'NGN',
+          status: (tx.status || 'COMPLETED') as 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED',
+          timestamp: timestamp,
+          userId: tx.user?.id || 'unknown',
+          userName: tx.user?.firstName && tx.user?.lastName
+            ? `${tx.user.firstName} ${tx.user.lastName}`
+            : tx.user?.email || 'Unknown User',
+          userAvatar: tx.user?.profilePic || null,
+          reference: tx.reference || `tx-${tx.id}`,
+          description: tx.description || `Transaction #${tx.id}`,
+        };
+      });
+
+      const result = {
+        recentActivity: allActivities,
+        recentTransactions: transactions,
+      };
+
+      await this.setCache(cacheKey, result, 300); // Cache for 5 minutes
+      return result;
+    } catch (error) {
+      console.error('Error in getRecentData:', error);
+      return {
+        recentActivity: [],
+        recentTransactions: [],
+      };
+    }
   }
 }

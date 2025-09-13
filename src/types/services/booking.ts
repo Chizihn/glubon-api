@@ -1,3 +1,4 @@
+//src/types/services/booking
 import {
   Booking,
   BookingStatus,

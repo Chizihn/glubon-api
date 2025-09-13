@@ -6,7 +6,7 @@ import { Services } from "../services";
 import { WebSocketContext } from "../types";
 import { prisma, redis } from "../config";
 import { logger } from "../utils";
-import { PresenceService } from "../services/presence.service";
+import { PresenceService } from "../services/presence";
 
 export async function createWebSocketServer(
   wsServer: WebSocketServer,

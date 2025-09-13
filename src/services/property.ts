@@ -1,10 +1,6 @@
-import {
-  PrismaClient,
-  Property,
-  PropertyStatus,
-  RoleEnum,
-  User,
-} from "@prisma/client";
+//src/services/property.ts
+import { Prisma, PrismaClient, Property, PropertyStatus, PropertyType, RoomType, RentalPeriod, PropertyListingType, DayOfWeek, User, RoleEnum } from "@prisma/client";
+
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
 import { IBaseResponse } from "../types";
@@ -19,6 +15,7 @@ import {
 import { PropertyRepository } from "../repository/properties";
 import { FileUpload } from "./s3";
 import { S3Service } from "./s3";
+import { MapSearchResponse, MapSearchResult } from "../types/services/map";
 
 export class PropertyService extends BaseService {
   private repository: PropertyRepository;
@@ -195,6 +192,188 @@ export class PropertyService extends BaseService {
         }
       })
     );
+  }
+
+  async searchPropertiesOnMap(
+    latitude: number,
+    longitude: number,
+    radiusInKm: number = 10,
+    filters?: {
+      propertyTypes?: string[];
+      amenities?: string[];
+      minPrice?: number;
+      maxPrice?: number;
+      roomTypes?: string[];
+    },
+    options?: { take?: number; skip?: number }
+  ): Promise<MapSearchResponse> {
+    try {
+      // Earth's radius in kilometers
+      const earthRadiusKm = 6371;
+      
+      // Calculate the bounding box for the search area
+      const latDistance = radiusInKm / earthRadiusKm;
+      const lngDistance = radiusInKm / (earthRadiusKm * Math.cos((Math.PI * latitude) / 180));
+      
+      // Calculate latitude and longitude bounds
+      const latMin = latitude - (latDistance * 180) / Math.PI;
+      const latMax = latitude + (latDistance * 180) / Math.PI;
+      const lngMin = longitude - (lngDistance * 180) / Math.PI;
+      const lngMax = longitude + (lngDistance * 180) / Math.PI;
+
+      // Build the where clause
+      const where: any = {
+        AND: [
+          { latitude: { gte: latMin, lte: latMax } },
+          { longitude: { gte: lngMin, lte: lngMax } },
+          { status: 'APPROVED' } // Only show approved properties
+        ]
+      };
+
+      // Apply additional filters
+      if (filters) {
+        if (filters.propertyTypes?.length) {
+          where.AND.push({ propertyType: { in: filters.propertyTypes } });
+        }
+        if (filters.amenities?.length) {
+          where.AND.push({
+            amenities: { hasSome: filters.amenities }
+          });
+        }
+        if (filters.minPrice !== undefined) {
+          where.AND.push({ amount: { gte: filters.minPrice } });
+        }
+        if (filters.maxPrice !== undefined) {
+          where.AND.push({ amount: { lte: filters.maxPrice } });
+        }
+        if (filters.roomTypes?.length) {
+          where.AND.push({
+            roomType: { in: filters.roomTypes }
+          });
+        }
+      }
+
+      // Define the property type with all required fields
+      type PropertyWithOwner = Prisma.PropertyGetPayload<{
+        include: {
+          owner: true;
+          _count: { select: { views: true; likes: true } };
+        };
+      }>;
+
+      // Query properties within the bounding box
+      const dbProperties = await this.prisma.property.findMany({
+        where,
+        include: {
+          owner: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePic: true
+            }
+          },
+          _count: {
+            select: {
+              views: true,
+              likes: true
+            }
+          }
+        },
+        take: options?.take || 100,
+        skip: options?.skip || 0
+      }) as unknown as PropertyWithOwner[];
+
+      // Calculate distances and filter by radius
+      const results = dbProperties
+        .map(property => {
+          if (!property.latitude || !property.longitude) return null;
+          
+          // Haversine formula to calculate distance
+          const dLat = this.deg2rad(property.latitude - latitude);
+          const dLon = this.deg2rad(property.longitude - longitude);
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(this.deg2rad(latitude)) * 
+            Math.cos(this.deg2rad(property.latitude)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const distance = earthRadiusKm * c;
+
+          if (distance <= radiusInKm) {
+            const { owner, _count, ...propertyData } = property;
+            
+            // Create a properly typed result object
+            const result: MapSearchResult = {
+              // Required fields from Property
+              id: propertyData.id,
+              title: propertyData.title,
+              description: propertyData.description || '',
+              status: propertyData.status,
+              listingType: propertyData.listingType,
+              amount: propertyData.amount,
+              rentalPeriod: propertyData.rentalPeriod,
+              address: propertyData.address,
+              city: propertyData.city,
+              state: propertyData.state,
+              country: propertyData.country || 'Nigeria',
+              latitude: propertyData.latitude,
+              longitude: propertyData.longitude,
+              sqft: propertyData.sqft,
+              bedrooms: propertyData.bedrooms ?? 0, // Default to 0 if null/undefined
+              bathrooms: propertyData.bathrooms ?? 0, // Default to 0 if null/undefined
+              propertyType: propertyData.propertyType,
+              roomType: propertyData.roomType,
+              visitingDays: propertyData.visitingDays || [],
+              visitingTimeStart: propertyData.visitingTimeStart || null,
+              visitingTimeEnd: propertyData.visitingTimeEnd || null,
+              amenities: propertyData.amenities || [],
+              isFurnished: propertyData.isFurnished || false,
+              isForStudents: propertyData.isForStudents || false,
+              isStandalone: propertyData.isStandalone || false,
+              totalUnits: propertyData.totalUnits || null,
+              availableUnits: propertyData.availableUnits || null,
+              images: propertyData.images || [],
+              livingRoomImages: propertyData.livingRoomImages || [],
+              bedroomImages: propertyData.bedroomImages || [],
+              bathroomImages: propertyData.bathroomImages || [],
+              video: propertyData.video || null,
+              propertyOwnershipDocs: propertyData.propertyOwnershipDocs || [],
+              propertyPlanDocs: propertyData.propertyPlanDocs || [],
+              propertyDimensionDocs: propertyData.propertyDimensionDocs || [],
+              featured: propertyData.featured || false,
+              ownershipVerified: propertyData.ownershipVerified || false,
+              createdAt: propertyData.createdAt,
+              updatedAt: propertyData.updatedAt,
+              
+              // Additional fields for MapSearchResult
+              distanceInKm: parseFloat(distance.toFixed(2)),
+              owner,
+              isLiked: false,
+              isViewed: false,
+              viewsCount: _count?.views || 0,
+              likesCount: _count?.likes || 0
+            };
+            
+            return result;
+          }
+          return null;
+        })
+        .filter((property): property is MapSearchResult => property !== null);
+
+      return {
+        success: true,
+        data: results,
+        total: results.length
+      };
+    } catch (error) {
+      return this.handleError(error, 'searchPropertiesOnMap');
+    }
+  }
+
+  private deg2rad(deg: number): number {
+    return deg * (Math.PI / 180);
   }
 
   private getFileType(mimetype: string): "image" | "video" | "document" {

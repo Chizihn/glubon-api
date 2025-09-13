@@ -1,7 +1,7 @@
 import { ObjectType, Field, Int, GraphQLISODateTime } from "type-graphql";
 import { PaginatedResponse, PaginationInfo } from "../../types/responses";
 import { User } from "../user/user.types";
-import { MessageType } from "@prisma/client";
+import { MessageType, RoleEnum } from "@prisma/client";
 
 import { registerEnumType } from "type-graphql";
 import { Property } from "../property/property.types";
@@ -128,7 +128,58 @@ export class MessageSentPayload {
   conversationId: string;
 
   @Field(() => [String])
-  recipientIds: string[]; // Changed to array for potential multi-user chats
+  recipientIds: string[];
 }
 
+@ObjectType()
+export class BroadcastMessageResponse {
+  @Field(() => String)
+  id: string;
 
+  @Field(() => String)
+  content: string;
+
+  @Field(() => MessageType)
+  messageType: MessageType;
+
+  @Field(() => [RoleEnum])
+  recipientRoles: RoleEnum[];
+
+  @Field(() => [String])
+  sentToUserIds: string[];
+
+  @Field(() => Int)
+  totalRecipients: number;
+
+  @Field(() => [String])
+  attachments: string[];
+
+  @Field(() => Date)
+  createdAt: Date;
+
+  @Field(() => User, { nullable: true })
+  sender: User;
+
+  constructor(data: Partial<BroadcastMessageResponse>) {
+    Object.assign(this, data);
+  }
+}
+
+@ObjectType()
+export class PaginatedBroadcastMessagesResponse {
+  @Field(() => [BroadcastMessageResponse])
+  items: BroadcastMessageResponse[];
+
+  @Field(() => PaginationInfo)
+  pagination: PaginationInfo;
+
+  constructor(
+    items: BroadcastMessageResponse[],
+    page: number,
+    limit: number,
+    totalItems: number
+  ) {
+    this.items = items;
+    this.pagination = new PaginationInfo(page, limit, totalItems);
+  }
+}

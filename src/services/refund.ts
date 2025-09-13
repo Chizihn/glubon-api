@@ -24,7 +24,7 @@ export class RefundService extends BaseService {
       });
 
       if (!transaction) return this.failure("Transaction not found");
-      if (transaction.status !== "COMPLETED" && transaction.status !== "HELD") {
+      if (transaction.status !== "COMPLETED" && transaction.status !== "PROCESSING") {
         return this.failure("Transaction cannot be refunded");
       }
 

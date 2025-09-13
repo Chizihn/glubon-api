@@ -9,6 +9,7 @@ import {
 import {
   PermissionEnum,
   PropertyStatus,
+  PropertyType,
   RoleEnum,
   UserStatus,
 } from "@prisma/client";
@@ -129,33 +130,44 @@ export class AdminListFilters {
 export class AdminPropertyFilters {
   @Field(() => PropertyStatus, { nullable: true })
   status?: PropertyStatus;
-
+  
   @Field(() => String, { nullable: true })
   ownerId?: string;
-
+  
   @Field(() => String, { nullable: true })
   city?: string;
-
+  
   @Field(() => String, { nullable: true })
   state?: string;
-
+  
   @Field(() => Int, { nullable: true })
   minAmount?: number;
-
+  
   @Field(() => Int, { nullable: true })
   maxAmount?: number;
-
+  
+  // Fix: Allow null values explicitly
   @Field(() => Boolean, { nullable: true })
-  ownershipVerified?: boolean;
-
+  ownershipVerified?: boolean | null;
+  
   @Field(() => Boolean, { nullable: true })
-  featured?: boolean;
-
+  featured?: boolean | null;
+  
   @Field(() => GraphQLISODateTime, { nullable: true })
   createdAfter?: Date;
-
+  
   @Field(() => GraphQLISODateTime, { nullable: true })
   createdBefore?: Date;
+  
+  @Field(() => PropertyType, { nullable: true })
+  propertyType?: PropertyType;
+  
+  // Add the missing fields from your repository interface
+  @Field(() => String, { nullable: true })
+  sortBy?: "title" | "amount" | "createdAt" | "status" | "views";
+  
+  @Field(() => String, { nullable: true })
+  sortOrder?: "asc" | "desc";
 }
 
 @InputType()

@@ -10,6 +10,8 @@ import { PropertyService } from "./property";
 import { AdminUsersService } from "./admin-user";
 import { AdminStatsService } from "./admin-stats";
 import { ConversationService } from "./conversation";
+import { TransactionService } from "./transaction";
+import { SubaccountService } from "./subaccount";
 
 export interface Services {
   authService: AuthService;
@@ -21,6 +23,8 @@ export interface Services {
   propertyService: PropertyService;
   emailService: typeof emailServiceSingleton;
   notificationService: NotificationService;
+  transactionService: TransactionService;
+  subaccountService: SubaccountService;
 }
 
 export function createServices(prisma: PrismaClient, redis: Redis): Services {
@@ -34,16 +38,20 @@ export function createServices(prisma: PrismaClient, redis: Redis): Services {
   const adminUserService = new AdminUsersService(prisma, redis);
   const adminStatsService = new AdminStatsService(prisma, redis);
   const conversationService = new ConversationService(prisma, redis);
+  const transactionService = new TransactionService(prisma, redis);
+  const subaccountService = new SubaccountService(prisma, redis);
 
   return {
     authService,
-    userService,
     oAuthService,
-    propertyService,
-    emailService,
-    notificationService,
+    userService,
     adminUserService,
     adminStatsService,
     conversationService,
+    propertyService,
+    emailService,
+    notificationService,
+    transactionService,
+    subaccountService,
   };
 }

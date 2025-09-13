@@ -3,14 +3,16 @@ import {
   TransactionStatus,
   TransactionType,
   PaymentGateway,
+  Prisma,
 } from "@prisma/client";
+import { Decimal } from "@prisma/client/runtime/library";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
 import { NotificationService } from "./notification";
 
 export interface CreateTransactionInput {
   type: TransactionType;
-  amount: number;
+  amount: Decimal | number;
   currency: string;
   description: string;
   userId: string;
@@ -33,7 +35,7 @@ export class TransactionService extends BaseService {
       const transaction = await this.prisma.transaction.create({
         data: {
           type: data.type,
-          amount: data.amount,
+          amount: typeof data.amount === 'number' ? new Prisma.Decimal(data.amount) : data.amount,
           currency: data.currency,
           description: data.description,
           userId,
@@ -58,21 +60,13 @@ export class TransactionService extends BaseService {
         await this.notificationService.createNotification({
           userId,
           title: "Transaction Initiated",
-          message: `A new transaction of ${data.amount} NGN for ${data.description} has been initiated.`,
+          message: `A new transaction of ${new Decimal(data.amount).toNumber()} NGN for ${data.description} has been initiated.`,
           type: "BOOKING_CREATED", // Align with booking creation
           data: {
             transactionId: transaction.id,
             bookingId: data.bookingId,
-            amount: data.amount,
+            amount: new Decimal(data.amount).toNumber(),
           },
-        });
-      } else if (data.type === "WITHDRAWAL") {
-        await this.notificationService.createNotification({
-          userId,
-          title: "Withdrawal Transaction Initiated",
-          message: `A withdrawal transaction of ${data.amount} NGN has been initiated.`,
-          type: "WITHDRAWAL_REQUESTED",
-          data: { transactionId: transaction.id, amount: data.amount },
         });
       }
 
@@ -124,16 +118,16 @@ export class TransactionService extends BaseService {
       await this.deleteCachePattern(`transactions:user:${transaction.userId}`);
 
       // Notify user based on status change
-      if (status === "HELD" && transaction.type === "RENT_PAYMENT") {
+      if (status === "COMPLETED" && transaction.type === "RENT_PAYMENT") {
         await this.notificationService.createNotification({
           userId: transaction.userId as string,
-          title: "Payment Held in Escrow",
-          message: `Your payment of ${transaction.amount} NGN for booking ${transaction.bookingId} is now held in escrow.`,
+          title: "Payment Confirmed",
+          message: `Your payment of ${new Decimal(transaction.amount).toNumber()} NGN for booking ${transaction.bookingId} has been confirmed.`,
           type: "PAYMENT_CONFIRMED",
           data: {
             transactionId,
             bookingId: transaction.bookingId,
-            amount: transaction.amount,
+            amount: new Decimal(transaction.amount).toNumber(),
           },
         });
 
@@ -141,33 +135,22 @@ export class TransactionService extends BaseService {
           await this.notificationService.createNotification({
             userId: transaction.booking.property.ownerId,
             title: "Payment Received",
-            message: `A payment of ${transaction.amount} NGN for your property ${transaction.booking.property.title} is now held in escrow.`,
-            type: "PAYMENT_CONFIRMED",
+            message: `A payment of ${new Decimal(transaction.amount).toNumber()} NGN for your property ${transaction.booking.property.title} has been received and split automatically.`,
+            type: "PAYMENT_RECEIVED",
             data: {
               transactionId,
               bookingId: transaction.bookingId,
-              amount: transaction.amount,
+              amount: new Decimal(transaction.amount).toNumber(),
             },
           });
         }
-      } else if (
-        status === "COMPLETED" &&
-        transaction.type === TransactionType.WITHDRAWAL
-      ) {
-        await this.notificationService.createNotification({
-          userId: transaction.userId || "",
-          title: "Withdrawal Approved",
-          message: `Your withdrawal of ${transaction.amount} NGN has been approved.`,
-          type: "WITHDRAWAL_APPROVED",
-          data: { transactionId, amount: transaction.amount },
-        });
       } else if (status === "REFUNDED") {
         await this.notificationService.createNotification({
           userId: transaction.userId || "",
           title: "Refund Processed",
-          message: `A refund of ${transaction.amount} NGN has been processed for transaction ${transactionId}.`,
+          message: `A refund of ${new Decimal(transaction.amount).toNumber()} NGN has been processed for transaction ${transactionId}.`,
           type: "REFUND_PROCESSED",
-          data: { transactionId, amount: transaction.amount },
+          data: { transactionId, amount: new Decimal(transaction.amount).toNumber() },
         });
       }
 
@@ -492,8 +475,8 @@ export class TransactionService extends BaseService {
       // Amount range
       if (minAmount !== undefined || maxAmount !== undefined) {
         where.amount = {};
-        if (minAmount !== undefined) where.amount.gte = minAmount;
-        if (maxAmount !== undefined) where.amount.lte = maxAmount;
+        if (minAmount !== undefined && minAmount !== null) where.amount.gte = minAmount;
+        if (maxAmount !== undefined && maxAmount !== null) where.amount.lte = maxAmount;
       }
       
       // Date range

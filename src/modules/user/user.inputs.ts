@@ -54,6 +54,15 @@ export class SubmitIdentityVerificationInput {
   documentImages: string[];
 }
 
+@InputType()
+export class AccountResolveInput {
+  @Field(() => String)
+  accountNumber!: string;
+
+  @Field(() => String)
+  bankCode!: string;
+}
+
 // ===== RESPONSE TYPES =====
 @ObjectType()
 export class UserProfileResponse {
@@ -172,3 +181,4 @@ export class UsersSearchResponse extends PaginatedResponse<UserSearchItem> {
     this.pagination = new PaginationInfo(page, limit, totalItems);
   }
 }
+

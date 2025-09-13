@@ -44,7 +44,6 @@ import {
   UserGrowthData as UserGrowthDataType,
 } from "../../types/services/admin";
 import {
-  ActivityData,
   AdminStatsResponse,
   DashboardAnalyticsResponse,
   GeographicData,
@@ -52,17 +51,39 @@ import {
   PropertyGrowthData,
   RevenueData,
   UserGrowthData,
+  GqlActivityData
 } from "./admin-stats.types";
+import { AdminPropertyService } from "../../services/admin-property";
+import { RecentDataResponse } from "./admin.types"; // Import from GraphQL types
 
 @Resolver()
 @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
 export class AdminResolver {
   private adminStatsService: AdminStatsService;
   private adminUsersService: AdminUsersService;
+  private adminPropertyService: AdminPropertyService;
 
   constructor() {
     this.adminStatsService = new AdminStatsService(prisma, redis);
     this.adminUsersService = new AdminUsersService(prisma, redis);
+    this.adminPropertyService = new AdminPropertyService(prisma, redis);
+  }
+
+  @Query(() => RecentDataResponse, { description: 'Get recent activities and transactions' })
+  @UseMiddleware(RequireRole(RoleEnum.ADMIN))
+  async getRecentData(
+    @Arg('limit', () => Int, { nullable: true, defaultValue: 10 }) limit: number,
+    @Ctx() ctx: Context
+  ): Promise<RecentDataResponse> {
+    try {
+      return await this.adminStatsService.getRecentData(limit);
+    } catch (error) {
+      console.error('Error in getRecentData:', error);
+      throw new AppError(
+        'Failed to fetch recent data',
+        HttpStatusCode.InternalServerError
+      );
+    }
   }
 
   // ==================== STATS & ANALYTICS QUERIES ====================
@@ -139,11 +160,11 @@ export class AdminResolver {
     return result.data!;
   }
 
-  @Query(() => [ActivityData])
+  @Query(() => [GqlActivityData], { name: "getActivityAnalytics" })
   async getActivityAnalytics(
     @Arg("dateRange", { nullable: true }) dateRange: AnalyticsDateRangeInput,
     @Ctx() ctx: Context
-  ): Promise<ActivityData[]> {
+  ): Promise<GqlActivityData[]> {
     const result = await this.adminStatsService.getActivityAnalytics(
       ctx.user!.id,
       dateRange
@@ -197,14 +218,14 @@ export class AdminResolver {
     return result.data!;
   }
 
-  @Query(() => [ActivityData])
+  @Query(() => [GqlActivityData])
   async getCustomAnalytics(
     @Arg("metrics", () => [String]) metrics: string[],
     @Arg("groupBy") groupBy: "day" | "week" | "month",
     @Arg("dateRange") dateRange: AnalyticsDateRangeInput,
     @Arg("segments", { nullable: true }) segments: string, // JSON string
     @Ctx() ctx: Context
-  ): Promise<ActivityData[]> {
+  ): Promise<GqlActivityData[]> {
     const parsedSegments = segments ? JSON.parse(segments) : undefined;
     const result = await this.adminStatsService.getCustomAnalytics(
       ctx.user!.id,
@@ -291,12 +312,12 @@ export class AdminResolver {
     return result.data!;
   }
 
-  @Query(() => [ActivityData])
+  @Query(() => [GqlActivityData])
   async getUserActivity(
     @Arg("userId") userId: string,
     @Arg("days", () => Int, { defaultValue: 30 }) days: number,
     @Ctx() ctx: Context
-  ): Promise<ActivityData[]> {
+  ): Promise<GqlActivityData[]> {
     const result = await this.adminUsersService.getUserActivity(
       ctx.user!.id,
       userId,
@@ -316,7 +337,7 @@ export class AdminResolver {
     @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
     @Ctx() ctx: Context
   ): Promise<PaginatedPropertiesResponse> {
-    const result = await this.adminUsersService.getAllProperties(
+    const result = await this.adminPropertyService.getAllProperties(
       ctx.user!.id,
       filters || {},
       page,
@@ -362,7 +383,7 @@ export class AdminResolver {
     @Ctx() ctx: Context
   ): Promise<PaginatedOwnershipVerificationsResponse> {
     const result =
-      await this.adminUsersService.getPendingOwnershipVerifications(
+      await this.adminPropertyService.getPendingOwnershipVerifications(
         ctx.user!.id,
         page,
         limit
@@ -502,7 +523,7 @@ export class AdminResolver {
     @Arg("input") input: UpdatePropertyStatusInput,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.adminUsersService.updatePropertyStatus(
+    const result = await this.adminPropertyService.updatePropertyStatus(
       ctx.user!.id,
       input
     );
@@ -532,7 +553,7 @@ export class AdminResolver {
     @Arg("reason", { nullable: true }) reason: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.adminUsersService.reviewOwnershipVerification(
+    const result = await this.adminPropertyService.reviewOwnershipVerification(
       ctx.user!.id,
       verificationId,
       approved,
@@ -548,7 +569,7 @@ export class AdminResolver {
     @Arg("propertyId") propertyId: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.adminUsersService.togglePropertyFeatured(
+    const result = await this.adminPropertyService.togglePropertyFeatured(
       ctx.user!.id,
       propertyId
     );
