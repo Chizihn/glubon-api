@@ -16,13 +16,14 @@ import {
 } from "../types/services/properties";
 import { BaseRepository } from "./base";
 import { logger } from "../utils";
+import { Decimal } from "@prisma/client/runtime/library";
 
 export class PropertyRepository extends BaseRepository {
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
   }
 
-  async create(data: any, tx?: PrismaClient): Promise<Property> {
+  async create(data: any, tx?: any): Promise<Property> {
     const client = tx || this.prisma;
     return client.property.create({ data });
   }
@@ -197,35 +198,37 @@ export class PropertyRepository extends BaseRepository {
 
     // Build the where clause with filters
     const where: any = { ownerId };
-    
+
     // Apply filters if they exist
     if (filters) {
       if (filters.status) where.status = filters.status;
       if (filters.propertyType) where.propertyType = filters.propertyType;
       if (filters.listingType) where.listingType = filters.listingType;
-      
+
       // Handle amount range
       if (filters.minAmount || filters.maxAmount) {
         where.amount = {};
         if (filters.minAmount) where.amount.gte = filters.minAmount;
         if (filters.maxAmount) where.amount.lte = filters.maxAmount;
       }
-      
+
       // Handle location filters
-      if (filters.city) where.city = { contains: filters.city, mode: 'insensitive' };
-      if (filters.state) where.state = { contains: filters.state, mode: 'insensitive' };
-      
+      if (filters.city)
+        where.city = { contains: filters.city, mode: "insensitive" };
+      if (filters.state)
+        where.state = { contains: filters.state, mode: "insensitive" };
+
       // Handle date filters
       if (filters.createdAfter) where.createdAt = { gte: filters.createdAfter };
       if (filters.createdBefore) {
         where.createdAt = {
-          ...(where.createdAt as object || {}),
-          lte: filters.createdBefore
+          ...((where.createdAt as object) || {}),
+          lte: filters.createdBefore,
         };
       }
       if (filters.updatedAfter) where.updatedAt = { gte: filters.updatedAfter };
     }
-    
+
     const orderBy = this.buildOrderBy(sortBy, sortOrder);
 
     const [totalCount, properties] = await Promise.all([
@@ -469,8 +472,15 @@ export class PropertyRepository extends BaseRepository {
     return { visitors, totalCount };
   }
 
-  async update(id: string, ownerId: string, data: any): Promise<Property> {
-    const existingProperty = await this.prisma.property.findFirst({
+  async update(
+    id: string,
+    ownerId: string,
+    data: any,
+    tx?: any
+  ): Promise<Property> {
+    const client = tx || this.prisma;
+
+    const existingProperty = await client.property.findFirst({
       where: { id, ownerId },
     });
 
@@ -478,7 +488,7 @@ export class PropertyRepository extends BaseRepository {
       throw new Error("Property not found or access denied");
     }
 
-    const updatedProperty = await this.prisma.property.update({
+    const updatedProperty = await client.property.update({
       where: { id },
       data,
     });
@@ -572,7 +582,7 @@ export class PropertyRepository extends BaseRepository {
   async getStats(): Promise<{
     totalProperties: number;
     activeProperties: number;
-    averagePrice: number;
+    averagePrice: Decimal | number;
     totalViews: number;
     totalLikes: number;
   }> {
@@ -705,9 +715,9 @@ export class PropertyRepository extends BaseRepository {
       throw new Error("Reference property not found");
     }
 
-    const priceRange = referenceProperty.amount * 0.2;
-    const minPrice = referenceProperty.amount - priceRange;
-    const maxPrice = referenceProperty.amount + priceRange;
+    const priceRange = referenceProperty.amount.mul(new Decimal(0.2));
+    const minPrice = referenceProperty.amount.sub(priceRange);
+    const maxPrice = referenceProperty.amount.add(priceRange);
 
     const properties = await this.prisma.property.findMany({
       where: {
@@ -744,7 +754,7 @@ export class PropertyRepository extends BaseRepository {
   }
 
   private getPropertyInclude(userId?: string) {
-    return {
+    const baseInclude = {
       owner: {
         select: {
           id: true,
@@ -765,14 +775,45 @@ export class PropertyRepository extends BaseRepository {
           lastLogin: true,
         },
       },
-      _count: {
-        select: { likes: true, views: true },
+      units: {
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          amount: true,
+          rentalPeriod: true,
+          sqft: true,
+          bedrooms: true,
+          bathrooms: true,
+          roomType: true,
+          amenities: true,
+          isFurnished: true,
+          isForStudents: true,
+          status: true,
+          renterId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: "asc" } as const,
       },
-      ...(userId && {
+      _count: {
+        select: {
+          likes: true,
+          views: true,
+          units: true,
+        },
+      },
+    };
+
+    if (userId) {
+      return {
+        ...baseInclude,
         likes: { where: { userId }, select: { id: true } },
         views: { where: { userId }, select: { id: true } },
-      }),
-    };
+      };
+    }
+
+    return baseInclude;
   }
 
   private transformProperty(
@@ -781,11 +822,26 @@ export class PropertyRepository extends BaseRepository {
     filters?: PropertyFilters,
     isLiked = false
   ): PropertyWithDetails {
-    const { _count, likes = [], views = [], ...rest } = property;
+    const { _count, likes = [], views = [], units = [], ...rest } = property;
+
+    // Calculate unit statistics
+    const availableUnits = units.filter(
+      (unit: any) => unit.status === "AVAILABLE"
+    ).length;
+    const rentedUnits = units.filter(
+      (unit: any) => unit.status === "RENTED"
+    ).length;
+    const totalUnits = units.length;
+
     return {
       ...rest,
+      units,
       likesCount: _count.likes,
       viewsCount: _count.views,
+      unitsCount: _count.units || totalUnits,
+      totalUnits,
+      availableUnits,
+      rentedUnits,
       isLiked: isLiked || likes.length > 0,
       isViewed: views.length > 0,
       ...(filters?.latitude &&

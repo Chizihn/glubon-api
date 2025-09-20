@@ -4,7 +4,6 @@ import { NotFoundError } from "../utils";
 import { BaseService } from "./base";
 import { DisputeRepository } from "../repository/dispute";
 import { RefundService } from "./refund";
-import { WalletService } from "./wallet";
 import { NotificationService } from "./notification";
 import {
   CreateDisputeInput,
@@ -12,6 +11,7 @@ import {
 } from "../types/services/booking";
 import { ServiceResponse } from "../types/responses";
 import { PaginatedDisputes } from "../modules/dispute/dispute.types";
+import { Decimal } from "@prisma/client/runtime/library";
 
 export interface DisputeWithRelations {
   id: string;
@@ -33,7 +33,6 @@ export interface DisputeWithRelations {
 export class DisputeService extends BaseService {
   private disputeRepo: DisputeRepository;
   private refundService: RefundService;
-  private walletService: WalletService;
   private notificationService: NotificationService;
   
   private logger: Console;
@@ -64,7 +63,6 @@ export class DisputeService extends BaseService {
     this.logger = console;
     this.disputeRepo = new DisputeRepository(prisma, redis);
     this.refundService = new RefundService(prisma, redis);
-    this.walletService = new WalletService(prisma, redis);
     this.notificationService = new NotificationService(prisma, redis);
   }
 
@@ -197,7 +195,7 @@ export class DisputeService extends BaseService {
 
         // Handle refunds if needed - Paystack split is already processed
         if (data.refundAmount && data.status === "RESOLVED") {
-          if (data.refundAmount > booking.amount) {
+          if (new Decimal(data.refundAmount).greaterThan(booking.amount)) {
             throw new Error("Refund amount exceeds booking amount");
           }
 
@@ -226,24 +224,9 @@ export class DisputeService extends BaseService {
             adminId
           );
 
-          // Credit renter's wallet
-          await this.walletService.updateBalance(
-            booking.renterId,
-            data.refundAmount,
-            "REFUND",
-            `Refund for dispute ${data.disputeId}`,
-            paymentTx.id
-          );
-
-          // Deduct from lister's wallet (since they already received their split)
-          await this.walletService.updateBalance(
-            booking.property.ownerId,
-            data.refundAmount,
-            "REFUND",
-            `Dispute refund deduction for ${data.disputeId}`,
-            paymentTx.id
-          );
-
+          // Note: With Paystack split payments, refunds should be processed through Paystack's refund API
+          // The platform fee portion will be automatically handled by Paystack
+          
           // Notify renter
           await this.notificationService.createNotification({
             userId: booking.renterId,
@@ -256,8 +239,8 @@ export class DisputeService extends BaseService {
           // Notify lister
           await this.notificationService.createNotification({
             userId: booking.property.ownerId,
-            title: "Dispute Refund Deduction",
-            message: `A refund of ${data.refundAmount} NGN has been deducted from your wallet for dispute ${data.disputeId}.`,
+            title: "Dispute Refund Processed",
+            message: `A refund of ${data.refundAmount} NGN has been processed for dispute ${data.disputeId}. The refund will be handled through Paystack.`,
             type: "REFUND_PROCESSED",
             data: { disputeId: data.disputeId, amount: data.refundAmount },
           });

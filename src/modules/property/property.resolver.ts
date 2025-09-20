@@ -23,6 +23,10 @@ import { PropertyFilters, UpdatePropertyInput } from "./property.inputs";
 import { MapSearchInput } from "./property.map.inputs";
 import { PropertyStatus, RoleEnum } from "@prisma/client";
 import { CreatePropertyInput } from "./property.inputs";
+import {
+  SimpleCreatePropertyInput,
+  SimpleUpdatePropertyInput,
+} from "./property.simple.inputs";
 import { PropertyService } from "../../services/property";
 import { prisma, redis } from "../../config";
 import { Context } from "../../types";
@@ -65,17 +69,18 @@ export class PropertyResolver {
         maxPrice?: number;
         roomTypes?: string[];
       } = {};
-      
-      if (input.propertyTypes?.length) filters.propertyTypes = input.propertyTypes;
+
+      if (input.propertyTypes?.length)
+        filters.propertyTypes = input.propertyTypes;
       if (input.amenities?.length) filters.amenities = input.amenities;
       if (input.minPrice !== undefined) filters.minPrice = input.minPrice;
       if (input.maxPrice !== undefined) filters.maxPrice = input.maxPrice;
       if (input.roomTypes?.length) filters.roomTypes = input.roomTypes;
-      
+
       const options: { take?: number; skip?: number } = {};
       if (take !== undefined) options.take = take;
       if (skip !== undefined) options.skip = skip;
-      
+
       const result = await this.propertyService.searchPropertiesOnMap(
         input.latitude,
         input.longitude,
@@ -85,7 +90,7 @@ export class PropertyResolver {
       );
 
       if (!result.success) {
-        throw new Error(result.message || 'Failed to search properties on map');
+        throw new Error(result.message || "Failed to search properties on map");
       }
 
       return result;
@@ -93,7 +98,10 @@ export class PropertyResolver {
       logger.error("Error in searchPropertiesOnMap:", error);
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to search properties on map'
+        message:
+          error instanceof Error
+            ? error.message
+            : "Failed to search properties on map",
       };
     }
   }
@@ -214,33 +222,35 @@ export class PropertyResolver {
     const options: PropertySearchOptions = {
       page: args.page,
       limit: args.limit,
-      filters: args.filter ? {
-        status: args.filter.status,
-        propertyType: args.filter.propertyType,
-        listingType: args.filter.listingType,
-        minAmount: args.filter.minAmount,
-        maxAmount: args.filter.maxAmount,
-        city: args.filter.city,
-        state: args.filter.state,
-        createdAfter: args.filter.createdAfter,
-        createdBefore: args.filter.createdBefore,
-        updatedAfter: args.filter.updatedAfter,
-      } : undefined,
+      filters: args.filter
+        ? {
+            status: args.filter.status,
+            propertyType: args.filter.propertyType,
+            listingType: args.filter.listingType,
+            minAmount: args.filter.minAmount,
+            maxAmount: args.filter.maxAmount,
+            city: args.filter.city,
+            state: args.filter.state,
+            createdAfter: args.filter.createdAfter,
+            createdBefore: args.filter.createdBefore,
+            updatedAfter: args.filter.updatedAfter,
+          }
+        : undefined,
     };
 
     const result = await this.propertyService.getMyProperties(
       ctx.user!.id,
       options
     );
-    
+
     if (!result.success) {
-      throw new Error(result.message || 'Failed to fetch properties');
+      throw new Error(result.message || "Failed to fetch properties");
     }
 
     const { properties, totalCount, pagination } = result.data!;
-    
+
     // Transform each property using the existing transform method
-    const transformedProperties = properties.map(property => 
+    const transformedProperties = properties.map((property) =>
       this.transformPropertyToResponse(property)
     );
 
@@ -321,14 +331,38 @@ export class PropertyResolver {
   @Mutation(() => Property)
   @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
   async createProperty(
-    @Arg("input") input: CreatePropertyInput,
+    @Arg("input") input: SimpleCreatePropertyInput,
     @Arg("files", () => [GraphQLUpload], { nullable: true })
     files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<Property> {
+    // Transform simple input to internal format
+    const internalInput: any = {
+      ...input,
+      isStandalone: !input.numberOfUnits || input.numberOfUnits === 1,
+    };
+
+    if (input.numberOfUnits && input.numberOfUnits > 1) {
+      internalInput.bulkUnits = {
+        unitTitle: "Unit",
+        unitCount: input.numberOfUnits,
+        unitDetails: {
+          amount: input.amount,
+          rentalPeriod: input.rentalPeriod,
+          sqft: input.sqft,
+          bedrooms: input.bedrooms,
+          bathrooms: input.bathrooms,
+          roomType: input.roomType,
+          amenities: input.amenities,
+          isFurnished: input.isFurnished,
+          isForStudents: input.isForStudents,
+        },
+      };
+    }
+
     const result = await this.propertyService.createProperty(
       ctx.user!.id,
-      input,
+      internalInput,
       files
     );
 
@@ -341,15 +375,38 @@ export class PropertyResolver {
   @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
   async updateProperty(
     @Arg("id") id: string,
-    @Arg("input") input: UpdatePropertyInput,
+    @Arg("input") input: SimpleUpdatePropertyInput,
     @Arg("files", () => [GraphQLUpload], { nullable: true })
     files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<Property> {
+    // Transform simple input to internal format
+    const internalInput: any = {
+      ...input,
+    };
+
+    if (input.numberOfUnits) {
+      internalInput.bulkUnits = {
+        unitTitle: "Unit",
+        unitCount: input.numberOfUnits,
+        unitDetails: {
+          amount: input.amount,
+          rentalPeriod: input.rentalPeriod,
+          sqft: input.sqft,
+          bedrooms: input.bedrooms,
+          bathrooms: input.bathrooms,
+          roomType: input.roomType,
+          amenities: input.amenities,
+          isFurnished: input.isFurnished,
+          isForStudents: input.isForStudents,
+        },
+      };
+    }
+
     const result = await this.propertyService.updateProperty(
       id,
       ctx.user!.id,
-      input,
+      internalInput,
       files
     );
     if (!result.success) throw new Error(result.message);

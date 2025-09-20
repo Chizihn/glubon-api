@@ -282,17 +282,20 @@ enum NotificationType {
   BOOKING_CONFIRMED
   BOOKING_CANCELLED
   SPLIT_PAYMENT_RECEIVED
+  BOOKING_COMPLETED
+  PAYMENT_REQUIRED
 }
 
 enum BookingStatus {
   PENDING_APPROVAL
   DECLINED
-  PENDING
+  PENDING_PAYMENT
   CONFIRMED
   ACTIVE
   COMPLETED
   CANCELLED
   DISPUTED
+  EXPIRED
 }
 
 enum DisputeStatus {
@@ -434,6 +437,10 @@ model UserSetting {
   language                String?                  @default("en")
   receivePromotions       Boolean                  @default(true)
   pushNotifications       Boolean                  @default(true)
+  pushToken               String?
+  emailNotifications      Boolean                  @default(true)
+  smsNotifications        Boolean                  @default(false)
+  twoFactorEnabled        Boolean                  @default(false)
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
 
@@ -643,7 +650,7 @@ model Booking {
   status              BookingStatus @default(PENDING_APPROVAL)
   requestedAt         DateTime      @default(now())
   respondedAt         DateTime?
-  startDate           DateTime
+  startDate           DateTime?
   endDate             DateTime?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
@@ -1008,7 +1015,7 @@ model AdInteraction {
 model PlatformSetting {
   id          String   @id @default(uuid())
   key         String   @unique
-  value       String
+  value       Json
   description String?
   updatedBy   String
   createdAt   DateTime @default(now())

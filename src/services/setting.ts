@@ -3,14 +3,16 @@ import { Redis } from "ioredis";
 import { BaseService, CACHE_TTL } from "./base";
 import { ServiceResponse } from "../types";
 
-
-
 interface UserSettingInput {
   notificationPreferences?: Record<string, boolean>;
   theme?: string;
   language?: string;
   receivePromotions?: boolean;
   pushNotifications?: boolean;
+  pushToken?: string;
+  emailNotifications?: boolean;
+  smsNotifications?: boolean;
+  twoFactorEnabled?: boolean;
 }
 
 interface PlatformSettingInput {
@@ -31,17 +33,21 @@ export class SettingsService extends BaseService {
       if (cached) return this.success(cached);
 
       const userSettings = await this.prisma.userSetting.findUnique({
-        where: { userId }
+        where: { userId },
       });
 
       if (!userSettings) {
         // Return default settings if none exist
         const defaultSettings = {
           notificationPreferences: {},
-          theme: 'light',
-          language: 'en',
+          theme: "light",
+          language: "en",
           receivePromotions: true,
-          pushNotifications: true
+          pushNotifications: true,
+          pushToken: null,
+          emailNotifications: true,
+          smsNotifications: false,
+          twoFactorEnabled: false,
         };
         return this.success(defaultSettings);
       }
@@ -76,7 +82,10 @@ export class SettingsService extends BaseService {
       await this.setCache(cacheKey, updatedSettings, CACHE_TTL.LONG);
       await this.deleteCachePattern(`userSettings:${userId}:*`);
 
-      return this.success(updatedSettings, "User settings updated successfully");
+      return this.success(
+        updatedSettings,
+        "User settings updated successfully"
+      );
     } catch (error) {
       return this.handleError(error, "updateUserSettings");
     }
@@ -93,9 +102,16 @@ export class SettingsService extends BaseService {
         userRole !== RoleEnum.ADMIN &&
         !userPermissions.includes(PermissionEnum.SUPER_ADMIN)
       ) {
-        return this.failure("Unauthorized: Insufficient permissions", [], [
-          { message: "Only admins can view platform settings", code: "FORBIDDEN" },
-        ]);
+        return this.failure(
+          "Unauthorized: Insufficient permissions",
+          [],
+          [
+            {
+              message: "Only admins can view platform settings",
+              code: "FORBIDDEN",
+            },
+          ]
+        );
       }
 
       const cacheKey = this.generateCacheKey("platformSettings", "all");
@@ -123,7 +139,10 @@ export class SettingsService extends BaseService {
       // Only SUPER_ADMIN can update platform settings
       if (!userPermissions.includes(PermissionEnum.SUPER_ADMIN)) {
         return this.failure("Unauthorized: Insufficient permissions", null, [
-          { message: "Only super admins can update platform settings", code: "FORBIDDEN" },
+          {
+            message: "Only super admins can update platform settings",
+            code: "FORBIDDEN",
+          },
         ]);
       }
 
@@ -141,7 +160,7 @@ export class SettingsService extends BaseService {
           key: input.key,
           ...data,
         },
-        include: { updater: { select: { id: true, email: true } } }
+        include: { updater: { select: { id: true, email: true } } },
       });
 
       const cacheKey = this.generateCacheKey("platformSettings", "all");

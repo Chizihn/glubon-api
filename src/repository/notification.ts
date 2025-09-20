@@ -17,14 +17,18 @@ export class NotificationRepository extends BaseRepository {
     data?: any;
   }): Promise<any> {
     const cacheKey = this.generateCacheKey("notification", data.userId, "list");
+    
+    // Ensure data is properly serialized
+    const notificationData = {
+      userId: data.userId,
+      title: data.title,
+      message: data.message,
+      type: data.type,
+      data: data.data ? (typeof data.data === 'string' ? data.data : JSON.stringify(data.data)) : {},
+    };
+    
     const notification = await this.prisma.notification.create({
-      data: {
-        userId: data.userId,
-        title: data.title,
-        message: data.message,
-        type: data.type,
-        data: data.data || {},
-      },
+      data: notificationData,
       include: {
         user: {
           select: { id: true, firstName: true, lastName: true, email: true },
@@ -72,6 +76,7 @@ export class NotificationRepository extends BaseRepository {
       page,
       limit
     );
+
     const cacheKey = this.generateCacheKey(
       "notification",
       filters.userId,
@@ -80,14 +85,21 @@ export class NotificationRepository extends BaseRepository {
       page.toString(),
       limit.toString()
     );
-    const cached = await this.getCache<{
-      notifications: any[];
-      totalCount: number;
-      unreadCount: number;
-    }>(cacheKey);
-    if (cached) return cached;
 
-    const where: any = { userId: filters.userId };
+    // Temporarily disable cache for debugging
+    // const cached = await this.getCache<{
+    //   notifications: any[];
+    //   totalCount: number;
+    //   unreadCount: number;
+    // }>(cacheKey);
+    // if (cached) {
+    //   console.log('Returning cached result');
+    //   return cached;
+    // }
+
+    const where: any = { 
+      userId: filters.userId  
+    };
     if (filters.type) where.type = filters.type;
     if (filters.isRead !== undefined) where.isRead = filters.isRead;
 
@@ -97,15 +109,32 @@ export class NotificationRepository extends BaseRepository {
         skip,
         take: validatedLimit,
         orderBy: { createdAt: "desc" },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
       }),
       this.prisma.notification.count({ where }),
       this.prisma.notification.count({
-        where: { userId: filters.userId, isRead: false },
+        where: { ...where, isRead: false },  
       }),
     ]);
 
-    const result = { notifications, totalCount, unreadCount };
-    await this.setCache(cacheKey, result, 300);
+    const result = { 
+      notifications, 
+      totalCount, 
+      unreadCount 
+    };
+
+    // Temporarily disable cache
+    // await this.setCache(cacheKey, result, 300);
+
     return result;
   }
 

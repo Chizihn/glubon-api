@@ -66,9 +66,12 @@ export class BookingRequestService {
       userId: updatedBooking.renterId,
       title: accepted ? 'Booking Request Accepted' : 'Booking Request Declined',
       message: `Your booking request for ${updatedBooking.property.title} has been ${accepted ? 'accepted' : 'declined'}`,
-      type: accepted ? 'BOOKING_REQUEST_ACCEPTED' : 'BOOKING_REQUEST_DECLINED',
-      referenceId: bookingId,
-      referenceType: 'BOOKING'
+      type: accepted ? 'BOOKING_CONFIRMED' : 'BOOKING_CANCELLED',
+      data: {
+        bookingId,
+        propertyTitle: updatedBooking.property.title,
+        status: accepted ? 'ACCEPTED' : 'DECLINED'
+      }
     });
 
     return updatedBooking;

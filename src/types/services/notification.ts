@@ -20,7 +20,8 @@ export type EmailNotificationType =
   | "DISPUTE_CREATED"
   | "DISPUTE_RESOLVED"
   | "PAYMENT_RECEIVED"
-  | "REFUND_PROCESSED";
+  | "REFUND_PROCESSED"
+  | "BOOKING_COMPLETED";
 
 export interface CreateNotificationData {
   userId: string;
@@ -55,6 +56,5 @@ export interface BookingNotification {
   renter: User;
   property: Property;
   totalAmount: number;
-  platformFee: number;
   paymentUrl: string;
 }

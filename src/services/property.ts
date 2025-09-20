@@ -1,5 +1,17 @@
 //src/services/property.ts
-import { Prisma, PrismaClient, Property, PropertyStatus, PropertyType, RoomType, RentalPeriod, PropertyListingType, DayOfWeek, User, RoleEnum } from "@prisma/client";
+import {
+  Prisma,
+  PrismaClient,
+  Property,
+  PropertyStatus,
+  PropertyType,
+  RoomType,
+  RentalPeriod,
+  PropertyListingType,
+  DayOfWeek,
+  User,
+  RoleEnum,
+} from "@prisma/client";
 
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
@@ -13,18 +25,25 @@ import {
   UpdatePropertyInput,
 } from "../types/services/properties";
 import { PropertyRepository } from "../repository/properties";
+import { UnitRepository, CreateUnitInput } from "../repository/units";
 import { FileUpload } from "./s3";
 import { S3Service } from "./s3";
 import { MapSearchResponse, MapSearchResult } from "../types/services/map";
+import { PropertyUnitValidator } from "../utils/property-unit-validator";
+import { Decimal } from "@prisma/client/runtime/library";
 
 export class PropertyService extends BaseService {
   private repository: PropertyRepository;
+  private unitRepository: UnitRepository;
   private s3Service: S3Service;
+  private validator: PropertyUnitValidator;
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
     this.repository = new PropertyRepository(prisma, redis);
+    this.unitRepository = new UnitRepository(prisma, redis);
     this.s3Service = new S3Service(prisma, redis);
+    this.validator = new PropertyUnitValidator(prisma);
   }
 
   async createProperty(
@@ -39,6 +58,14 @@ export class PropertyService extends BaseService {
 
       if (!user || user.role !== RoleEnum.LISTER) {
         return this.failure("Only property owners can create properties");
+      }
+
+      // Validate property and unit configuration
+      const validation = await this.validator.validatePropertyCreation(input);
+      if (!validation.isValid) {
+        return this.failure(
+          `Validation failed: ${validation.errors.join(", ")}`
+        );
       }
 
       let s3UploadResult: any = {};
@@ -59,25 +86,93 @@ export class PropertyService extends BaseService {
         `${input.address}, ${input.city}, ${input.state}, Nigeria`
       );
 
+      // Use transaction to create property and units together
+      const result = await this.prisma.$transaction(async (tx) => {
+        const property = await this.repository.create(
+          {
+            ...input,
+            ...s3UploadResult,
+            description: input.description ?? null,
+            sqft: input.sqft ?? null,
+            visitingDays: input.visitingDays ?? [],
+            visitingTimeStart: input.visitingTimeStart ?? null,
+            visitingTimeEnd: input.visitingTimeEnd ?? null,
+            latitude: coordinates?.latitude ?? null,
+            longitude: coordinates?.longitude ?? null,
+            country: "Nigeria",
+            status: PropertyStatus.PENDING_REVIEW,
+            isStandalone: (input as any).isStandalone ?? false,
+            totalUnits: 0, // Will be updated after units are created
+            availableUnits: 0,
+            owner: {
+              connect: { id: ownerId },
+            },
+          },
+          tx
+        );
 
-      const property = await this.repository.create({
-        ...input,
-        ...s3UploadResult,
-        description: input.description ?? null,
-        sqft: input.sqft ?? null,
-        visitingDays: input.visitingDays ?? [],
-        visitingTimeStart: input.visitingTimeStart ?? null,
-        visitingTimeEnd: input.visitingTimeEnd ?? null,
-        latitude: coordinates?.latitude ?? null,
-        longitude: coordinates?.longitude ?? null,
-        country: "Nigeria",
-        status: PropertyStatus.PENDING_REVIEW,
-        owner: {
-          connect: { id: ownerId },
-        },
+        // Handle unit creation based on property type
+        const inputWithUnits = input as any;
+
+        if (inputWithUnits.units && inputWithUnits.units.length > 0) {
+          // Create specific units
+          for (const unitInput of inputWithUnits.units) {
+            await this.unitRepository.create(
+              {
+                ...unitInput,
+                propertyId: property.id,
+              },
+              tx
+            );
+          }
+        } else if (inputWithUnits.isStandalone) {
+          // For standalone properties, create a single unit with property details
+          await this.unitRepository.create(
+            {
+              propertyId: property.id,
+              title: input.title || null,
+              description: input.description || null,
+              amount: input.amount,
+              rentalPeriod: input.rentalPeriod,
+              sqft: input.sqft || null,
+              bedrooms: input.bedrooms || null,
+              bathrooms: input.bathrooms || null,
+              roomType: input.roomType,
+              amenities: input.amenities,
+              isFurnished: input.isFurnished,
+              isForStudents: input.isForStudents,
+            },
+            tx
+          );
+        } else if (inputWithUnits.bulkUnits) {
+          // Handle bulk unit creation (e.g., "Unit A" with count 5)
+          const { unitTitle, unitCount, unitDetails } =
+            inputWithUnits.bulkUnits;
+          for (let i = 1; i <= unitCount; i++) {
+            await this.unitRepository.create(
+              {
+                propertyId: property.id,
+                title: `${unitTitle} ${i}`,
+                description: unitDetails.description || `${unitTitle} ${i}`,
+                amount: unitDetails.amount || input.amount,
+                rentalPeriod: unitDetails.rentalPeriod || input.rentalPeriod,
+                sqft: unitDetails.sqft || input.sqft,
+                bedrooms: unitDetails.bedrooms || input.bedrooms,
+                bathrooms: unitDetails.bathrooms || input.bathrooms,
+                roomType: unitDetails.roomType || input.roomType,
+                amenities: unitDetails.amenities || input.amenities,
+                isFurnished: unitDetails.isFurnished ?? input.isFurnished,
+                isForStudents: unitDetails.isForStudents ?? input.isForStudents,
+              },
+              tx
+            );
+          }
+        }
+
+        return property;
       });
 
-      return this.success(property, "Property created successfully");
+      return this.success(result, "Property created successfully");
     } catch (error) {
       return this.handleError(error, "createProperty");
     }
@@ -132,27 +227,129 @@ export class PropertyService extends BaseService {
         updateData.longitude = coordinates.longitude ?? null;
       }
 
-      const updatedProperty = await this.repository.update(
-        id,
-        ownerId,
-        updateData
-      );
-      return this.success(updatedProperty, "Property updated successfully");
+      // Use transaction to update property and handle unit updates
+      const result = await this.prisma.$transaction(async (tx) => {
+        const updatedProperty = await this.repository.update(
+          id,
+          ownerId,
+          updateData,
+          tx
+        );
+
+        // Handle unit updates if provided
+        const inputWithUnits = input as any;
+
+        if (inputWithUnits.units && inputWithUnits.units.length > 0) {
+          // Update existing units or create new ones
+          for (const unitInput of inputWithUnits.units) {
+            if (unitInput.id) {
+              // Update existing unit
+              await this.unitRepository.update(unitInput.id, id, unitInput, tx);
+            } else {
+              // Create new unit
+              await this.unitRepository.create(
+                {
+                  ...unitInput,
+                  propertyId: id,
+                },
+                tx
+              );
+            }
+          }
+        }
+
+        if (inputWithUnits.bulkUnits) {
+          // Handle bulk unit updates/creation
+          const { unitTitle, unitCount, unitDetails } =
+            inputWithUnits.bulkUnits;
+
+          // Get existing units for this property
+          const existingUnits = await tx.unit.findMany({
+            where: { propertyId: id },
+            orderBy: { createdAt: "asc" },
+          });
+
+          // Update existing units up to the count
+          for (let i = 0; i < Math.min(unitCount, existingUnits.length); i++) {
+            const unit = existingUnits[i];
+            if (unit) {
+              await this.unitRepository.update(
+                unit.id,
+                id,
+                {
+                  title: `${unitTitle} ${i + 1}`,
+                  description:
+                    unitDetails.description || `${unitTitle} ${i + 1}`,
+                  amount: unitDetails.amount,
+                  rentalPeriod: unitDetails.rentalPeriod,
+                  sqft: unitDetails.sqft,
+                  bedrooms: unitDetails.bedrooms,
+                  bathrooms: unitDetails.bathrooms,
+                  roomType: unitDetails.roomType,
+                  amenities: unitDetails.amenities,
+                  isFurnished: unitDetails.isFurnished,
+                  isForStudents: unitDetails.isForStudents,
+                },
+                tx
+              );
+            }
+          }
+
+          // Create additional units if needed
+          for (let i = existingUnits.length; i < unitCount; i++) {
+            await this.unitRepository.create(
+              {
+                propertyId: id,
+                title: `${unitTitle} ${i + 1}`,
+                description: unitDetails.description || `${unitTitle} ${i + 1}`,
+                amount:
+                  unitDetails.amount ||
+                  updatedProperty?.amount ||
+                  new Decimal(0),
+                rentalPeriod:
+                  unitDetails.rentalPeriod || updatedProperty.rentalPeriod,
+                sqft: unitDetails.sqft || updatedProperty.sqft,
+                bedrooms: unitDetails.bedrooms || updatedProperty.bedrooms,
+                bathrooms: unitDetails.bathrooms || updatedProperty.bathrooms,
+                roomType: unitDetails.roomType || updatedProperty.roomType,
+                amenities: unitDetails.amenities || updatedProperty.amenities,
+                isFurnished:
+                  unitDetails.isFurnished ?? updatedProperty.isFurnished,
+                isForStudents:
+                  unitDetails.isForStudents ?? updatedProperty.isForStudents,
+              },
+              tx
+            );
+          }
+
+          // Remove excess units if count is reduced (only if they're not rented)
+          if (unitCount < existingUnits.length) {
+            const unitsToRemove = existingUnits.slice(unitCount);
+            for (const unit of unitsToRemove) {
+              if (unit.status !== "RENTED") {
+                await this.unitRepository.delete(unit.id, id, tx);
+              }
+            }
+          }
+        }
+
+        return updatedProperty;
+      });
+
+      return this.success(result, "Property updated successfully");
     } catch (error) {
       return this.handleError(error, "updateProperty");
     }
   }
 
-  private async mapGraphQLFilesToS3Files(
-    files: any[]
-  ): Promise<FileUpload[]> {
+  private async mapGraphQLFilesToS3Files(files: any[]): Promise<FileUpload[]> {
     return Promise.all(
       files.map(async (file: any) => {
         try {
           const { createReadStream, filename, mimetype, encoding } = await file;
           const stream = createReadStream();
           const chunks: Buffer[] = [];
-          
+
           // Read the stream into a buffer
           for await (const chunk of stream) {
             chunks.push(Buffer.from(chunk));
@@ -169,13 +366,13 @@ export class PropertyService extends BaseService {
             originalname: filename,
             mimetype,
             size: buffer.length,
-            fieldname: 'file',
+            fieldname: "file",
             encoding,
-            destination: '',
+            destination: "",
             filename,
-            path: ''
+            path: "",
           };
-          
+
           // Add stream only if needed
           if (stream) {
             fileObj.stream = stream;
@@ -184,11 +381,13 @@ export class PropertyService extends BaseService {
           return {
             file: fileObj,
             type: fileType,
-            category
+            category,
           };
         } catch (error: any) {
-          console.error('Error processing file:', error);
-          throw new Error(`Failed to process file: ${error?.message || 'Unknown error'}`);
+          console.error("Error processing file:", error);
+          throw new Error(
+            `Failed to process file: ${error?.message || "Unknown error"}`
+          );
         }
       })
     );
@@ -210,11 +409,12 @@ export class PropertyService extends BaseService {
     try {
       // Earth's radius in kilometers
       const earthRadiusKm = 6371;
-      
+
       // Calculate the bounding box for the search area
       const latDistance = radiusInKm / earthRadiusKm;
-      const lngDistance = radiusInKm / (earthRadiusKm * Math.cos((Math.PI * latitude) / 180));
-      
+      const lngDistance =
+        radiusInKm / (earthRadiusKm * Math.cos((Math.PI * latitude) / 180));
+
       // Calculate latitude and longitude bounds
       const latMin = latitude - (latDistance * 180) / Math.PI;
       const latMax = latitude + (latDistance * 180) / Math.PI;
@@ -226,8 +426,8 @@ export class PropertyService extends BaseService {
         AND: [
           { latitude: { gte: latMin, lte: latMax } },
           { longitude: { gte: lngMin, lte: lngMax } },
-          { status: 'APPROVED' } // Only show approved properties
-        ]
+          { status: "APPROVED" }, // Only show approved properties
+        ],
       };
 
       // Apply additional filters
@@ -237,7 +437,7 @@ export class PropertyService extends BaseService {
         }
         if (filters.amenities?.length) {
           where.AND.push({
-            amenities: { hasSome: filters.amenities }
+            amenities: { hasSome: filters.amenities },
           });
         }
         if (filters.minPrice !== undefined) {
@@ -248,7 +448,7 @@ export class PropertyService extends BaseService {
         }
         if (filters.roomTypes?.length) {
           where.AND.push({
-            roomType: { in: filters.roomTypes }
+            roomType: { in: filters.roomTypes },
           });
         }
       }
@@ -262,7 +462,7 @@ export class PropertyService extends BaseService {
       }>;
 
       // Query properties within the bounding box
-      const dbProperties = await this.prisma.property.findMany({
+      const dbProperties = (await this.prisma.property.findMany({
         where,
         include: {
           owner: {
@@ -270,46 +470,47 @@ export class PropertyService extends BaseService {
               id: true,
               firstName: true,
               lastName: true,
-              profilePic: true
-            }
+              profilePic: true,
+            },
           },
           _count: {
             select: {
               views: true,
-              likes: true
-            }
-          }
+              likes: true,
+            },
+          },
         },
         take: options?.take || 100,
-        skip: options?.skip || 0
-      }) as unknown as PropertyWithOwner[];
+        skip: options?.skip || 0,
+      })) as unknown as PropertyWithOwner[];
 
       // Calculate distances and filter by radius
       const results = dbProperties
-        .map(property => {
+        .map((property) => {
           if (!property.latitude || !property.longitude) return null;
-          
+
           // Haversine formula to calculate distance
           const dLat = this.deg2rad(property.latitude - latitude);
           const dLon = this.deg2rad(property.longitude - longitude);
           const a =
             Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(this.deg2rad(latitude)) * 
-            Math.cos(this.deg2rad(property.latitude)) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-          
+            Math.cos(this.deg2rad(latitude)) *
+              Math.cos(this.deg2rad(property.latitude)) *
+              Math.sin(dLon / 2) *
+              Math.sin(dLon / 2);
+
           const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
           const distance = earthRadiusKm * c;
 
           if (distance <= radiusInKm) {
             const { owner, _count, ...propertyData } = property;
-            
+
             // Create a properly typed result object
             const result: MapSearchResult = {
               // Required fields from Property
               id: propertyData.id,
               title: propertyData.title,
-              description: propertyData.description || '',
+              description: propertyData.description || "",
               status: propertyData.status,
               listingType: propertyData.listingType,
               amount: propertyData.amount,
@@ -317,7 +518,7 @@ export class PropertyService extends BaseService {
               address: propertyData.address,
               city: propertyData.city,
               state: propertyData.state,
-              country: propertyData.country || 'Nigeria',
+              country: propertyData.country || "Nigeria",
               latitude: propertyData.latitude,
               longitude: propertyData.longitude,
               sqft: propertyData.sqft,
@@ -346,16 +547,16 @@ export class PropertyService extends BaseService {
               ownershipVerified: propertyData.ownershipVerified || false,
               createdAt: propertyData.createdAt,
               updatedAt: propertyData.updatedAt,
-              
+
               // Additional fields for MapSearchResult
               distanceInKm: parseFloat(distance.toFixed(2)),
               owner,
               isLiked: false,
               isViewed: false,
               viewsCount: _count?.views || 0,
-              likesCount: _count?.likes || 0
+              likesCount: _count?.likes || 0,
             };
-            
+
             return result;
           }
           return null;
@@ -365,10 +566,10 @@ export class PropertyService extends BaseService {
       return {
         success: true,
         data: results,
-        total: results.length
+        total: results.length,
       };
     } catch (error) {
-      return this.handleError(error, 'searchPropertiesOnMap');
+      return this.handleError(error, "searchPropertiesOnMap");
     }
   }
 
@@ -409,6 +610,19 @@ export class PropertyService extends BaseService {
     for (const upload of uploadResults) {
       const parts = upload.key.split("/");
       const category = parts[parts.length - 2];
+      
+      // Check if this is a video file (key contains 'video' or mimetype is video)
+      const isVideo = upload.key.toLowerCase().includes('video') || 
+                     upload.url.toLowerCase().includes('video') ||
+                     (upload as any).mimetype?.startsWith('video/');
+      
+      if (isVideo) {
+        // For video files, we set the video URL directly
+        result.video = upload.url;
+        continue;
+      }
+      
+      // Handle other file types
       switch (category) {
         case "property":
           result.images = result.images || [];
@@ -686,7 +900,18 @@ export class PropertyService extends BaseService {
   > {
     try {
       const stats = await this.repository.getStats();
-      return this.success(stats, "Property stats retrieved successfully");
+      // Convert averagePrice to number if it's a Decimal
+      const processedStats = {
+        ...stats,
+        averagePrice:
+          typeof stats.averagePrice === "number"
+            ? stats.averagePrice
+            : Number(stats.averagePrice.toString()),
+      };
+      return this.success(
+        processedStats,
+        "Property stats retrieved successfully"
+      );
     } catch (error) {
       return this.handleError(error, "getPropertyStats");
     }

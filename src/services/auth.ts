@@ -314,7 +314,9 @@ export class AuthService extends BaseService {
     }
   }
 
-  async forgotPassword(input: ForgotPasswordInput): Promise<ServiceResponse> {
+  async forgotPassword(
+    input: ForgotPasswordInput
+  ): Promise<ServiceResponse<null>> {
     try {
       const { email } = input;
 
@@ -332,6 +334,7 @@ export class AuthService extends BaseService {
       // Generate reset token
       const resetToken = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 3600000); // 1 hour
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
       // Save reset token
       await this.userRepository.createVerificationToken({

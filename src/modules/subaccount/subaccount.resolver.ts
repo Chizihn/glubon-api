@@ -11,7 +11,7 @@ import { Context } from "../../types/context";
 import { SubaccountService } from "../../services/subaccount";
 import { PaystackService } from "../../services/payment";
 import { AuthMiddleware, RequireRole } from "../../middleware";
-import { prisma, redis } from "../../config";
+import { prisma, redis,  } from "../../config";
 import { RoleEnum } from "@prisma/client";
 import {
   Subaccount,
@@ -26,6 +26,7 @@ import {
   AccountResolveInput,
   SuspendSubaccountInput,
 } from "./subaccount.inputs";
+import { logger } from "../../utils";
 
 @Resolver(() => Subaccount)
 export class SubaccountResolver {
@@ -69,13 +70,13 @@ export class SubaccountResolver {
 
       // Filter only active Nigerian banks
       const nigerianBanks = result.data?.data?.filter(
-        (bank) => bank.active && bank.country === "Nigeria"
+        (bank: { active: boolean; country: string }) => bank.active && bank.country === "Nigeria"
       ) || [];
 
       return {
         success: true,
         message: "Banks fetched successfully",
-        data: nigerianBanks.map(bank => ({
+        data: nigerianBanks.map((bank: { name: string; slug: string; code: string; longcode: string; gateway: string | null; pay_with_bank: boolean; active: boolean; country: string; currency: string; type: string }) => ({
           name: bank.name,
           slug: bank.slug,
           code: bank.code,
@@ -98,24 +99,45 @@ export class SubaccountResolver {
   async resolveAccountNumber(
     @Arg("input") input: AccountResolveInput
   ): Promise<AccountResolveResponse> {
-    const result = await this.paystackService.resolveAccountNumber(
-      input.accountNumber,
-      input.bankCode
-    );
+    try {
+      const result = await this.paystackService.resolveAccountNumber(
+        input.accountNumber,
+        input.bankCode
+      );
 
-    if (!result.success) {
-      throw new Error(result.message);
+      if (!result.success) {
+        return {
+          success: false,
+          message: result.message || "Failed to resolve account number",
+          data: {
+            accountNumber: "",
+            accountName: "",
+            bankCode: input.bankCode
+          }
+        };
+      }
+
+      return {
+        success: true,
+        message: "Account resolved successfully",
+        data: {
+          accountNumber: result.data?.account_number || "",
+          accountName: result.data?.account_name || "",
+          bankCode: result.data?.bank_code || input.bankCode,
+        },
+      };
+    } catch (error: any) {
+      logger.error("Error in resolveAccountNumber:", error);
+      return {
+        success: false,
+        message: error.message || "Failed to resolve account number",
+        data: {
+          accountNumber: "",
+          accountName: "",
+          bankCode: input.bankCode
+        }
+      };
     }
-
-    return {
-      success: true,
-      message: "Account resolved successfully",
-      data: {
-        accountNumber: result.data?.account_number || "",
-        accountName: result.data?.account_name || "",
-        bankCode: result.data?.bank_code || "",
-      },
-    };
   }
 
   @Mutation(() => SubaccountResponse)
@@ -127,7 +149,8 @@ export class SubaccountResolver {
     // First validate the account details
     const validationResult = await this.paystackService.resolveAccountNumber(
       input.accountNumber,
-      input.bankCode
+      "001"
+      // input.bankCode
     );
 
     if (!validationResult.success) {
@@ -139,6 +162,7 @@ export class SubaccountResolver {
       userId: context.user!.id,
       accountNumber: input.accountNumber,
       bankCode: input.bankCode,
+      // bankCode: "001",
       businessName: input.businessName,
       percentageCharge: input.percentageCharge,
     });

@@ -1,11 +1,32 @@
-import { Resolver, Query, Mutation, Arg, Ctx, UseMiddleware } from "type-graphql";
+import {
+  Resolver,
+  Query,
+  Mutation,
+  Arg,
+  Ctx,
+  UseMiddleware,
+} from "type-graphql";
 import type { Context } from "../../types/context";
 import { prisma } from "../../config/database";
 import redis from "../../config/redis";
 import { AuthMiddleware } from "../../middleware";
-import { UserSetting, PlatformSetting, PaginatedPlatformSettingsResponse } from "./setting.types";
-import { UserSettingInput, PlatformSettingInput, PlatformSettingFilter } from "./setting.inputs";
-import { RoleEnum, PermissionEnum, Prisma, ProviderEnum, UserStatus } from "@prisma/client";
+import {
+  UserSetting,
+  PlatformSetting,
+  PaginatedPlatformSettingsResponse,
+} from "./setting.types";
+import {
+  UserSettingInput,
+  PlatformSettingInput,
+  PlatformSettingFilter,
+} from "./setting.inputs";
+import {
+  RoleEnum,
+  PermissionEnum,
+  Prisma,
+  ProviderEnum,
+  UserStatus,
+} from "@prisma/client";
 import { SettingsService } from "../../services/setting";
 
 @Resolver()
@@ -32,7 +53,10 @@ export class SettingsResolver {
     @Arg("input") input: UserSettingInput,
     @Ctx() ctx: Context
   ): Promise<UserSetting> {
-    const result = await this.settingsService.updateUserSettings(ctx.user!.id, input);
+    const result = await this.settingsService.updateUserSettings(
+      ctx.user!.id,
+      input
+    );
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
@@ -95,44 +119,52 @@ export class SettingsResolver {
               lastLogin: true,
               isVerified: true,
               createdAt: true,
-              updatedAt: true
-            }
-          }
+              updatedAt: true,
+            },
+          },
         },
       }),
       prisma.platformSetting.count({ where }),
     ]);
 
     // Convert the raw database result to PlatformSetting objects
-    const platformSettings = settings.map(setting => ({
+    const platformSettings = settings.map((setting) => ({
       ...setting,
-      updater: setting.updater ? {
-        id: setting.updater.id,
-        email: setting.updater.email,
-        // Add required User fields with default values
-        firstName: setting.updater.firstName || '',
-        lastName: setting.updater.lastName || '',
-        isVerified: false,
-        role: setting.updater.role || 'USER',
-        permissions: setting.updater.permissions || [],
-        isActive: setting.updater.isActive ?? true,
-        status: UserStatus.ACTIVE,
-        provider: ProviderEnum.EMAIL,
-        createdAt: setting.updater.createdAt || new Date(),
-        updatedAt: setting.updater.updatedAt || new Date(),
-        // Add other required fields with default values
-        phoneNumber: null,
-        profilePic: null,
-        address: null,
-        city: null,
-        state: null,
-        country: 'Nigeria',
-        refreshToken: null,
-        lastLogin: null
-      } : null
+      value: String(setting.value), // Convert JsonValue to string
+      updater: setting.updater
+        ? {
+            id: setting.updater.id,
+            email: setting.updater.email,
+            // Add required User fields with default values
+            firstName: setting.updater.firstName || "",
+            lastName: setting.updater.lastName || "",
+            isVerified: false,
+            role: setting.updater.role || "USER",
+            permissions: setting.updater.permissions || [],
+            isActive: setting.updater.isActive ?? true,
+            status: UserStatus.ACTIVE,
+            provider: ProviderEnum.EMAIL,
+            createdAt: setting.updater.createdAt || new Date(),
+            updatedAt: setting.updater.updatedAt || new Date(),
+            // Add other required fields with default values
+            phoneNumber: null,
+            profilePic: null,
+            address: null,
+            city: null,
+            state: null,
+            country: "Nigeria",
+            refreshToken: null,
+            lastLogin: null,
+          }
+        : null,
     }));
 
-    return new PaginatedPlatformSettingsResponse(platformSettings, page, limit, totalCount);
+    return new PaginatedPlatformSettingsResponse(
+      platformSettings,
+      page,
+      limit,
+      totalCount
+    );
   }
 
   @Mutation(() => PlatformSetting)

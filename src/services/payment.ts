@@ -116,6 +116,37 @@ export class PaystackService extends BaseService {
     }
   }
 
+  // Helper method to safely extract error information
+  private extractErrorInfo(error: any): any {
+    const errorInfo: any = {
+      message: error.message || 'Unknown error',
+      name: error.name || 'Error',
+      stack: error.stack
+    };
+
+    // Safely extract Axios response data if available
+    if (error.response) {
+      errorInfo.response = {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        headers: error.response.headers
+      };
+    }
+
+    // Safely extract request config if available
+    if (error.config) {
+      errorInfo.config = {
+        url: error.config.url,
+        method: error.config.method,
+        headers: error.config.headers,
+        data: error.config.data
+      };
+    }
+
+    return errorInfo;
+  }
+
   async initializePayment(
     email: string,
     amount: Decimal | number,
@@ -153,7 +184,8 @@ export class PaystackService extends BaseService {
         "Payment initialized with Paystack successfully"
       );
     } catch (error: any) {
-      logger.error("Error initializing payment:", error);
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error initializing payment:", safeError);
       return this.handleError(error, "initializePayment");
     }
   }
@@ -177,7 +209,8 @@ export class PaystackService extends BaseService {
         "Payment with Paystack verified successfully"
       );
     } catch (error) {
-      logger.error("Error verifying payment:", error);
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error verifying payment:", safeError);
       return this.handleError(error, "verifyPayment");
     }
   }
@@ -188,7 +221,11 @@ export class PaystackService extends BaseService {
   ): Promise<ServiceResponse<AccountResolveResponse>> {
     try {
       if (!this.apiKey) {
-        throw new Error("Paystack secret key not configured");
+        return this.failure("Paystack secret key not configured");
+      }
+
+      if (!accountNumber || !bankCode) {
+        return this.failure("Account number and bank code are required");
       }
 
       const response = await axios.get<{ 
@@ -202,11 +239,20 @@ export class PaystackService extends BaseService {
             Authorization: `Bearer ${this.apiKey}`,
             "Content-Type": "application/json",
           },
+          validateStatus: () => true // This ensures we get the response even for error status codes
         }
       );
 
+      if (!response.data || typeof response.data !== 'object') {
+        return this.failure("Invalid response from Paystack service");
+      }
+
       if (!response.data.status) {
         return this.failure(response.data.message || "Account resolution failed");
+      }
+
+      if (!response.data.data) {
+        return this.failure("No account data received from Paystack");
       }
 
       return this.success(
@@ -214,14 +260,16 @@ export class PaystackService extends BaseService {
         "Account number resolved successfully"
       );
     } catch (error: any) {
-      logger.error("Error resolving account number:", error);
+      const safeError = this.extractErrorInfo(error);
+      console.error("Error resolving account number:", safeError);
       
       // Handle specific error cases
       if (error.response?.status === 400) {
         return this.failure("Invalid account number or bank code");
       }
       
-      return this.handleError(error, "resolveAccountNumber");
+      // Return a generic error message without exposing internal details
+      return this.failure("Failed to resolve account number. Please try again later.");
     }
   }
 
@@ -253,9 +301,13 @@ export class PaystackService extends BaseService {
         accountName: accountData.account_name
       }, "Account details validated successfully");
 
-    } catch (error) {
-      logger.error("Error validating subaccount details:", error);
-      return this.handleError(error, "validateSubaccountDetails");
+    } catch (error: any) {
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error validating subaccount details:", safeError);
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to validate subaccount details";
+      return this.failure(errorMessage);
     }
   }
 
@@ -301,15 +353,12 @@ export class PaystackService extends BaseService {
         "Subaccount created successfully"
       );
     } catch (error: any) {
-      logger.error("Error creating subaccount:", error);
-      
-      // Handle specific error cases
-      if (error.response?.status === 400) {
-        const errorMessage = error.response.data?.message || "Invalid subaccount data";
-        return this.failure(errorMessage);
-      }
-      
-      return this.handleError(error, "createSubaccount");
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error creating Paystack subaccount:", safeError);
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to create Paystack subaccount";
+      return this.failure(errorMessage);
     }
   }
 
@@ -338,7 +387,8 @@ export class PaystackService extends BaseService {
         "Subaccount updated successfully"
       );
     } catch (error: any) {
-      logger.error("Error updating subaccount:", error);
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error updating subaccount:", safeError);
       
       if (error.response?.status === 404) {
         return this.failure("Subaccount not found");
@@ -349,7 +399,10 @@ export class PaystackService extends BaseService {
         return this.failure(errorMessage);
       }
       
-      return this.handleError(error, "updateSubaccount");
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to update subaccount";
+      return this.failure(errorMessage);
     }
   }
 
@@ -376,13 +429,17 @@ export class PaystackService extends BaseService {
         "Subaccount fetched successfully"
       );
     } catch (error: any) {
-      logger.error("Error fetching subaccount:", error);
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error fetching subaccount:", safeError);
       
       if (error.response?.status === 404) {
         return this.failure("Subaccount not found");
       }
       
-      return this.handleError(error, "getSubaccount");
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to fetch subaccount";
+      return this.failure(errorMessage);
     }
   }
 
@@ -409,13 +466,17 @@ export class PaystackService extends BaseService {
         "Subaccount balance fetched successfully"
       );
     } catch (error: any) {
-      logger.error("Error fetching subaccount balance:", error);
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error fetching subaccount balance:", safeError);
       
       if (error.response?.status === 404) {
         return this.failure("Subaccount not found");
       }
       
-      return this.handleError(error, "getSubaccountBalance");
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to fetch subaccount balance";
+      return this.failure(errorMessage);
     }
   }
 
@@ -449,9 +510,13 @@ export class PaystackService extends BaseService {
         response.data,
         "Banks fetched successfully"
       );
-    } catch (error) {
-      logger.error("Error fetching banks:", error);
-      return this.handleError(error, "listBanks");
+    } catch (error: any) {
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error fetching banks:", safeError);
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to fetch banks";
+      return this.failure(errorMessage);
     }
   }
 
@@ -479,9 +544,13 @@ export class PaystackService extends BaseService {
         response.data,
         "Transactions fetched successfully"
       );
-    } catch (error) {
-      logger.error("Error fetching transactions:", error);
-      return this.handleError(error, "getTransactionsBySubaccount");
+    } catch (error: any) {
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error fetching transactions:", safeError);
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to fetch transactions";
+      return this.failure(errorMessage);
     }
   }
 
@@ -528,24 +597,20 @@ export class PaystackService extends BaseService {
         "Split payment initialized successfully"
       );
     } catch (error: any) {
-      logger.error("Error initializing split payment:", error);
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error initializing split payment:", safeError);
       return this.handleError(error, "splitPayment");
     }
   }
 
   async createSplitPayment(
     email: string,
-    totalAmount: Decimal | number,
+    amount: Decimal | number,
     reference: string,
     subaccountCode: string,
-    subaccountPercentage: number,
-    platformPercentage: number
+    subaccountPercentage: number
   ): Promise<ServiceResponse<PaystackInitializeResponse>> {
     try {
-      const amount = new Decimal(totalAmount);
-      const subaccountShare = amount.mul(subaccountPercentage).div(100);
-      const platformShare = amount.mul(platformPercentage).div(100);
-
       const splitConfig = {
         type: "percentage",
         currency: "NGN",
@@ -561,8 +626,15 @@ export class PaystackService extends BaseService {
 
       return await this.splitPayment(email, amount, reference, splitConfig);
     } catch (error: any) {
-      logger.error("Error creating split payment:", error);
-      return this.handleError(error, "createSplitPayment");
+      // Create a safe error object without circular references
+      const safeError = this.extractErrorInfo(error);
+      logger.error("Error creating split payment:", safeError);
+      
+      // Throw a clean error message
+      const errorMessage = error.response?.data?.message || 
+                         error.message || 
+                         "Failed to create split payment";
+      throw new Error(`Payment failed: ${errorMessage}`);
     }
   }
 }

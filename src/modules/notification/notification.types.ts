@@ -26,7 +26,27 @@ export class NotificationResponse {
   type: NotificationType;
 
   @Field(() => String, { nullable: true })
-  data?: string; // JSON string
+  get data(): string | null {
+    try {
+      return this._data ? JSON.stringify(this._data) : null;
+    } catch (e) {
+      console.error('Error serializing notification data:', e);
+      return null;
+    }
+  }
+  set data(value: any) {
+    if (typeof value === 'string') {
+      try {
+        this._data = JSON.parse(value);
+      } catch (e) {
+        console.error('Error parsing notification data:', e);
+        this._data = null;
+      }
+    } else {
+      this._data = value;
+    }
+  }
+  private _data: any;
 
   @Field(() => Boolean)
   isRead: boolean;
@@ -43,10 +63,23 @@ export class NotificationStatsResponse {
 
 @ObjectType()
 export class PaginatedNotificationsResponse extends PaginatedResponse<NotificationResponse> {
-  // ...existing code...
+  @Field(() => [NotificationResponse], { name: "items" })
+  override items: NotificationResponse[];
 
   @Field(() => Int)
   unreadCount: number;
+
+  constructor(
+    items: NotificationResponse[],
+    page: number,
+    limit: number,
+    totalItems: number,
+    unreadCount: number = 0
+  ) {
+    super(items, page, limit, totalItems);
+    this.items = items;
+    this.unreadCount = unreadCount;
+  }
 }
 
 @ObjectType()

@@ -24,25 +24,6 @@ export enum SortOrder {
   DESC = "DESC",
 }
 
-export interface CreateUnitDetails {
-  description?: string;
-  amount?: Decimal;
-  rentalPeriod?: RentalPeriod;
-  sqft?: number;
-  bedrooms?: number;
-  bathrooms?: number;
-  roomType?: RoomType;
-  amenities?: string[];
-  isFurnished?: boolean;
-  isForStudents?: boolean;
-}
-
-export interface BulkUnitInput {
-  unitTitle: string;
-  unitCount: number;
-  unitDetails: CreateUnitDetails;
-}
-
 export interface CreatePropertyInput {
   title: string;
   description?: string | null;
@@ -58,26 +39,11 @@ export interface CreatePropertyInput {
   roomType: RoomType;
   isFurnished: boolean;
   isForStudents: boolean;
-  isStandalone?: boolean;
   visitingDays: DayOfWeek[];
   visitingTimeStart?: string | null;
   visitingTimeEnd?: string | null;
   amenities: string[];
-  // Unit-related fields
-  units?: Array<{
-    title?: string;
-    description?: string;
-    amount: Decimal;
-    rentalPeriod: RentalPeriod;
-    sqft?: number;
-    bedrooms?: number;
-    bathrooms?: number;
-    roomType: RoomType;
-    amenities?: string[];
-    isFurnished?: boolean;
-    isForStudents?: boolean;
-  }>;
-  bulkUnits?: BulkUnitInput;
+  
 }
 
 export interface UpdatePropertyInput {
@@ -126,46 +92,24 @@ export interface PropertySearchOptions {
   sortBy?: PropertySortByEnum | undefined;
   sortOrder?: SortOrder | undefined;
   search?: string | undefined;
-  filters?:
-    | {
-        status?: PropertyStatus | undefined;
-        propertyType?: PropertyType | undefined;
-        listingType?: PropertyListingType | undefined;
-        minAmount?: number | undefined;
-        maxAmount?: number | undefined;
-        city?: string | undefined;
-        state?: string | undefined;
-        createdAfter?: Date | undefined;
-        createdBefore?: Date | undefined;
-        updatedAfter?: Date | undefined;
-      }
-    | undefined;
+  filters?: {
+    status?: PropertyStatus | undefined;
+    propertyType?: PropertyType | undefined;
+    listingType?: PropertyListingType | undefined;
+    minAmount?: number | undefined;
+    maxAmount?: number | undefined;
+    city?: string | undefined;
+    state?: string | undefined;
+    createdAfter?: Date | undefined;
+    createdBefore?: Date | undefined;
+    updatedAfter?: Date | undefined;
+  } | undefined;
 }
 
 export interface PropertyWithDetails extends Property {
   likesCount: number;
   viewsCount: number;
-  unitsCount?: number;
-  rentedUnits?: number;
   isLiked?: boolean;
   isViewed?: boolean;
   distance?: number;
-  units?: Array<{
-    id: string;
-    title?: string;
-    description?: string;
-    amount: Decimal;
-    rentalPeriod: RentalPeriod;
-    sqft?: number;
-    bedrooms?: number;
-    bathrooms?: number;
-    roomType: RoomType;
-    amenities: string[];
-    isFurnished: boolean;
-    isForStudents: boolean;
-    status: string;
-    renterId?: string;
-    createdAt: Date;
-    updatedAt: Date;
-  }>;
 }

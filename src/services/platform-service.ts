@@ -1,188 +1,195 @@
-// src/services/PlatformFeeService.ts
-import { PrismaClient } from "@prisma/client";
+// src/services/PlatformService.ts
+import { Prisma, PrismaClient } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
 
-export class PlatformFeeService extends BaseService {
+type PlatformSettingKey = 
+  | 'PLATFORM_ACCOUNT_ID'
+  | 'MAINTENANCE_MODE'
+  | 'CURRENCY'
+  | 'DEFAULT_SUBACCOUNT_PERCENTAGE'
+  | string; // Allow for custom settings
+
+// Define a more specific type for platform setting values
+type PlatformSettingValue = 
+  | string 
+  | number 
+  | boolean 
+  | Record<string, unknown> 
+  | Array<unknown>;
+
+export class PlatformService extends BaseService {
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
   }
 
-  async calculatePlatformFee(amount: number): Promise<number> {
-    // Get platform fee percentage from settings (default 5%)
-    const setting = await this.prisma.platformSetting.findFirst({
-      where: { key: "PLATFORM_FEE_PERCENTAGE" },
-    });
+  // ====================
+  // Platform Settings
+  // ====================
 
-    const feePercentage = setting ? (setting.value as any).percentage : 5;
-    return Math.round((amount * feePercentage) / 100);
+  /**
+   * Get a platform setting by key
+   */
+  async getSetting<T = any>(key: PlatformSettingKey): Promise<T | null> {
+    const setting = await this.prisma.platformSetting.findUnique({
+      where: { key },
+    });
+    
+    if (!setting) return null;
+    
+    try {
+      // Parse the JSON string back to an object
+      return JSON.parse(setting.value as string) as T;
+    } catch (error) {
+      // If parsing fails, return the raw value (for backward compatibility)
+      return setting.value as unknown as T;
+    }
   }
 
+  /**
+   * Set a platform setting
+   */
+  async setSetting(
+    key: PlatformSettingKey, 
+    value: PlatformSettingValue,
+    description?: string
+  ) {
+    // Get the current user ID for audit purposes
+    const updatedBy = 'system'; // In a real app, this would be the current user's ID
+    
+    // Convert the value to a JSON string for storage
+    const jsonValue = JSON.stringify(value);
+    
+    return this.prisma.platformSetting.upsert({
+      where: { key },
+      update: { 
+        value: jsonValue,
+        ...(description ? { description } : {}),
+        updatedBy
+      },
+      create: { 
+        key, 
+        value: jsonValue, 
+        ...(description ? { description } : {}),
+        updatedBy
+      },
+    });
+  }
+
+  // ====================
+  // Super Admin Management
+  // ====================
+
+  /**
+   * Get or create the platform's main admin account ID
+   */
   async getPlatformAccountId(): Promise<string> {
-    const setting = await this.prisma.platformSetting.findFirst({
-      where: { key: "PLATFORM_ACCOUNT_ID" },
+    const setting = await this.getSetting<{ userId: string }>('PLATFORM_ACCOUNT_ID');
+    
+    if (setting?.userId) {
+      return setting.userId;
+    }
+
+    // Find super admin user
+    const superAdmin = await this.prisma.user.findFirst({
+      where: { permissions: { has: "SUPER_ADMIN" } },
     });
 
-    if (!setting) {
-      // Find super admin user
-      const superAdmin = await this.prisma.user.findFirst({
-        where: { permissions: { has: "SUPER_ADMIN" } },
-      });
-
-      if (!superAdmin) throw new Error("Platform account not configured");
-      return superAdmin.id;
+    if (!superAdmin) {
+      throw new Error("No super admin account found. Please create a super admin user first.");
     }
 
-    return (setting.value as any).userId;
+    // Save the super admin ID as platform account
+    await this.setSetting('PLATFORM_ACCOUNT_ID', { userId: superAdmin.id });
+    return superAdmin.id;
   }
 
-  async chargePlatformFee(
-    transactionAmount: number,
-    bookingId: string,
-    userId: string
-  ) {
-    try {
-      const platformFee = await this.calculatePlatformFee(transactionAmount);
-      if (platformFee <= 0) return { success: true, fee: 0 };
+  /**
+   * Set the platform's main admin account
+   */
+  async setPlatformAccount(userId: string): Promise<void> {
+    // Verify user exists
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, permissions: true },
+    });
 
-      const platformAccountId = await this.getPlatformAccountId();
-
-      return await this.prisma.$transaction(async (tx) => {
-        // Create platform fee transaction
-        const feeTransaction = await tx.transaction.create({
-          data: {
-            type: "PLATFORM_FEE",
-            amount: platformFee,
-            currency: "NGN",
-            status: "COMPLETED",
-            reference: this.generateReference("PFEE"),
-            description: `Platform fee for booking ${bookingId}`,
-            userId: platformAccountId,
-            bookingId,
-            metadata: {
-              originalUserId: userId,
-              originalAmount: transactionAmount,
-            },
-          },
-        });
-
-        // Credit platform account wallet
-        let platformWallet = await tx.wallet.findUnique({
-          where: { userId: platformAccountId },
-        });
-
-        if (!platformWallet) {
-          platformWallet = await tx.wallet.create({
-            data: { userId: platformAccountId, currency: "NGN" },
-          });
-        }
-
-        await tx.wallet.update({
-          where: { id: platformWallet.id },
-          data: { balance: { increment: platformFee } },
-        });
-
-        // Create wallet transaction
-        await tx.walletTransaction.create({
-          data: {
-            walletId: platformWallet.id,
-            amount: platformFee,
-            type: "PLATFORM_FEE",
-            status: "COMPLETED",
-            reference: this.generateReference("WFEE"),
-            description: `Platform fee from booking ${bookingId}`,
-            relatedTransactionId: feeTransaction.id,
-          },
-        });
-
-        return {
-          success: true,
-          fee: platformFee,
-          transactionId: feeTransaction.id,
-        };
-      });
-    } catch (error) {
-      return this.handleError(error, "chargePlatformFee");
+    if (!user) {
+      throw new Error("User not found");
     }
-  }
 
-  async recordPlatformFeeCollection(
-    baseAmount: number,
-    platformFee: number,
-    bookingId: string,
-    userId: string,
-    subaccountCode: string
-  ) {
-    try {
-      // This method records that platform fee was collected via Paystack split
-      // The actual fee collection is handled by Paystack's split payment feature
-      const platformAccountId = await this.getPlatformAccountId();
-
-      return await this.prisma.$transaction(async (tx) => {
-        // Create a record of the platform fee collection
-        const feeTransaction = await tx.transaction.create({
-          data: {
-            type: "PLATFORM_FEE",
-            amount: platformFee,
-            currency: "NGN",
-            status: "COMPLETED",
-            reference: this.generateReference("PFEE"),
-            description: `Platform fee collected via split for booking ${bookingId}`,
-            userId: platformAccountId,
-            bookingId,
-            metadata: {
-              originalUserId: userId,
-              originalAmount: baseAmount,
-              subaccountCode,
-              collectionMethod: "PAYSTACK_SPLIT",
-            },
-          },
-        });
-
-        // Credit platform account wallet
-        let platformWallet = await tx.wallet.findUnique({
-          where: { userId: platformAccountId },
-        });
-
-        if (!platformWallet) {
-          platformWallet = await tx.wallet.create({
-            data: { userId: platformAccountId, currency: "NGN" },
-          });
-        }
-
-        await tx.wallet.update({
-          where: { id: platformWallet.id },
-          data: { balance: { increment: platformFee } },
-        });
-
-        // Create wallet transaction
-        await tx.walletTransaction.create({
-          data: {
-            walletId: platformWallet.id,
-            amount: platformFee,
-            type: "PLATFORM_FEE",
-            status: "COMPLETED",
-            reference: this.generateReference("WFEE"),
-            description: `Platform fee from split payment for booking ${bookingId}`,
-            relatedTransactionId: feeTransaction.id,
-          },
-        });
-
-        return {
-          success: true,
-          fee: platformFee,
-          transactionId: feeTransaction.id,
-        };
+    // Update user permissions to include SUPER_ADMIN if not already
+    if (!user.permissions.includes('SUPER_ADMIN')) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          permissions: { push: 'SUPER_ADMIN' }
+        },
       });
-    } catch (error) {
-      return this.handleError(error, "recordPlatformFeeCollection");
     }
+
+    // Save as platform account
+    await this.setSetting('PLATFORM_ACCOUNT_ID', { userId });
   }
 
+  // ====================
+  // System Status
+  // ====================
+
+  /**
+   * Check if system is in maintenance mode
+   */
+  async isMaintenanceMode(): Promise<boolean> {
+    const setting = await this.getSetting<boolean>('MAINTENANCE_MODE');
+    return setting === true;
+  }
+
+  /**
+   * Set maintenance mode
+   */
+  async setMaintenanceMode(enabled: boolean): Promise<void> {
+    await this.setSetting('MAINTENANCE_MODE', enabled, 'Whether the platform is in maintenance mode');
+  }
+
+  // ====================
+  // Subaccount Defaults
+  // ====================
+
+  /**
+   * Get default subaccount percentage
+   */
+  async getDefaultSubaccountPercentage(): Promise<number> {
+    const percentage = await this.getSetting<number>('DEFAULT_SUBACCOUNT_PERCENTAGE');
+    return percentage ?? 80; // Default to 80% for property owners
+  }
+
+  /**
+   * Set default subaccount percentage
+   */
+  async setDefaultSubaccountPercentage(percentage: number): Promise<void> {
+    if (percentage < 0 || percentage > 100) {
+      throw new Error('Percentage must be between 0 and 100');
+    }
+    await this.setSetting(
+      'DEFAULT_SUBACCOUNT_PERCENTAGE', 
+      percentage,
+      'Default percentage for property owner subaccounts (0-100)'
+    );
+  }
+
+  // ====================
+  // Utility Methods
+  // ====================
+
+  /**
+   * Generate a unique reference string
+   */
+  /**
+   * Generate a unique reference string
+   * @param prefix - Prefix for the reference (e.g., 'TXN', 'BOOK')
+   * @returns A unique reference string
+   */
   private generateReference(prefix: string): string {
-    return `${prefix}-${Date.now()}-${Math.random()
-      .toString(36)
-      .substring(2, 8)
-      .toUpperCase()}`;
+    return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
   }
 }

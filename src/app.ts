@@ -15,10 +15,10 @@ import { createWebSocketServer } from "./graphql/websocket";
 import { graphqlUploadExpress } from "graphql-upload-ts";
 import { createGraphQLContext } from "./graphql/context";
 import { logger } from "./utils";
-// Escrow release job removed - Paystack handles split automatically
 import { upload } from "./middleware/multer";
 import { WebhookController } from "./routes/webhook";
 import { oauthRestRouter } from "./routes/oauth";
+import { initializeWorkers } from "./workers";
 
 export async function createApp() {
   try {
@@ -30,6 +30,11 @@ export async function createApp() {
 
     // Initialize services
     const services = createServices(prisma, redis);
+
+    // Initialize background workers
+    if (process.env.NODE_ENV !== 'test') {
+      initializeWorkers(prisma);
+    }
 
     // Create GraphQL schema (single source of truth)
     const schema = await createGraphQLSchema();
@@ -77,9 +82,9 @@ export async function createApp() {
     const webhookController = new WebhookController(prisma, redis);
 
     // Paystack webhook endpoint
-    app.post("/api/webhook/paystack", (req, res) =>
-      webhookController.handlePaystackWebhook(req, res)
-    );
+    app.post("/api/webhook/paystack", express.raw({ type: "application/json" }), (req, res) => {
+  webhookController.handlePaystackWebhook(req, res);
+});
 
     // Health check endpoint
     app.get("/health", (req, res) => {

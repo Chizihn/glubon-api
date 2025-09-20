@@ -11,7 +11,6 @@ import { AdminResolver } from "../modules/admin/admin.resolver";
 import { NotificationResolver } from "../modules/notification/notification.resolver";
 import { BookingResolver } from "../modules/booking/booking.resolver";
 import { DisputeResolver } from "../modules/dispute/dispute.resolver";
-import { WalletResolver } from "../modules/wallet/wallet.resolver";
 import { TransactionResolver } from "../modules/transaction/transaction.resolver";
 import { PresenceResolver } from "../modules/presence/presence.resolver";
 import { ContentResolver } from "../modules/content/content.resolver";
@@ -22,15 +21,14 @@ import { AdResolver } from "../modules/ad";
 import { AdAnalyticsResolver } from "../modules/ad-analytics";
 import { SettingsResolver } from "../modules/setting/setting.resolver";
 import { SubaccountResolver } from "../modules/subaccount/subaccount.resolver";
+import { UnitResolver } from "../modules/unit/unit.resolver";
 // Auth checking is handled by the AuthMiddleware
 
 export async function createGraphQLSchema() {
   const pubSub = new PubSub() as any;
 
   return await buildSchema({
-    scalarsMap: [
-      { type: Object, scalar: GraphQLDecimal },
-    ],
+    scalarsMap: [{ type: Object, scalar: GraphQLDecimal }],
     resolvers: [
       AuthResolver,
       UserResolver,
@@ -40,7 +38,6 @@ export async function createGraphQLSchema() {
       ConversationResolver,
       BookingResolver,
       DisputeResolver,
-      WalletResolver,
       TransactionResolver,
       PresenceResolver,
       ContentResolver,
@@ -50,7 +47,8 @@ export async function createGraphQLSchema() {
       AdResolver,
       AdAnalyticsResolver,
       SettingsResolver,
-      SubaccountResolver
+      SubaccountResolver,
+      UnitResolver,
     ],
     validate: false,
     pubSub,

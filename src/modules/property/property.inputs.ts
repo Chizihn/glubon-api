@@ -81,6 +81,54 @@ export class PropertySortOptions {
 }
 
 @InputType()
+export class PropertyUnitInput {
+  @Field(() => String, { nullable: true })
+  title?: string;
+
+  @Field(() => String, { nullable: true })
+  description?: string;
+
+  @Field(() => Float)
+  amount: number;
+
+  @Field(() => RentalPeriod)
+  rentalPeriod: RentalPeriod;
+
+  @Field(() => Float, { nullable: true })
+  sqft?: number;
+
+  @Field(() => Int, { nullable: true })
+  bedrooms?: number;
+
+  @Field(() => Int, { nullable: true })
+  bathrooms?: number;
+
+  @Field(() => RoomType)
+  roomType: RoomType;
+
+  @Field(() => [String], { defaultValue: [] })
+  amenities: string[];
+
+  @Field(() => Boolean, { defaultValue: false })
+  isFurnished: boolean;
+
+  @Field(() => Boolean, { defaultValue: false })
+  isForStudents: boolean;
+}
+
+@InputType()
+export class BulkUnitInput {
+  @Field(() => String)
+  unitTitle: string;
+
+  @Field(() => Int)
+  unitCount: number;
+
+  @Field(() => PropertyUnitInput)
+  unitDetails: PropertyUnitInput;
+}
+
+@InputType()
 export class CreatePropertyInput {
   @Field(() => String)
   title: string;
@@ -124,6 +172,9 @@ export class CreatePropertyInput {
   @Field(() => Boolean, { defaultValue: false })
   isForStudents: boolean;
 
+  @Field(() => Boolean, { defaultValue: false })
+  isStandalone: boolean;
+
   @Field(() => [DayOfWeek])
   visitingDays: DayOfWeek[];
 
@@ -136,16 +187,62 @@ export class CreatePropertyInput {
   @Field(() => [String])
   amenities: string[];
 
-  @Field(() => PropertyListingType, { defaultValue: 'RENT' })
+  @Field(() => PropertyListingType, { defaultValue: "RENT" })
   listingType: PropertyListingType;
+
+  // Unit creation options
+  @Field(() => [PropertyUnitInput], { nullable: true })
+  units?: PropertyUnitInput[];
+
+  @Field(() => BulkUnitInput, { nullable: true })
+  bulkUnits?: BulkUnitInput;
 
   @Field(() => [GraphQLUpload], { nullable: true })
   files?: FileUpload[];
 }
 
 @InputType()
+export class UpdatePropertyUnitInput {
+  @Field(() => String, { nullable: true })
+  id?: string; // If provided, update existing unit; otherwise create new
+
+  @Field(() => String, { nullable: true })
+  title?: string;
+
+  @Field(() => String, { nullable: true })
+  description?: string;
+
+  @Field(() => Float, { nullable: true })
+  amount?: number;
+
+  @Field(() => RentalPeriod, { nullable: true })
+  rentalPeriod?: RentalPeriod;
+
+  @Field(() => Float, { nullable: true })
+  sqft?: number;
+
+  @Field(() => Int, { nullable: true })
+  bedrooms?: number;
+
+  @Field(() => Int, { nullable: true })
+  bathrooms?: number;
+
+  @Field(() => RoomType, { nullable: true })
+  roomType?: RoomType;
+
+  @Field(() => [String], { nullable: true })
+  amenities?: string[];
+
+  @Field(() => Boolean, { nullable: true })
+  isFurnished?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  isForStudents?: boolean;
+}
+
+@InputType()
 export class UpdatePropertyInput {
-  @Field(() => String)
+  @Field(() => String, { nullable: true })
   title?: string;
 
   @Field(() => String, { nullable: true })
@@ -201,6 +298,13 @@ export class UpdatePropertyInput {
 
   @Field(() => PropertyListingType, { nullable: true })
   listingType?: PropertyListingType;
+
+  // Unit update options
+  @Field(() => [UpdatePropertyUnitInput], { nullable: true })
+  units?: UpdatePropertyUnitInput[];
+
+  @Field(() => BulkUnitInput, { nullable: true })
+  bulkUnits?: BulkUnitInput;
 
   @Field(() => [GraphQLUpload], { nullable: true })
   files?: FileUpload[];

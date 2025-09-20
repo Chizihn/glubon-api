@@ -26,6 +26,18 @@ export class UserSetting {
   @Field(() => Boolean)
   pushNotifications: boolean;
 
+  @Field(() => String, { nullable: true })
+  pushToken: string;
+
+  @Field(() => Boolean)
+  emailNotifications: boolean;
+
+  @Field(() => Boolean)
+  smsNotifications: boolean;
+
+  @Field(() => Boolean)
+  twoFactorEnabled: boolean;
+
   @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
@@ -91,7 +103,12 @@ export class PaginatedPlatformSettingsResponse {
   @Field(() => PaginationInfo)
   pagination: PaginationInfo;
 
-  constructor(items: PlatformSetting[], page: number, limit: number, totalItems: number) {
+  constructor(
+    items: PlatformSetting[],
+    page: number,
+    limit: number,
+    totalItems: number
+  ) {
     this.items = items;
     this.pagination = new PaginationInfo(page, limit, totalItems);
   }

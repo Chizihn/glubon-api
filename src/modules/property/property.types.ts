@@ -184,6 +184,57 @@ export class GetPropertiesArgs {
 }
 
 @ObjectType()
+export class PropertyUnit {
+  @Field(() => ID)
+  id: string;
+
+  @Field(() => String, { nullable: true })
+  title?: string;
+
+  @Field(() => String, { nullable: true })
+  description?: string;
+
+  @Field(() => Float)
+  amount: number;
+
+  @Field(() => RentalPeriod)
+  rentalPeriod: RentalPeriod;
+
+  @Field(() => Float, { nullable: true })
+  sqft?: number;
+
+  @Field(() => Int, { nullable: true })
+  bedrooms?: number;
+
+  @Field(() => Int, { nullable: true })
+  bathrooms?: number;
+
+  @Field(() => RoomType)
+  roomType: RoomType;
+
+  @Field(() => [String])
+  amenities: string[];
+
+  @Field(() => Boolean)
+  isFurnished: boolean;
+
+  @Field(() => Boolean)
+  isForStudents: boolean;
+
+  @Field(() => String)
+  status: string;
+
+  @Field(() => String, { nullable: true })
+  renterId?: string;
+
+  @Field(() => GraphQLISODateTime)
+  createdAt: Date;
+
+  @Field(() => GraphQLISODateTime)
+  updatedAt: Date;
+}
+
+@ObjectType()
 export class Property {
   @Field(() => ID)
   id: string;
@@ -266,10 +317,13 @@ export class Property {
   @Field(() => Int, { nullable: true })
   availableUnits: number | null;
 
+  @Field(() => Int, { nullable: true })
+  rentedUnits: number | null;
+
   @Field(() => [String])
   images: string[];
 
-  @Field(() => [String], { defaultValue: [] })
+  @Field(() => [String], { defaultValue: [],nullable: true })
   sampleUnitImages: string[];
 
   @Field(() => [String], { defaultValue: [] })
@@ -311,6 +365,13 @@ export class Property {
   @Field(() => Int, { defaultValue: 0 })
   likesCount: number;
 
+  // Simplified unit information - hide complexity
+  @Field(() => Int, {
+    nullable: true,
+    description: "Number of units in this property",
+  })
+  numberOfUnits?: number;
+
   @Field(() => Boolean, { defaultValue: false })
   isLiked: boolean;
 
@@ -334,12 +395,12 @@ export class Property {
 
   @Field(() => String, { nullable: true })
   get priceUnit(): string {
-    return 'NGN'; // Default currency
+    return "NGN"; // Default currency
   }
 
   @Field(() => String, { nullable: true })
   get pricePer(): string {
-    return this.rentalPeriod?.toLowerCase() || 'month';
+    return this.rentalPeriod?.toLowerCase() || "month";
   }
 
   @Field(() => String, { nullable: true })
@@ -369,6 +430,9 @@ export class PaginatedPropertiesResponse {
 export class PropertyVisitorInfo {
   @Field(() => User)
   user: User;
+
+  @Field(() => Property)
+  property: Property;
 
   @Field(() => GraphQLISODateTime)
   viewedAt: Date;

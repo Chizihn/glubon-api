@@ -1,6 +1,7 @@
 import { PrismaClient, BookingStatus, Booking, Prisma } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseRepository } from "./base";
+import { Decimal } from "@prisma/client/runtime/library";
 
 export class BookingRepository extends BaseRepository {
   constructor(prisma: PrismaClient, redis: Redis) {
@@ -129,18 +130,80 @@ export class BookingRepository extends BaseRepository {
       where: { id },
       include: {
         renter: true,
-        property: true,
-        transactions: true,
+        property: {
+          include: {
+            owner: true
+          }
+        },
+        transactions: {
+          include: {
+            refunds: true
+          }
+        },
         disputes: true,
-        units: { include: { unit: true } }
+        units: { 
+          include: { 
+            unit: true 
+          } 
+        }
       },
     });
 
-    if (booking) {
-      await this.setCache(cacheKey, booking, 300);
-    }
+    if (!booking) return null;
 
-    return booking;
+    // Process the booking to ensure all Decimal fields are properly handled
+    const processedBooking = this.processBooking(booking);
+
+    // Cache the processed booking
+    await this.setCache(cacheKey, processedBooking, 300);
+
+    return processedBooking;
+  }
+
+  /**
+   * Process a booking to ensure all Decimal fields are properly handled
+   * This is public as it needs to be called from the service layer
+   */
+  public processBooking<T extends any>(booking: T): T {
+    if (!booking) return booking;
+    
+    // Create a deep copy to avoid modifying the original object
+    const processed = JSON.parse(JSON.stringify(booking));
+    
+    // Process amount fields
+    if (processed.amount) {
+      processed.amount = new Decimal(processed.amount.toString());
+    }
+    
+    // Process transactions
+    if (Array.isArray(processed.transactions)) {
+      processed.transactions = processed.transactions.map((tx: any) => ({
+        ...tx,
+        amount: tx.amount ? new Decimal(tx.amount.toString()) : null,
+        fee: tx.fee ? new Decimal(tx.fee.toString()) : null,
+        refunds: Array.isArray(tx.refunds) 
+          ? tx.refunds.map((refund: any) => ({
+              ...refund,
+              amount: refund.amount ? new Decimal(refund.amount.toString()) : null
+            }))
+          : []
+      }));
+    }
+    
+    // Process units
+    if (Array.isArray(processed.units)) {
+      processed.units = processed.units.map((unit: any) => ({
+        ...unit,
+        amount: unit.amount ? new Decimal(unit.amount.toString()) : null,
+        unit: unit.unit ? {
+          ...unit.unit,
+          price: unit.unit.price ? new Decimal(unit.unit.price.toString()) : null,
+          deposit: unit.unit.deposit ? new Decimal(unit.unit.deposit.toString()) : null
+        } : null
+      }));
+    }
+    
+    return processed;
   }
 
   async respondToRequest(id: string, accepted: boolean, userId: string) {
@@ -159,11 +222,11 @@ export class BookingRepository extends BaseRepository {
       throw new Error('Not authorized to respond to this booking request');
     }
 
-    if (booking.status !== 'PENDING_APPROVAL') {
+    if (booking.status !== BookingStatus.PENDING_APPROVAL) {
       throw new Error('This booking is not awaiting approval');
     }
 
-    const status = accepted ? 'PENDING' : 'DECLINED';
+    const status = accepted ? BookingStatus.PENDING_PAYMENT : BookingStatus.DECLINED;
     
     const updatedBooking = await this.prisma.booking.update({
       where: { id },

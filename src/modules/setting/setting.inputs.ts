@@ -17,6 +17,18 @@ export class UserSettingInput {
 
   @Field(() => Boolean, { nullable: true })
   pushNotifications?: boolean;
+
+  @Field(() => String, { nullable: true })
+  pushToken?: string;
+
+  @Field(() => Boolean, { nullable: true })
+  emailNotifications?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  smsNotifications?: boolean;
+
+  @Field(() => Boolean, { nullable: true })
+  twoFactorEnabled?: boolean;
 }
 
 @InputType()

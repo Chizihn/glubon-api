@@ -30,7 +30,7 @@ export class S3Service extends BaseService {
   private readonly maxImageSize = 5 * 1024 * 1024; // 5MB
   private readonly maxDocumentSize = 10 * 1024 * 1024; // 10MB
   private readonly allowedImageTypes = ["image/jpeg", "image/png"];
-  private readonly allowedVideoTypes = ["video/mp4", "video/mpeg"];
+  private readonly allowedVideoTypes = ["video/mp4", "video/mpeg", "video/quicktime" ];
   private readonly allowedDocumentTypes = ["application/pdf"];
 
   constructor(prisma: PrismaClient, redis: Redis) {
@@ -75,18 +75,51 @@ export class S3Service extends BaseService {
         }
       }
 
-      const uploadPromises = files.map((file) =>
-        this.uploadSingleFile(file, contextId, contextType)
-      );
-      const results = await Promise.all(uploadPromises);
+      const results = [];
+      const failedUploads = [];
+      
+      // Process files one by one to get detailed error information
+      for (const file of files) {
+        try {
+          const result = await this.uploadSingleFile(file, contextId, contextType);
+          if (!result.success) {
+            failedUploads.push({
+              filename: file.file.originalname,
+              error: result.message,
+              type: file.type,
+              size: file.file.size,
+              mimetype: file.file.mimetype
+            });
+          } else {
+            results.push(result);
+          }
+        } catch (error) {
+          failedUploads.push({
+            filename: file.file.originalname,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            type: file.type,
+            size: file.file.size,
+            mimetype: file.file.mimetype
+          });
+        }
+      }
 
       // Check for any failed uploads
-      const failedUploads = results.filter((r) => !r.success);
       if (failedUploads.length > 0) {
+        const errorDetails = failedUploads.map(f => ({
+          file: f.filename,
+          type: f.type,
+          size: f.size,
+          mimetype: f.mimetype,
+          error: f.error
+        }));
+        
+        logger.error('File upload failures:', { failedUploads: errorDetails });
+        
         return this.failure(
-          "Some files failed to upload",
-          [] as S3UploadResult[], // Return empty array instead of null
-          failedUploads.map((r) => r.message)
+          `${failedUploads.length} of ${files.length} files failed to upload. Check logs for details.`,
+          results.map(r => r.data!),
+          errorDetails
         );
       }
 
@@ -110,20 +143,64 @@ export class S3Service extends BaseService {
     contextId: string,
     contextType: "properties" | "users" = "properties"
   ): Promise<ServiceResponse<S3UploadResult>> {
+    // Helper function to create a failure response with proper typing
+    const createFailureResponse = (message: string, errors: any[] = []): ServiceResponse<S3UploadResult> => {
+      // Create a response object without the data field for failure cases
+      const response: ServiceResponse<S3UploadResult> = {
+        success: false,
+        message,
+        errors
+      };
+      
+      // The data field is intentionally omitted for failure responses
+      return response;
+    };
+
     try {
       // Validate file type
       if (!this.isValidFileType(file)) {
-        return this.failure(`Invalid file type for ${file.category}`);
+        const allowedTypes = 
+          file.type === 'image' ? this.allowedImageTypes :
+          file.type === 'video' ? this.allowedVideoTypes :
+          this.allowedDocumentTypes;
+          
+        return createFailureResponse(
+          `Invalid file type for ${file.category}. ` +
+          `Received: ${file.file.mimetype}. ` +
+          `Allowed types: ${allowedTypes.join(', ')}`,
+          [{
+            filename: file.file.originalname,
+            type: file.type,
+            mimetype: file.file.mimetype,
+            error: 'INVALID_FILE_TYPE',
+            allowedTypes
+          }]
+        );
       }
 
       // Validate file size
       if (!this.isValidFileSize(file)) {
-        return this.failure(`File size too large for ${file.category}`);
+        const maxSize = 
+          file.type === 'image' ? this.maxImageSize :
+          file.type === 'video' ? this.maxVideoSize :
+          this.maxDocumentSize;
+          
+        return createFailureResponse(
+          `File size too large for ${file.category}. ` +
+          `Max size: ${maxSize / (1024 * 1024)}MB, ` +
+          `Received: ${(file.file.size / (1024 * 1024)).toFixed(2)}MB`,
+          [{
+            filename: file.file.originalname,
+            type: file.type,
+            size: file.file.size,
+            maxSize,
+            error: 'FILE_SIZE_EXCEEDED'
+          }]
+        );
       }
 
       const fileExtension = extname(file.file.originalname);
       const fileName = `${uuidv4()}${fileExtension}`;
-      // Use contextType (e.g., 'users', 'properties') for upload path
       const key = `${contextType}/${contextId}/${file.category}/${fileName}`;
 
       const params: AWS.S3.PutObjectRequest = {
@@ -131,14 +208,51 @@ export class S3Service extends BaseService {
         Key: key,
         Body: file.file.buffer,
         ContentType: file.file.mimetype,
-        ACL: "public-read",
       };
 
-      const { Location } = await this.s3.upload(params).promise();
+      logger.debug('Uploading file to S3', { 
+        key,
+        size: file.file.size,
+        type: file.file.mimetype,
+        category: file.category
+      });
 
-      return this.success({ url: Location, key }, "File uploaded successfully");
+      const { Location } = await this.s3.upload(params).promise();
+      
+      logger.debug('File uploaded successfully', { key, location: Location });
+      
+      // Return success response with the uploaded file data
+      return {
+        success: true,
+        message: "File uploaded successfully",
+        data: { url: Location, key }
+      };
+      
     } catch (error) {
-      return this.handleError(error, "uploadSingleFile");
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      logger.error('Error uploading file to S3', { 
+        error: errorMessage,
+        filename: file.file.originalname,
+        type: file.type,
+        size: file.file.size,
+        mimetype: file.file.mimetype,
+        stack: errorStack
+      });
+      
+      // Return a properly typed failure response
+      return createFailureResponse(
+        `Failed to upload file: ${errorMessage}`,
+        [{
+          filename: file.file.originalname,
+          type: file.type,
+          size: file.file.size,
+          mimetype: file.file.mimetype,
+          error: 'UPLOAD_FAILED',
+          details: errorMessage
+        }]
+      );
     }
   }
 

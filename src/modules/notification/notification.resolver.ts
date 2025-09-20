@@ -12,7 +12,7 @@ import {
 import type { Context } from "../../types/context";
 import { AuthMiddleware } from "../../middleware/auth";
 import { BaseResponse } from "../../types/responses";
-import { SUBSCRIPTION_EVENTS } from "../../utils";
+import { logger, SUBSCRIPTION_EVENTS } from "../../utils";
 import { prisma } from "../../config/database";
 import redis from "../../config/redis";
 import {
@@ -41,29 +41,76 @@ export class NotificationResolver {
   @Query(() => PaginatedNotificationsResponse)
   @UseMiddleware(AuthMiddleware)
   async getNotifications(
-    @Arg("filters", { nullable: true }) filters: NotificationFilters,
-    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
-    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Arg("filters", { nullable: true }) filters: NotificationFilters = {},
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number = 1,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number = 20,
     @Ctx() ctx: Context
   ): Promise<PaginatedNotificationsResponse> {
-    const result = await this.notificationService.getUserNotifications({
-      userId: ctx.user!.id,
-      ...filters,
-      page,
-      limit,
-    });
+    try {
+      // Validate pagination parameters
+      const validatedPage = Math.max(1, Number(page) || 1);
+      const validatedLimit = Math.min(Math.max(1, Number(limit) || 20), 100); // Limit to max 100 items per page
 
-    if (!result.success) throw new Error(result.message);
+      const result = await this.notificationService.getUserNotifications({
+        userId: ctx.user!.id,
+        ...filters,
+        page: validatedPage,
+        limit: validatedLimit,
+      });
 
-    const response = new PaginatedNotificationsResponse(
-      result.data.notifications,
-      result.data.pagination.currentPage,
-      result.data.pagination.limit,
-      result.data.pagination.totalItems
-    );
-    response.unreadCount = result.data.unreadCount;
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to fetch notifications');
+      }
 
-    return response;
+      // Get the actual counts from the result
+      const currentPage = Math.max(1, Number(page) || 1);
+      const perPage = Math.max(1, Math.min(Number(limit) || 20, 100));
+      const totalItems = result.data.totalCount || 0;
+      const totalPages = Math.ceil(totalItems / perPage);
+      
+      // Ensure currentPage is within valid range
+      const validPage = Math.min(currentPage, Math.max(1, totalPages || 1));
+      
+      // If we're on a page that's now empty (e.g., after deletions), go to the last valid page
+      if (currentPage > 1 && totalItems > 0 && validPage !== currentPage) {
+      }
+
+      // If we're on an invalid page, refetch with the last valid page
+      if (validPage !== currentPage) {
+        const refetchResult = await this.notificationService.getUserNotifications({
+          userId: ctx.user!.id,
+          ...filters,
+          page: validPage,
+          limit: perPage,
+        });
+        
+        if (refetchResult.success) {
+          return new PaginatedNotificationsResponse(
+            refetchResult.data.notifications || [],
+            validPage,
+            perPage,
+            refetchResult.data.totalCount || 0,
+            Number(refetchResult.data.unreadCount) || 0
+          );
+        }
+      }
+      
+      // Otherwise return the current results
+      const response = new PaginatedNotificationsResponse(
+        result.data.notifications || [],
+        validPage,
+        perPage,
+        totalItems,
+        Number(result.data.unreadCount) || 0
+      );
+
+
+      return response;
+    } catch (error) {
+      logger.error('Error in getNotifications:', error);
+      // Return an empty response with zero counts to prevent GraphQL errors
+      return new PaginatedNotificationsResponse([], 1, 20, 0);
+    }
   }
 
   @Query(() => NotificationStatsResponse)

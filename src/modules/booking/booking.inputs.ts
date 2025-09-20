@@ -1,45 +1,29 @@
-import { Field, GraphQLISODateTime, ID, InputType, Float } from "type-graphql";
-
-@InputType()
-export class CreateBookingInput {
-  @Field(() => ID)
-  propertyId: string;
-
-  @Field(() => GraphQLISODateTime)
-  startDate: Date;
-
-  @Field(() => GraphQLISODateTime, { nullable: true })
-  endDate?: Date | null;
-
-  @Field(() => String, { nullable: true })
-  specialRequests?: string | null;
-
-  @Field(() => [String])
-  unitIds: string[];
-
-  @Field(() => Float)
-  amount: number;
-
-  @Field(() => [String])
-  units: string[];
-}
+//src/modules/booking/booking.inputs.ts
+import { Field, InputType, ID, Int } from "type-graphql";
+import { BookingStatus } from "@prisma/client";
 
 @InputType()
 export class CreateBookingRequestInput {
   @Field(() => ID)
   propertyId: string;
 
-  @Field(() => GraphQLISODateTime)
+  @Field(() => [String], { nullable: true })
+  unitIds?: string[]; // Optional for properties with units
+}
+
+@InputType()
+export class CreateBookingInput {
+  @Field(() => ID)
+  propertyId: string;
+
+  @Field(() => Date)
   startDate: Date;
 
-  @Field(() => GraphQLISODateTime, { nullable: true })
-  endDate?: Date | null;
+  @Field(() => Int)
+  duration: number; // Number of rental periods (e.g., 2 weeks, 3 months)
 
-  @Field(() => String, { nullable: true })
-  specialRequests?: string | null;
-
-  @Field(() => [String])
-  unitIds: string[];
+  @Field(() => [String], { nullable: true })
+  unitIds?: string[]; // Optional for properties with units
 }
 
 @InputType()

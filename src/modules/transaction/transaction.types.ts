@@ -2,7 +2,7 @@ import { TransactionStatus, TransactionType, PaymentGateway } from "@prisma/clie
 import { Field, ObjectType, InputType, registerEnumType, Float, GraphQLISODateTime, Int, ID } from "type-graphql";
 import { User } from "../user/user.types";
 import { Property } from "../property/property.types";
-import { Booking, Refund } from "../booking/booking.types";
+import { Booking,  } from "../booking/booking.types";
 import { Decimal } from "@prisma/client/runtime/library";
 
 // Register enums with TypeGraphQL
@@ -93,8 +93,8 @@ export class Transaction {
   @Field(() => Booking, { nullable: true })
   booking?: Booking;
 
-  @Field(() => [Refund], { nullable: true })
-  refunds?: Refund[];
+  // @Field(() => [Refund], { nullable: true })
+  // refunds?: Refund[];
 }
 
 // Transaction statistics

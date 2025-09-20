@@ -41,6 +41,9 @@ export class MessageResponse {
   @Field(() => User, { nullable: true })
   sender: User;
   
+  @Field(() => User, { nullable: true })
+  receiver?: User;
+  
   @Field(() => Property, { nullable: true })
   property?: Property;
 }

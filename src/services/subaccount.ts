@@ -110,22 +110,25 @@ export class SubaccountService extends BaseService {
           await this.deleteCachePattern(`user:${userId}:*`);
 
           return this.success(updatedSubaccount, 'Subaccount created successfully');
-        } catch (error) {
+        } catch (error: any) {
           logger.error("Error creating Paystack subaccount:", error);
+          const errorMessage = error.message || "Failed to create Paystack subaccount";
           
           await tx.subaccount.update({
             where: { id: subaccount.id },
             data: {
               status: SubaccountStatus.FAILED,
-              failureReason: "Failed to create Paystack subaccount",
+              failureReason: errorMessage,
             },
           });
 
-          throw error;
+          return this.failure(errorMessage);
         }
       });
-    } catch (error) {
-      return this.handleError(error, "createSubaccount");
+    } catch (error: any) {
+      const errorMessage = error.message || "An error occurred while creating the subaccount";
+      logger.error("Error in createSubaccount:", errorMessage);
+      return this.failure(errorMessage);
     }
   }
 

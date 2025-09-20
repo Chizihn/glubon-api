@@ -1,32 +1,32 @@
-import { 
-  Booking, 
-  BookingStatus, 
-  NotificationType, 
-  Prisma, 
-  PrismaClient, 
-  Property, 
-  PropertyStatus, 
-  RoleEnum, 
-  SubaccountStatus, 
-  Transaction, 
-  TransactionStatus, 
-  TransactionType, 
-  Unit, 
-  User
+//src/services/booking.ts
+import {
+  Booking,
+  BookingStatus,
+  NotificationType,
+  RentalPeriod,
+  Prisma,
+  PrismaClient,
+  Property,
+  PropertyStatus,
+  RoleEnum,
+  Transaction,
+  TransactionStatus,
+  TransactionType,
+  Unit,
+  User,
+  UnitStatus,
 } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
-import { Redis } from "ioredis";
-import { BookingNotification } from "../types/services/notification";
 import { BaseService } from "./base";
 import { BookingRepository } from "../repository/booking";
 import { TransactionService } from "./transaction";
 import { PaystackService } from "./payment";
 import { NotificationService } from "./notification";
-import { PlatformFeeService } from "./platform-service";
-import { CreateBookingRequestInput } from "../modules/booking/booking.inputs";
 import { PropertyRepository } from "../repository/properties";
 import { UserRepository } from "../repository/user";
 import { ServiceResponse } from "../types/responses";
+import { logger } from "../utils";
+import Redis from "ioredis";
 
 interface PaginatedBookingResponse {
   items: Booking[];
@@ -40,14 +40,16 @@ interface PaginatedBookingResponse {
   };
 }
 
+export interface CreateBookingRequestInput {
+  propertyId: string;
+  unitIds?: string[]; // Optional for properties with units
+}
+
 export interface CreateBookingInput {
   propertyId: string;
   startDate: Date;
-  endDate?: Date | null;
-  specialRequests?: string | null;
-  unitIds: string[];
-  amount: Decimal | number;
-  units: string[];
+  duration: number; 
+  unitIds?: string[]; 
 }
 
 export interface UpdateBookingStatusInput {
@@ -70,16 +72,15 @@ export interface GetUserBookingsInput {
   status?: BookingStatus;
 }
 
-
-
 export class BookingService extends BaseService {
   private bookingRepo: BookingRepository;
   private transactionService: TransactionService;
   private paystackService: PaystackService;
   private notificationService: NotificationService;
-  private platformFeeService: PlatformFeeService;
   private userRepo: UserRepository;
   private propertyRepo: PropertyRepository;
+  
+  // Logger is available from BaseService
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
@@ -87,11 +88,13 @@ export class BookingService extends BaseService {
     this.transactionService = new TransactionService(prisma, redis);
     this.paystackService = new PaystackService(prisma, redis);
     this.notificationService = new NotificationService(prisma, redis);
-    this.platformFeeService = new PlatformFeeService(prisma, redis);
     this.userRepo = new UserRepository(prisma, redis);
     this.propertyRepo = new PropertyRepository(prisma, redis);
   }
 
+  /**
+   * Step 1: Create a booking request (no payment, just a request to book)
+   */
   async createBookingRequest(
     input: CreateBookingRequestInput,
     renterId: string
@@ -99,61 +102,97 @@ export class BookingService extends BaseService {
     try {
       const property = await this.prisma.property.findUnique({
         where: { id: input.propertyId },
-        include: { owner: true }
+        include: { 
+          owner: true,
+          units: true 
+        },
       });
 
       if (!property) {
-        return this.failure('Property not found');
+        return this.failure("Property not found");
       }
 
       if (property.status !== PropertyStatus.ACTIVE) {
-        return this.failure('This property is not available for booking');
+        return this.failure("This property is not available for booking");
+      }
+
+      // Validate units if property has units
+      let selectedUnits: Unit[] = [];
+      if (property.units.length > 0) {
+        if (!input.unitIds || input.unitIds.length === 0) {
+          return this.failure("Please select at least one unit");
+        }
+
+        selectedUnits = property.units.filter(unit => 
+          input.unitIds!.includes(unit.id) && unit.status === UnitStatus.AVAILABLE
+        );
+
+        if (selectedUnits.length !== input.unitIds.length) {
+          return this.failure("One or more selected units are not available");
+        }
+      }
+
+      // Calculate amount based on property or units
+      let totalAmount = new Decimal(0);
+      if (selectedUnits.length > 0) {
+        // Sum up unit amounts
+        totalAmount = selectedUnits.reduce((sum, unit) => 
+          sum.plus(unit.amount || new Decimal(0)), new Decimal(0)
+        );
+      } else {
+        // Use property amount for standalone properties
+        totalAmount = property.amount;
       }
 
       const booking = await this.prisma.booking.create({
         data: {
           renter: { connect: { id: renterId } },
           property: { connect: { id: input.propertyId } },
-          startDate: input.startDate,
-          endDate: input.endDate ?? null,
-          amount: property.amount,
+          amount: totalAmount,
           status: BookingStatus.PENDING_APPROVAL,
-          units: {
-            create: input.unitIds.map(unitId => ({
-              unit: { connect: { id: unitId } }
-            }))
-          }
+          ...(selectedUnits.length > 0 && {
+            units: {
+              create: selectedUnits.map((unit) => ({
+                unit: { connect: { id: unit.id } },
+              })),
+            },
+          }),
         },
         include: {
           property: { include: { owner: true } },
           renter: true,
-          transactions: true,
-          units: {
-            include: { unit: true }
-          }
-        }
+          units: { include: { unit: true } },
+        },
       });
 
+      // Notify property owner
       await this.notificationService.createNotification({
         userId: property.ownerId,
-        title: 'New Booking Request',
+        title: "New Booking Request",
         message: `You have a new booking request for ${property.title}`,
         type: NotificationType.BOOKING_REQUEST,
-        data: { referenceId: booking.id }
+        data: {
+          bookingId: booking.id,
+          propertyId: property.id,
+          propertyTitle: property.title,
+        },
       });
 
       return this.success({
         booking,
-        message: 'Booking request created successfully. Waiting for host approval.'
+        message: "Booking request created successfully. Waiting for host approval.",
       });
     } catch (error) {
-      return this.handleError(error, 'createBookingRequest');
+      return this.handleError(error, "createBookingRequest");
     }
   }
 
+  /**
+   * Step 2: Host responds to booking request
+   */
   async respondToBookingRequest(
     bookingId: string,
-    listerId: string,
+    hostId: string,
     accept: boolean
   ): Promise<ServiceResponse<{ booking: Booking }>> {
     try {
@@ -162,53 +201,317 @@ export class BookingService extends BaseService {
         include: {
           property: { include: { owner: true } },
           renter: true,
-          transactions: true,
-          units: { include: { unit: true } }
-        }
+          units: { include: { unit: true } },
+        },
       });
 
       if (!booking) {
-        return this.failure('Booking not found');
+        return this.failure("Booking not found");
       }
 
-      if (booking.property.ownerId !== listerId) {
-        return this.failure('Not authorized to respond to this booking');
+      if (booking.property.ownerId !== hostId) {
+        return this.failure("Not authorized to respond to this booking");
       }
 
-      const status = accept ? BookingStatus.PENDING : BookingStatus.DECLINED;
+      if (booking.status !== BookingStatus.PENDING_APPROVAL) {
+        return this.failure("This booking request has already been responded to");
+      }
+
+      const status = accept ? BookingStatus.PENDING_PAYMENT : BookingStatus.DECLINED;
+      
       const updatedBooking = await this.prisma.booking.update({
         where: { id: bookingId },
-        data: { 
+        data: {
           status,
-          respondedAt: new Date()
+          respondedAt: new Date(),
         },
         include: {
           property: { include: { owner: true } },
           renter: true,
-          transactions: true,
-          units: {
-            include: { unit: true }
-          }
-        }
+          units: { include: { unit: true } },
+        },
       });
 
+      // Notify renter
       await this.notificationService.createNotification({
         userId: booking.renterId,
-        title: `Booking Request ${accept ? 'Approved' : 'Declined'}`,
-        message: `Your booking request for ${booking.property.title} has been ${accept ? 'approved' : 'declined'}`,
-        type: accept ? NotificationType.BOOKING_APPROVED : NotificationType.BOOKING_DECLINED,
-        data: { referenceId: bookingId }
+        title: `Booking Request ${accept ? "Approved" : "Declined"}`,
+        message: `Your booking request for ${booking.property.title} has been ${
+          accept ? "approved. You can now proceed with payment." : "declined"
+        }`,
+        type: accept
+          ? NotificationType.BOOKING_APPROVED
+          : NotificationType.BOOKING_DECLINED,
+        data: {
+          bookingId: booking.id,
+          propertyId: booking.propertyId,
+          propertyTitle: booking.property.title,
+        },
       });
 
       return this.success({
         booking: updatedBooking,
-        message: `Booking request ${accept ? 'approved' : 'declined'} successfully`
+        message: `Booking request ${accept ? "approved" : "declined"} successfully`,
       });
     } catch (error) {
-      return this.handleError(error, 'respondToBookingRequest');
+      return this.handleError(error, "respondToBookingRequest");
     }
   }
 
+  /**
+   * Step 3: Create actual booking with payment (after approval)
+   */
+  async createBooking(
+    data: CreateBookingInput,
+    renterId: string
+  ): Promise<ServiceResponse<{ booking: Booking; paymentUrl: string }>> {
+    try {
+      // Find the approved booking request
+      const existingBooking = await this.prisma.booking.findFirst({
+        where: {
+          renterId,
+          propertyId: data.propertyId,
+          status: BookingStatus.PENDING_PAYMENT,
+        },
+        include: {
+          property: {
+            include: {
+              owner: { include: { subaccount: true } },
+              units: true,
+            },
+          },
+          units: { include: { unit: true } },
+          renter: true,
+        },
+      });
+
+      if (!existingBooking) {
+        return this.failure("No approved booking request found. Please create a booking request first.");
+      }
+
+      const property = existingBooking.property;
+
+      // Calculate dates
+      const startDate = new Date(data.startDate);
+      const endDate = this.calculateEndDate(startDate, data.duration, property.rentalPeriod);
+
+      // Calculate total amount based on duration
+      const baseAmount = existingBooking.amount;
+      const totalAmount = baseAmount.mul(data.duration);
+
+      return await this.prisma.$transaction(async (tx) => {
+        // Update the existing booking with dates and final amount
+        const updatedBooking = await tx.booking.update({
+          where: { id: existingBooking.id },
+          data: {
+            startDate,
+            endDate,
+            amount: totalAmount,
+          },
+          include: {
+            property: { include: { owner: true } },
+            renter: true,
+            units: { include: { unit: true } },
+          },
+        });
+
+        // Reserve units if applicable
+        if (existingBooking.units.length > 0) {
+          for (const bookingUnit of existingBooking.units) {
+            await tx.unit.update({
+              where: { id: bookingUnit.unit.id },
+              data: { status: UnitStatus.PENDING_BOOKING },
+            });
+          }
+
+          // Update property available units count
+          await tx.property.update({
+            where: { id: property.id },
+            data: {
+              availableUnits: {
+                decrement: existingBooking.units.length,
+              },
+            },
+          });
+        }
+
+        // Create transaction for payment
+        const transactionResult = await this.transactionService.createTransaction(
+          {
+            type: TransactionType.RENT_PAYMENT,
+            amount: totalAmount,
+            currency: "NGN",
+            description: `Payment for booking ${updatedBooking.id}`,
+            userId: renterId,
+            propertyId: property.id,
+            bookingId: updatedBooking.id,
+            metadata: {
+              amount: totalAmount.toNumber(),
+              subaccountCode: property.owner.subaccount!.subaccountCode,
+              splitType: "percentage",
+            },
+          },
+          renterId
+        );
+
+        if (!transactionResult.success || !transactionResult.data) {
+          throw new Error(transactionResult.message);
+        }
+
+        // Create payment with Paystack
+        let paymentUrl;
+        try {
+          const paystackResponse = await this.paystackService.createSplitPayment(
+            existingBooking.renter.email!,
+            totalAmount,
+            transactionResult.data.reference,
+            property.owner.subaccount!.subaccountCode!,
+            property.owner.subaccount!.percentageCharge
+          );
+
+          if (!paystackResponse?.data?.status) {
+            const errorMessage = paystackResponse?.message || "Failed to process payment";
+            logger.error("Error creating split payment", { 
+              message: errorMessage,
+              status: paystackResponse?.data?.status,
+              reference: transactionResult.data.reference
+            });
+            throw new Error(errorMessage);
+          }
+
+          paymentUrl = paystackResponse.data?.data?.authorization_url;
+          if (!paymentUrl) {
+            throw new Error("Failed to get payment URL from payment provider");
+          }
+
+          // Update property status
+          await tx.property.update({
+            where: { id: data.propertyId },
+            data: { status: PropertyStatus.PENDING_BOOKING },
+          });
+
+          // Send notifications
+          await this.sendBookingCreatedNotifications({
+            booking: updatedBooking,
+            renter: existingBooking.renter,
+            property,
+            totalAmount: totalAmount.toNumber(),
+            paymentUrl,
+          });
+
+          return this.success({ booking: updatedBooking, paymentUrl });
+        } catch (error) {
+          logger.error("Error in createBooking payment process", {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            bookingId: existingBooking.id,
+            reference: transactionResult.data.reference
+          });
+          throw error; // Re-throw to trigger transaction rollback
+        }
+      });
+    } catch (error) {
+      return this.handleError(error, "createBooking");
+    }
+  }
+
+  /**
+   * Step 4: Confirm payment
+   */
+  async confirmBookingPayment(
+    input: ConfirmBookingPaymentInput
+  ): Promise<ServiceResponse<{ success: boolean }>> {
+    const { reference, userId } = input;
+
+    try {
+      const transaction = await this.prisma.transaction.findUnique({
+        where: { reference },
+        include: {
+          booking: {
+            include: {
+              property: { include: { owner: { include: { subaccount: true } } } },
+              renter: true,
+              units: { include: { unit: true } },
+            },
+          },
+          user: true,
+        },
+      });
+
+      if (
+        !transaction ||
+        transaction.userId !== userId ||
+        transaction.status !== TransactionStatus.PENDING
+      ) {
+        return this.failure("Invalid transaction");
+      }
+
+      // Verify payment with Paystack
+      const paystackResponse = await this.paystackService.verifyPayment(reference);
+
+      if (
+        !paystackResponse.data ||
+        !paystackResponse.data.data ||
+        paystackResponse.data.data.status !== "success"
+      ) {
+        return this.failure(`Payment verification failed: ${paystackResponse.message}`);
+      }
+
+      const paidAmount = new Decimal(paystackResponse.data.data.amount).div(100);
+      const expectedAmount = new Decimal(transaction.amount);
+
+      if (!paidAmount.equals(expectedAmount)) {
+        return this.failure("Payment amount mismatch");
+      }
+
+      return await this.prisma.$transaction(async (tx) => {
+        // Update transaction status
+        await tx.transaction.update({
+          where: { id: transaction.id },
+          data: {
+            status: TransactionStatus.COMPLETED,
+            processedAt: new Date(),
+          },
+        });
+
+        if (!transaction.booking) {
+          throw new Error("Booking not found for transaction");
+        }
+
+        // Update booking status to confirmed
+        await tx.booking.update({
+          where: { id: transaction.bookingId! },
+          data: { status: BookingStatus.CONFIRMED },
+        });
+
+        // Update property status
+        await tx.property.update({
+          where: { id: transaction.booking.propertyId },
+          data: { status: PropertyStatus.RENTED },
+        });
+
+        // Update units to booked status if applicable
+        if (transaction.booking.units.length > 0) {
+          for (const bookingUnit of transaction.booking.units) {
+            await tx.unit.update({
+              where: { id: bookingUnit.unit.id },
+              data: { status: UnitStatus.RENTED },
+            });
+          }
+        }
+
+        // Send confirmation notifications
+        await this.sendPaymentConfirmedNotifications(transaction);
+
+        return this.success({ success: true });
+      });
+    } catch (error) {
+      return this.handleError(error, "confirmBookingPayment");
+    }
+  }
+
+  /**
+   * Get host's booking requests
+   */
   async getHostBookingRequests(
     hostId: string,
     page: number = 1,
@@ -224,7 +527,7 @@ export class BookingService extends BaseService {
       );
 
       const totalPages = Math.ceil(totalCount / limit);
-      
+
       return this.success({
         items: bookings,
         totalCount,
@@ -233,420 +536,26 @@ export class BookingService extends BaseService {
           totalPages,
           hasNextPage: page < totalPages,
           hasPreviousPage: page > 1,
-          limit
-        }
+          limit,
+        },
       });
     } catch (error) {
-      return this.handleError(error, 'getHostBookingRequests');
+      return this.handleError(error, "getHostBookingRequests");
     }
   }
 
-  async getRenterBookingRequests(
+  /**
+   * Get renter's bookings
+   */
+  async getRenterBookings(
     renterId: string,
     page: number = 1,
     limit: number = 10,
     status?: BookingStatus
   ): Promise<ServiceResponse<PaginatedBookingResponse>> {
     try {
-      const skip = (page - 1) * limit;
-      const where: Prisma.BookingWhereInput = { renterId };
-      
-      if (status) {
-        where.status = status;
-      }
-      
-      const [bookings, totalCount] = await Promise.all([
-        this.prisma.booking.findMany({
-          where,
-          include: {
-            property: { include: { owner: true } },
-            renter: true,
-            transactions: true,
-            units: {
-              include: { unit: true }
-            }
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: limit,
-        }),
-        this.prisma.booking.count({ where })
-      ]);
-      
-      const totalPages = Math.ceil(totalCount / limit);
-      
-      return this.success({
-        items: bookings,
-        totalCount,
-        pagination: {
-          currentPage: page,
-          totalPages,
-          hasNextPage: page < totalPages,
-          hasPreviousPage: page > 1,
-          limit
-        }
-      });
-    } catch (error) {
-      return this.handleError(error, 'getRenterBookingRequests');
-    }
-  }
-
-  async createBooking(
-    data: CreateBookingInput,
-    renterId: string
-  ): Promise<ServiceResponse<{ booking: Booking; paymentUrl: string }>> {
-    try {
-      const property = await this.prisma.property.findUnique({
-        where: { id: data.propertyId },
-        include: {
-          owner: {
-            include: { subaccount: true }
-          }
-        },
-      });
-
-      if (!property) return this.failure("Property not found");
-      if (property.status !== PropertyStatus.ACTIVE) {
-        return this.failure("Property not available");
-      }
-
-      if (!property.owner.subaccount || 
-          property.owner.subaccount.status !== SubaccountStatus.ACTIVE || 
-          !property.owner.subaccount.subaccountCode) {
-        return this.failure("Property owner payment setup incomplete");
-      }
-
-      const days = data.endDate
-        ? Math.ceil(
-            (data.endDate.getTime() - data.startDate.getTime()) / (1000 * 3600 * 24)
-          )
-        : 30;
-
-      const baseAmount = new Decimal(property.amount).div(30).mul(days);
-      const platformFee = await this.platformFeeService.calculatePlatformFee(baseAmount.toNumber());
-      const totalAmount = baseAmount.add(platformFee);
-
-      return await this.prisma.$transaction(async (tx) => {
-        const booking = await this.bookingRepo.create({
-          renterId,
-          propertyId: data.propertyId,
-          startDate: data.startDate,
-          endDate: data.endDate ?? null,
-          amount: baseAmount,
-          status: BookingStatus.PENDING,
-          units: {
-            create: data.units.map(unit => ({
-              unit: { connect: { id: unit } }
-            }))
-          }
-        });
-
-        const renter = await tx.user.findUnique({ where: { id: renterId } });
-        if (!renter) throw new Error("Renter not found");
-
-        const transactionData = {
-          type: TransactionType.RENT_PAYMENT,
-          amount: totalAmount,
-          currency: "NGN",
-          description: `Split payment for booking ${booking.id}`,
-          userId: renterId,
-          propertyId: data.propertyId,
-          bookingId: booking.id,
-          metadata: {
-            baseAmount: baseAmount.toNumber(),
-            platformFee: platformFee,
-            subaccountCode: property.owner.subaccount!.subaccountCode,
-            ownerPercentage: property.owner.subaccount!.percentageCharge,
-            platformPercentage: 100 - property.owner.subaccount!.percentageCharge,
-            splitType: "percentage"
-          },
-        };
-
-        const transactionResult = await this.transactionService.createTransaction(
-          transactionData,
-          renterId
-        );
-        if (!transactionResult.success || !transactionResult.data) {
-          throw new Error(transactionResult.message);
-        }
-
-        const paystackResponse = await this.paystackService.createSplitPayment(
-          renter.email,
-          totalAmount,
-          transactionResult.data.reference,
-          property.owner.subaccount!.subaccountCode!,
-          property.owner.subaccount!.percentageCharge,
-          100 - property.owner.subaccount!.percentageCharge
-        );
-
-        if (!paystackResponse.data?.status) {
-          throw new Error(paystackResponse.message);
-        }
-
-        await tx.property.update({
-          where: { id: data.propertyId },
-          data: { status: PropertyStatus.PENDING_BOOKING },
-        });
-
-        const paymentUrl = paystackResponse.data?.data.authorization_url;
-        if (!paymentUrl) throw new Error("Failed to get payment URL");
-
-        await this.sendNotificationsOnBooking({
-          booking,
-          renter,
-          property,
-          totalAmount: totalAmount.toNumber(),
-          platformFee,
-          paymentUrl,
-        });
-
-        return this.success({ booking, paymentUrl });
-      });
-    } catch (error) {
-      return this.handleError(error, "createBooking");
-    }
-  }
-
-  async updateBookingStatus(
-    input: UpdateBookingStatusInput
-  ): Promise<ServiceResponse<{ booking: Booking }>> {
-    const { bookingId, status, userId } = input;
-    try {
-      const booking = await this.prisma.booking.findUnique({
-        where: { id: bookingId },
-        include: { 
-          property: { include: { owner: true } },
-          renter: true,
-          transactions: true,
-          units: { include: { unit: true } }
-        },
-      });
-
-      if (!booking) {
-        return this.failure("Booking not found");
-      }
-
-      if (status === BookingStatus.CONFIRMED && booking.property.ownerId !== userId) {
-        return this.failure("Only the property owner can confirm bookings");
-      }
-
-      if (status === BookingStatus.CANCELLED && 
-          booking.property.ownerId !== userId && 
-          booking.renterId !== userId) {
-        return this.failure("Only the property owner or renter can cancel bookings");
-      }
-
-      if (booking.status !== BookingStatus.PENDING) {
-        return this.failure(`Cannot change booking status from ${booking.status} to ${status}`);
-      }
-
-      return await this.prisma.$transaction(async (tx) => {
-        const updatedBooking = await this.bookingRepo.updateStatus(bookingId, status);
-
-        if (status === BookingStatus.CONFIRMED) {
-          await tx.property.update({
-            where: { id: booking.propertyId },
-            data: { status: PropertyStatus.RENTED },
-          });
-
-          await this.notificationService.createNotification({
-            userId: booking.renterId,
-            title: "Booking Confirmed",
-            message: `Your booking for ${booking.property.title} has been confirmed.`,
-            type: NotificationType.BOOKING_CONFIRMED,
-            data: {
-              bookingId: booking.id,
-              propertyId: booking.propertyId,
-              propertyTitle: booking.property.title
-            }
-          });
-        } else if (status === BookingStatus.CANCELLED) {
-          const notification = userId === booking.property.ownerId
-            ? {
-                userId: booking.renterId,
-                title: "Booking Rejected",
-                message: `Your booking for ${booking.property.title} has been rejected.`,
-                type: NotificationType.BOOKING_CANCELLED,
-                data: { bookingId: booking.id }
-              }
-            : {
-                userId: booking.property.ownerId,
-                title: "Booking Cancelled",
-                message: `A booking for ${booking.property.title} has been cancelled by the renter.`,
-                type: NotificationType.BOOKING_CANCELLED,
-                data: { bookingId: booking.id }
-              };
-
-          await this.notificationService.createNotification(notification);
-        }
-
-        return this.success({ booking: updatedBooking });
-      });
-    } catch (error) {
-      return this.handleError(error, "updateBookingStatus");
-    }
-  }
-
-  async confirmBookingPayment(
-    input: ConfirmBookingPaymentInput
-  ): Promise<ServiceResponse<{ success: boolean }>> {
-    const { reference, userId } = input;
-    try {
-      const transaction = await this.prisma.transaction.findUnique({
-        where: { reference },
-        include: {
-          booking: { 
-            include: { 
-              property: {
-                include: {
-                  owner: {
-                    include: { subaccount: true }
-                  }
-                }
-              },
-              renter: true,
-              units: { include: { unit: true } }
-            } 
-          }, 
-          user: true 
-        },
-      });
-
-      if (
-        !transaction ||
-        transaction.userId !== userId ||
-        transaction.status !== TransactionStatus.PENDING
-      ) {
-        return this.failure("Invalid transaction");
-      }
-
-      const paystackResponse = await this.paystackService.verifyPayment(reference);
-      
-      if (
-        !paystackResponse.data || 
-        !paystackResponse.data.data ||
-        paystackResponse.data.data.status !== "success"
-      ) {
-        return this.failure(`Payment verification failed: ${paystackResponse.message}`);
-      }
-
-      if (new Decimal(paystackResponse.data?.data.amount).div(100).toNumber() !== new Decimal(transaction.amount).toNumber()) {
-        return this.failure("Payment amount mismatch");
-      }
-
-      return await this.prisma.$transaction(async (tx) => {
-        const updatedTransaction = await tx.transaction.update({
-          where: { id: transaction.id },
-          data: { 
-            status: TransactionStatus.COMPLETED,
-            processedAt: new Date() 
-          },
-          include: {
-            booking: {
-              include: {
-                property: { include: { owner: true } },
-                renter: true,
-                units: { include: { unit: true } }
-              }
-            },
-            user: true
-          }
-        });
-
-        if (!updatedTransaction.booking) {
-          throw new Error("Booking not found for transaction");
-        }
-
-        const metadata = transaction.metadata as any;
-        
-        if (metadata?.platformFee > 0) {
-          await this.platformFeeService.recordPlatformFeeCollection(
-            metadata.baseAmount,
-            metadata.platformFee,
-            transaction.bookingId!,
-            userId,
-            metadata.subaccountCode
-          );
-        }
-
-        await this.bookingRepo.updateStatus(
-          transaction.bookingId!,
-          BookingStatus.CONFIRMED
-        );
-
-        await tx.property.update({
-          where: { id: updatedTransaction.booking.propertyId },
-          data: { status: PropertyStatus.RENTED },
-        });
-
-        if (updatedTransaction.booking) {
-          await tx.auditLog.create({
-            data: {
-              userId: updatedTransaction.booking.property.ownerId,
-              action: "PAYMENT_SPLIT_RECEIVED",
-              resource: "transactions",
-              resourceId: transaction.id,
-              oldValues: {},
-              newValues: {
-                subaccountCode: metadata.subaccountCode,
-                ownerAmount: (metadata.baseAmount * metadata.ownerPercentage) / 100,
-                platformAmount: (metadata.baseAmount * metadata.platformPercentage) / 100,
-                platformFee: metadata.platformFee,
-                totalAmount: transaction.amount,
-              },
-            },
-          });
-        }
-
-        const notificationPayload = {
-          id: updatedTransaction.id,
-          amount: updatedTransaction.amount,
-          userId: updatedTransaction.userId,
-          bookingId: updatedTransaction.bookingId,
-          booking: updatedTransaction.booking,
-          user: updatedTransaction.user
-        };
-
-        await this.sendNotificationsOnPaymentConfirmed(notificationPayload, metadata);
-
-        await this.notificationService.createNotification({
-          userId: updatedTransaction.booking.property.ownerId,
-          title: "Payment Received",
-          message: `Payment of ₦${((metadata.baseAmount * metadata.ownerPercentage) / 100).toLocaleString()} has been automatically transferred to your account for booking ${updatedTransaction.booking.id}`,
-          type: NotificationType.PAYMENT_RECEIVED,
-          data: {
-            bookingId: updatedTransaction.bookingId,
-            amount: (metadata.baseAmount * metadata.ownerPercentage) / 100,
-            transactionId: transaction.id,
-          },
-        });
-
-        return this.success({ success: true });
-      });
-    } catch (error) {
-      return this.handleError(error, "confirmBookingPayment");
-    }
-  }
-
-  async getUserBookings(
-    input: GetUserBookingsInput
-  ): Promise<ServiceResponse<PaginatedBookingResponse>> {
-    const {
-      targetUserId,
-      currentUserRole,
-      currentUserId,
-      page = 1,
-      limit = 10,
-      status
-    } = input;
-
-    try {
-      if (currentUserRole !== RoleEnum.ADMIN && currentUserId && currentUserId !== targetUserId) {
-        return this.failure('Unauthorized: You can only view your own bookings');
-      }
-
-      const { bookings, totalCount } = await this.bookingRepo.findUserBookings(
-        targetUserId,
+      const { bookings, totalCount } = await this.bookingRepo.getRenterBookingRequests(
+        renterId,
         page,
         limit,
         status
@@ -662,14 +571,17 @@ export class BookingService extends BaseService {
           totalPages,
           hasNextPage: page < totalPages,
           hasPreviousPage: page > 1,
-          limit
-        }
+          limit,
+        },
       });
     } catch (error) {
-      return this.handleError(error, "getUserBookings");
+      return this.handleError(error, "getRenterBookings");
     }
   }
 
+  /**
+   * Get user booking by ID
+   */
   async getUserBookingById(
     bookingId: string,
     userId: string
@@ -681,193 +593,203 @@ export class BookingService extends BaseService {
       const property = await this.propertyRepo.findById(booking.propertyId);
       if (!property) return this.failure("Property not found");
 
+      const user = await this.userRepo.findUserById(userId);
+      if (!user) return this.failure("User not found");
+
       const isOwner = property.ownerId === userId;
       const isRenter = booking.renterId === userId;
-      if (!isOwner && !isRenter) {
+      const isAdmin = user.role === RoleEnum.ADMIN;
+
+      if (!isOwner && !isRenter && !isAdmin) {
         return this.failure("Unauthorized");
       }
 
-      return this.success(booking, "Booking retrieved successfully");
+      const processedBooking = this.bookingRepo.processBooking(booking);
+      return this.success(processedBooking, "Booking retrieved successfully");
     } catch (error) {
-      return this.handleError(error, "getBookingById");
+      return this.handleError(error, "getUserBookingById");
     }
   }
 
-  private async sendNotificationsOnBooking(data: BookingNotification) {
-    const { booking, renter, property, totalAmount, platformFee, paymentUrl } = data;
+  /**
+   * Update booking status
+   */
+  async updateBookingStatus(
+    input: UpdateBookingStatusInput
+  ): Promise<ServiceResponse<{ booking: Booking }>> {
+    const { bookingId, status, userId } = input;
+
+    try {
+      const booking = await this.prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          property: { include: { owner: true } },
+          renter: true,
+          units: { include: { unit: true } },
+        },
+      });
+
+      if (!booking) {
+        return this.failure("Booking not found");
+      }
+
+      // Validate permissions
+      if (status === BookingStatus.CONFIRMED && booking.property.ownerId !== userId) {
+        return this.failure("Only the property owner can confirm bookings");
+      }
+
+      if (
+        status === BookingStatus.CANCELLED &&
+        booking.property.ownerId !== userId &&
+        booking.renterId !== userId
+      ) {
+        return this.failure("Only the property owner or renter can cancel bookings");
+      }
+
+      const updatedBooking = await this.bookingRepo.updateStatus(bookingId, status);
+
+      // Send appropriate notifications based on status change
+      await this.sendStatusUpdateNotifications(booking, status, userId);
+
+      return this.success({ booking: updatedBooking });
+    } catch (error) {
+      return this.handleError(error, "updateBookingStatus");
+    }
+  }
+
+  // Helper methods
+  private calculateEndDate(
+    startDate: Date,
+    duration: number,
+    rentalPeriod: RentalPeriod
+  ): Date {
+    const endDate = new Date(startDate);
+
+    switch (rentalPeriod) {
+      case RentalPeriod.WEEKLY:
+        endDate.setDate(endDate.getDate() + (duration * 7));
+        break;
+      case RentalPeriod.MONTHLY:
+        endDate.setMonth(endDate.getMonth() + duration);
+        break;
+      case RentalPeriod.QUARTERLY:
+        endDate.setMonth(endDate.getMonth() + (duration * 3));
+        break;
+      case RentalPeriod.YEARLY:
+        endDate.setFullYear(endDate.getFullYear() + duration);
+        break;
+      default:
+        endDate.setDate(endDate.getDate() + duration);
+    }
+
+    return endDate;
+  }
+
+  private async sendBookingCreatedNotifications(data: {
+    booking: Booking;
+    renter: User;
+    property: Property;
+    totalAmount: number;
+    paymentUrl: string;
+  }) {
+    const { booking, renter, property, totalAmount, paymentUrl } = data;
+
     await Promise.all([
       this.notificationService.createNotification({
         userId: renter.id,
-        title: "Booking Created",
-        message: `Your booking for ${property.title} has been created. Complete payment: ₦${totalAmount}`,
-        type: NotificationType.PROPERTY_INQUIRY,
+        title: "Complete Your Payment",
+        message: `Your booking for ${property.title} is ready. Complete payment: ₦${totalAmount.toLocaleString()}`,
+        type: NotificationType.PAYMENT_REQUIRED,
         data: {
           bookingId: booking.id,
           paymentUrl,
           totalAmount,
-          platformFee,
         },
       }),
       this.notificationService.createNotification({
         userId: property.ownerId,
-        title: "New Booking Request",
-        message: `${renter.firstName} ${renter.lastName} has requested to book ${property.title}`,
-        type: NotificationType.PROPERTY_INQUIRY,
+        title: "Booking Payment Pending",
+        message: `${renter.firstName} ${renter.lastName} is completing payment for ${property.title}`,
+        type: NotificationType.BOOKING_REQUEST,
         data: { bookingId: booking.id },
-      })
+      }),
     ]);
   }
 
-  private async sendNotificationsOnPaymentConfirmed(
-    transaction: {
-      id: string;
-      amount: number;
-      userId: string | null;
-      bookingId: string | null;
-      booking: Booking & { property: Property; renter: User };
-      user: User | null;
-    },
-    metadata: { baseAmount?: number; platformFee?: number } = {}
-  ) {
-    if (!transaction.bookingId) {
-      throw new Error(`No booking ID associated with transaction ${transaction.id}`);
-    }
+  private async sendPaymentConfirmedNotifications(transaction: any) {
+    if (!transaction.booking) return;
 
-    const userId = transaction.userId || transaction.booking.renterId;
+    const booking = transaction.booking;
+    
     await Promise.all([
       this.notificationService.createNotification({
-        userId,
+        userId: transaction.userId!,
         title: "Payment Confirmed",
-        message: `Your payment of ₦${transaction.amount} has been confirmed. Booking is now active.`,
+        message: `Your payment has been confirmed. Booking is now active.`,
         type: NotificationType.PAYMENT_CONFIRMED,
-        data: { 
-          bookingId: transaction.bookingId, 
+        data: {
+          bookingId: booking.id,
           amount: transaction.amount,
-          transactionId: transaction.id
+          transactionId: transaction.id,
         },
       }),
-      this.notificationService.createNotification({
-        userId: transaction.booking.property.ownerId,
-        title: "Booking Payment Received",
-        message: `Payment of ₦${(metadata?.baseAmount || transaction.amount).toLocaleString()} received for your property "${transaction.booking.property.title}". Payment has been processed and split automatically.`,
-        type: NotificationType.PAYMENT_CONFIRMED,
-        data: { 
-          bookingId: transaction.bookingId, 
-          amount: metadata?.baseAmount || transaction.amount,
-          transactionId: transaction.id
-        },
-      })
-    ]);
-  }
-
-  private async sendNotificationsOnBookingComplete(
-    booking: Booking & { property: Property; renter: User }
-  ) {
-    await Promise.all([
       this.notificationService.createNotification({
         userId: booking.property.ownerId,
-        title: "Booking Completed",
-        message: `Booking ${booking.id} has been completed. Funds will be released in 24 hours.`,
-        type: NotificationType.SYSTEM_UPDATE,
-        data: { bookingId: booking.id },
+        title: "Booking Confirmed",
+        message: `Payment received for ${booking.property.title}. Booking is now confirmed.`,
+        type: NotificationType.BOOKING_CONFIRMED,
+        data: {
+          bookingId: booking.id,
+          amount: transaction.amount,
+          transactionId: transaction.id,
+        },
       }),
-      this.notificationService.createNotification({
-        userId: booking.renterId,
-        title: "Booking Completed",
-        message: `Your booking for ${booking.property.title} has been completed.`,
-        type: NotificationType.SYSTEM_UPDATE,
-        data: { bookingId: booking.id },
-      })
     ]);
   }
 
-  async handlePaymentWebhook(
-    event: { event: string; data: { reference: string } }
-  ): Promise<ServiceResponse<{ success: boolean }>> {
-    try {
-      if (event.event !== "charge.success") {
-        return this.success({ success: true, message: "Event ignored" });
-      }
+  private async sendStatusUpdateNotifications(
+    booking: any,
+    status: BookingStatus,
+    userId: string
+  ) {
+    const isHostAction = userId === booking.property.ownerId;
 
-      const reference = event.data.reference;
-      const transaction = await this.prisma.transaction.findUnique({
-        where: { reference },
-        include: { 
-          booking: { 
-            include: { 
-              property: { include: { owner: true } },
-              renter: true,
-              units: { include: { unit: true } }
-            } 
-          }, 
-          user: true 
-        },
-      });
-
-      if (!transaction || transaction.status !== TransactionStatus.PENDING) {
-        return this.failure("Invalid or already processed transaction");
-      }
-
-      const paystackResponse = await this.paystackService.verifyPayment(reference);
-      if (
-        !paystackResponse.data || 
-        !paystackResponse.data.data ||
-        paystackResponse.data.data.status !== "success"
-      ) {
-        return this.failure(`Payment verification failed: ${paystackResponse.message}`);
-      }
-
-      if (new Decimal(paystackResponse.data?.data.amount).div(100).toNumber() !== new Decimal(transaction.amount).toNumber()) {
-        return this.failure("Payment amount mismatch");
-      }
-
-      return await this.prisma.$transaction(async (tx) => {
-        await tx.transaction.update({
-          where: { id: transaction.id },
-          data: { status: TransactionStatus.PROCESSING },
-        });
-
-        await tx.booking.update({
-          where: { id: transaction.bookingId! },
-          data: { status: BookingStatus.CONFIRMED },
-        });
-
-        const booking = await tx.booking.findUnique({
-          where: { id: transaction.bookingId! },
-          include: { 
-            property: { include: { owner: true } },
-            renter: true,
-            units: { include: { unit: true } }
+    switch (status) {
+      case BookingStatus.CANCELLED:
+        await this.notificationService.createNotification({
+          userId: isHostAction ? booking.renterId : booking.property.ownerId,
+          title: isHostAction ? "Booking Cancelled" : "Booking Cancelled by Guest",
+          message: isHostAction
+            ? `Your booking for ${booking.property.title} has been cancelled by the host.`
+            : `Booking for ${booking.property.title} has been cancelled by the guest.`,
+          type: NotificationType.BOOKING_CANCELLED,
+          data: {
+            bookingId: booking.id,
+            propertyId: booking.propertyId,
+            propertyTitle: booking.property.title,
+            cancelledBy: isHostAction ? "host" : "guest",
           },
         });
+        break;
 
+      case BookingStatus.COMPLETED:
         await Promise.all([
           this.notificationService.createNotification({
-            userId: transaction.userId || transaction.booking!.renterId,
-            title: "Payment Confirmed",
-            message: `Your payment of ${transaction.amount} NGN for booking ${transaction.bookingId} has been confirmed.`,
-            type: NotificationType.PAYMENT_CONFIRMED,
-            data: {
-              bookingId: transaction.bookingId,
-              amount: transaction.amount,
-            },
+            userId: booking.renterId,
+            title: "Booking Completed",
+            message: `Your stay at ${booking.property.title} has been completed.`,
+            type: NotificationType.BOOKING_COMPLETED,
+            data: { bookingId: booking.id },
           }),
-          booking && this.notificationService.createNotification({
+          this.notificationService.createNotification({
             userId: booking.property.ownerId,
-            title: "New Booking Payment",
-            message: `A payment of ${transaction.amount} NGN has been confirmed for your property ${booking.property.title}.`,
-            type: NotificationType.PAYMENT_CONFIRMED,
-            data: {
-              bookingId: transaction.bookingId,
-              amount: transaction.amount,
-            },
-          })
-        ].filter(Boolean));
-
-        return this.success({ success: true, message: "Webhook processed successfully" });
-      });
-    } catch (error) {
-      return this.handleError(error, "handlePaymentWebhook");
+            title: "Booking Completed",
+            message: `Booking for ${booking.property.title} has been completed.`,
+            type: NotificationType.BOOKING_COMPLETED,
+            data: { bookingId: booking.id },
+          }),
+        ]);
+        break;
     }
   }
 }

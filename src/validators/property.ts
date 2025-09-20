@@ -18,7 +18,7 @@ export const createPropertySchema = z.object({
   city: z.string().min(2, "City must be at least 2 characters"),
   state: z.string().min(2, "State must be at least 2 characters"),
   sqft: z.number().positive().optional(),
-  bedrooms: z.number().int().min(0, "Bedrooms must be 0 or more"),
+  bedrooms: z.number().int().min(0, "Bedrooms must be 0 or more").optional(),
   bathrooms: z.number().int().min(1, "Must have at least 1 bathroom"),
   propertyType: z.nativeEnum(PropertyType),
   roomType: z.nativeEnum(RoomType),
@@ -30,6 +30,7 @@ export const createPropertySchema = z.object({
   visitingTimeStart: z.string().optional(),
   visitingTimeEnd: z.string().optional(),
   amenities: z.array(z.string()).default([]),
+  listingType: z.nativeEnum(PropertyListingType).default("RENT"),
 });
 
 export const updatePropertySchema = createPropertySchema.partial();

@@ -1,38 +1,35 @@
+//src/modules/booking/booking.types.ts
 import {
   ObjectType,
   Field,
   ID,
-  Float,
   Int,
   registerEnumType,
   GraphQLISODateTime,
 } from "type-graphql";
-import {
-  BookingStatus,
-  DisputeStatus,
-  RefundStatus,
-  TransactionStatus,
-  TransactionType,
-  WalletTransactionType,
-  PaymentGateway,
-} from "@prisma/client";
+import { BookingStatus, RoleEnum } from "@prisma/client";
 import { User } from "../user/user.types";
 import { Property } from "../property/property.types";
-import { Dispute } from "../dispute/dispute.types";
 import { Transaction } from "../transaction/transaction.types";
+import { GraphQLDecimal } from "../../graphql/scalars/Decimal";
+import { Decimal } from "@prisma/client/runtime/library";
+import { PaginationInfo } from "../../types";
 
-// Register enums for GraphQL
 registerEnumType(BookingStatus, { name: "BookingStatus" });
-registerEnumType(DisputeStatus, { name: "DisputeStatus" });
-registerEnumType(WalletTransactionType, { name: "WalletTransactionType" });
-registerEnumType(TransactionStatus, { name: "TransactionStatus" });
-registerEnumType(TransactionType, { name: "TransactionType" });
-registerEnumType(RefundStatus, { name: "RefundStatus" });
-registerEnumType(PaymentGateway, { name: "PaymentGateway" });
 
 @ObjectType()
 export class BookingUnit {
+  @Field(() => ID)
+  id: string;
 
+  @Field(() => ID)
+  bookingId: string;
+
+  @Field(() => ID)
+  unitId: string;
+
+  @Field(() => GraphQLISODateTime)
+  createdAt: Date;
 }
 
 @ObjectType()
@@ -46,32 +43,30 @@ export class Booking {
   @Field(() => ID)
   propertyId: string;
 
-  @Field(() => GraphQLISODateTime)
-  startDate: Date;
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  startDate?: Date | null;
 
   @Field(() => GraphQLISODateTime, { nullable: true })
   endDate?: Date | null;
 
-  @Field(() => GraphQLISODateTime)
-  requestedAt: Date;
-
   @Field(() => GraphQLISODateTime, { nullable: true })
   respondedAt?: Date | null;
 
-  @Field(() => Float)
-  amount: number;
+  @Field(() => GraphQLDecimal)
+  amount: Decimal;
 
   @Field(() => BookingStatus)
   status: BookingStatus;
 
-  @Field(() => GraphQLISODateTime,)
+  @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
-  @Field(() => GraphQLISODateTime,)
+  @Field(() => GraphQLISODateTime)
   updatedAt: Date;
 
+  // Relations
   @Field(() => User, { nullable: true })
-  renter?: User;  
+  renter?: User;
 
   @Field(() => Property, { nullable: true })
   property?: Property;
@@ -79,51 +74,8 @@ export class Booking {
   @Field(() => [Transaction], { nullable: true })
   transactions?: Transaction[];
 
-  @Field(() => [Dispute], { nullable: true })
-  disputes?: Dispute[];
-
-  @Field(() => [String], { nullable: true })
-  unitIds?: string[];
-  
-}
-
-@ObjectType()
-export class Refund {
-  @Field(() => ID)
-  id: string;
-
-  @Field(() => ID)
-  transactionId: string;
-
-  @Field(() => ID, { nullable: true })
-  disputeId?: string;
-
-  @Field(() => Float)
-  amount: number;
-
-  @Field(() => String)
-  reason: string;
-
-  @Field(() => RefundStatus)
-  status: RefundStatus;
-
-  @Field(() => ID, { nullable: true })
-  processedBy?: string;
-
-  @Field({ nullable: true })
-  processedAt?: Date;
-
-  @Field(() => GraphQLISODateTime)
-  createdAt: Date;
-
-  @Field(() => Transaction)
-  transaction: Transaction;
-
-  @Field(() => Dispute, { nullable: true })
-  dispute?: Dispute;
-
-  @Field(() => User, { nullable: true })
-  processor?: User;
+  @Field(() => [BookingUnit], { nullable: true })
+  units?: BookingUnit[];
 }
 
 @ObjectType()
@@ -131,7 +83,7 @@ export class BookingResponse {
   @Field(() => Booking, { nullable: true })
   booking?: Booking;
 
-  @Field(() => String,{ nullable: true })
+  @Field(() => String, { nullable: true })
   message?: string;
 
   @Field(() => Boolean)
@@ -151,28 +103,6 @@ export class BookingRequestResponse {
 
   @Field(() => String, { nullable: true })
   message?: string;
-
-}
-
-@ObjectType()
-export class PaginationInfo {
-  @Field(() => Int)
-  currentPage: number;
-
-  @Field(() => Int)
-  totalPages: number;
-
-  @Field(() => Int)
-  totalItems: number;
-
-  @Field(() => Boolean)
-  hasNextPage: boolean;
-
-  @Field(() => Boolean)
-  hasPreviousPage: boolean;
-
-  @Field(() => Int)
-  limit: number;
 }
 
 @ObjectType()
@@ -188,6 +118,4 @@ export class PaginatedBookingsResponse {
 
   @Field(() => Boolean)
   success: boolean;
-
-  
 }

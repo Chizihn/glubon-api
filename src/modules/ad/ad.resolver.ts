@@ -7,30 +7,45 @@ import {
   UseMiddleware,
 } from "type-graphql";
 import { Context } from "../../types";
-import { AdService } from "../../services/ad";
-import { AdAnalyticsService } from "../../services/ad-analytics";
-import { AuthMiddleware } from "../../middleware";
 import { Ad, AdAnalyticsType, AdType } from "./ad.types";
 import { CreateAdInput, UpdateAdStatusInput, AdAnalyticsFilter } from "./ad.inputs";
 import { AdPosition } from "@prisma/client";
+import { AuthMiddleware } from "../../middleware";
 
 @Resolver(() => Ad)
 export class AdResolver {
-  constructor(
-    private readonly adService: AdService,
-    private readonly adAnalyticsService: AdAnalyticsService
-  ) {}
+  private get adService() {
+    if (!this.ctx.services.adService) {
+      throw new Error('AdService is not available in the context');
+    }
+    return this.ctx.services.adService;
+  }
+
+  private get adAnalyticsService() {
+    if (!this.ctx.services.adAnalyticsService) {
+      throw new Error('AdAnalyticsService is not available in the context');
+    }
+    return this.ctx.services.adAnalyticsService;
+  }
+
+  constructor(private ctx: Context) {}
 
   @Query(() => [Ad])
   async getActiveAds(
     @Arg("position", () => AdPosition, { nullable: true }) position: AdPosition | null,
     @Ctx() ctx: Context
   ): Promise<Ad[]> {
-    const result = await this.adService.getActiveAds(position ?? undefined);
-    if (!result.success || !result.data) {
-      throw new Error(result.message || 'Failed to get active ads');
+    try {
+      const result = await this.adService.getActiveAds(position ?? undefined);
+      if (!result.success || !result.data) {
+        console.error('Failed to get active ads:', result.message);
+        return [];
+      }
+      return result.data;
+    } catch (error) {
+      console.error('Error in getActiveAds:', error);
+      return [];
     }
-    return result.data;
   }
 
   @Query(() => [AdAnalyticsType])

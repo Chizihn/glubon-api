@@ -6,15 +6,15 @@ import { ForbiddenError, UnauthorizedError } from "../utils";
 import { jwtConfig } from "../config";
 
 export const AuthMiddleware: MiddlewareFn<Context> = async (
-  { context },
+  { context, info },
   next
 ) => {
+  
   if (!context.req) {
     throw new UnauthorizedError("Request object is missing");
   }
+  
   const authHeader = context.req.headers.authorization;
-
-  console.log("Auth header:", authHeader);
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     throw new UnauthorizedError("Invalid or missing authorization header");
@@ -25,27 +25,32 @@ export const AuthMiddleware: MiddlewareFn<Context> = async (
   try {
     const decoded = jwt.verify(token, jwtConfig.secret) as any;
 
+    // First get the full user object
     const user = await context.prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: decoded.userId }
     });
-
+    
     if (!user) {
+      console.error(`[AuthMiddleware] Error: User with ID ${decoded.userId} not found`);
       throw new UnauthorizedError("User not found");
     }
 
     if (!user.isActive) {
+      console.error(`[AuthMiddleware] Error: User ${user.email} account is deactivated`);
       throw new UnauthorizedError("Account has been deactivated");
     }
 
     context.user = user;
     return next();
   } catch (error) {
+    
     if (error instanceof jwt.JsonWebTokenError) {
       throw new UnauthorizedError("Invalid token");
     }
     if (error instanceof jwt.TokenExpiredError) {
       throw new UnauthorizedError("Token expired");
     }
+    
     throw error;
   }
 };

@@ -1,5 +1,5 @@
 import { Field, ObjectType, InputType, Int, ID, GraphQLISODateTime, registerEnumType } from "type-graphql";
-import { Booking, Refund } from "../booking/booking.types";
+import { Booking,  } from "../booking/booking.types";
 import { User } from "../user/user.types";
 import { DisputeStatus } from "@prisma/client";
 import { PaginationMeta } from "../../types";
@@ -54,8 +54,8 @@ export class Dispute {
   @Field(() => User)
   initiator: User;
 
-  @Field(() => [Refund], { nullable: true })
-  refunds?: Refund[];
+  // @Field(() => [Refund], { nullable: true })
+  // refunds?: Refund[];
 
   @Field(() => Dispute, { nullable: true })
   parent?: Dispute;
