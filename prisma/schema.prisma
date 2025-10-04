@@ -1,15 +1,762 @@
-// Prisma Client Configuration
 generator client {
   provider = "prisma-client-js"
 }
 
-// Database Configuration
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Enums (Grouped for clarity)
+model User {
+  id                       String                   @id @default(uuid())
+  email                    String                   @unique
+  firstName                String
+  lastName                 String
+  password                 String?
+  phoneNumber              String?                  @unique
+  profilePic               String?
+  address                  String?
+  city                     String?
+  state                    String?
+  country                  String?                  @default("Nigeria")
+  role                     RoleEnum                 @default(RENTER)
+  permissions              PermissionEnum[]
+  provider                 ProviderEnum             @default(EMAIL)
+  isVerified               Boolean                  @default(false)
+  isActive                 Boolean                  @default(true)
+  status                   UserStatus               @default(ACTIVE)
+  refreshToken             String?
+  lastLogin                DateTime?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  adInteractions           AdInteraction[]
+  adminActionLogs          AdminActionLog[]
+  createdAds               Ad[]
+  auditLogs                AuditLog[]               @relation("UserAuditLogs")
+  renterBookings           Booking[]                @relation("RenterBookings")
+  broadcastMessages        BroadcastMessage[]       @relation("BroadcastMessages")
+  comments                 Comment[]
+  authoredContent          Content[]                @relation("ContentAuthor")
+  updatedContent           Content[]                @relation("ContentUpdatedBy")
+  assignedContentDisputes  ContentDispute[]         @relation("AssignedContentDisputes")
+  initiatedContentDisputes ContentDispute[]         @relation("InitiatedContentDisputes")
+  resolvedContentDisputes  ContentDispute[]         @relation("ResolvedContentDisputes")
+  contentUpdates           ContentPage[]            @relation("ContentUpdates")
+  updatedContentVersions   ContentVersion[]         @relation("ContentVersionUpdatedBy")
+  initiatedDisputes        Dispute[]                @relation("InitiatedDisputes")
+  templateUpdates          EmailTemplate[]          @relation("TemplateUpdates")
+  faqUpdates               FAQ[]                    @relation("FAQUpdates")
+  identityVerifications    IdentityVerification[]
+  sentMessages             Message[]                @relation("SentMessages")
+  notifications            Notification[]
+  settingUpdates           PlatformSetting[]        @relation("SettingUpdates")
+  properties               Property[]
+  propertyLikes            PropertyLike[]
+  reviewedOwnershipProofs  PropertyOwnershipProof[] @relation("OwnershipProofReviewer")
+  propertyOwnershipProofs  PropertyOwnershipProof[]
+  propertyViews            PropertyView[]
+  providerAccounts         ProviderAccount[]
+  processedRefunds         Refund[]                 @relation("ProcessedRefunds")
+  subaccount               Subaccount?
+  transactions             Transaction[]
+  rentedUnits              Unit[]                   @relation("UnitRenter")
+  userConversations        UserConversation[]
+  presence                 UserPresence?
+  presenceHistory          UserPresenceHistory[]
+  settings                 UserSetting?
+  reviewedTokens           VerificationToken[]      @relation("TokenReviewer")
+  verificationTokens       VerificationToken[]
+  receivedBroadcasts       BroadcastMessage[]       @relation("BroadcastRecipients")
+
+  @@index([email])
+  @@map("users")
+}
+
+model Subaccount {
+  id                   String           @id @default(uuid())
+  userId               String           @unique
+  subaccountCode       String?          @unique
+  businessName         String
+  accountNumber        String
+  bankCode             String
+  accountName          String?
+  percentageCharge     Float            @default(85)
+  status               SubaccountStatus @default(PENDING)
+  paystackSubaccountId Int?
+  isActive             Boolean          @default(false)
+  failureReason        String?
+  retryCount           Int              @default(0)
+  lastRetryAt          DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([subaccountCode])
+  @@index([status])
+  @@map("subaccounts")
+}
+
+model UserSetting {
+  id                      String   @id @default(uuid())
+  userId                  String   @unique
+  notificationPreferences Json     @default("{}")
+  theme                   String?  @default("light")
+  language                String?  @default("en")
+  receivePromotions       Boolean  @default(true)
+  pushNotifications       Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  emailNotifications      Boolean  @default(true)
+  pushToken               String?
+  smsNotifications        Boolean  @default(false)
+  twoFactorEnabled        Boolean  @default(false)
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model UserPresence {
+  id       String   @id @default(uuid())
+  userId   String   @unique
+  isOnline Boolean  @default(false)
+  lastSeen DateTime
+  socketId String?
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_presence")
+}
+
+model UserPresenceHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  status    String
+  timestamp DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_presence_history")
+}
+
+model ProviderAccount {
+  id          String       @id @default(uuid())
+  userId      String
+  provider    ProviderEnum
+  providerId  String
+  accessToken String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@map("provider_accounts")
+}
+
+model IdentityVerification {
+  id              String             @id @default(uuid())
+  userId          String
+  documentType    DocumentType
+  documentNumber  String
+  documentImages  String[]
+  status          VerificationStatus @default(PENDING)
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  rejectionReason String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("identity_verifications")
+}
+
+model VerificationToken {
+  id           String    @id @default(uuid())
+  token        String    @unique
+  type         TokenType
+  userId       String
+  email        String
+  used         Boolean   @default(false)
+  expiresAt    DateTime
+  reviewedById String?
+  createdAt    DateTime  @default(now())
+  reviewedBy   User?     @relation("TokenReviewer", fields: [reviewedById], references: [id])
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_tokens")
+}
+
+model Property {
+  id                    String                   @id @default(uuid())
+  title                 String
+  description           String
+  status                PropertyStatus           @default(PENDING_REVIEW)
+  listingType           PropertyListingType      @default(RENT)
+  amount                Decimal                  @db.Decimal(18, 2)
+  rentalPeriod          RentalPeriod
+  address               String
+  city                  String
+  state                 String
+  country               String                   @default("Nigeria")
+  latitude              Float?
+  longitude             Float?
+  sqft                  Float?
+  bedrooms              Int?
+  bathrooms             Int
+  propertyType          PropertyType
+  roomType              RoomType
+  visitingDays          DayOfWeek[]
+  visitingTimeStart     String?
+  visitingTimeEnd       String?
+  amenities             String[]
+  isFurnished           Boolean                  @default(false)
+  isForStudents         Boolean                  @default(false)
+  isStandalone          Boolean                  @default(false)
+  totalUnits            Int?
+  availableUnits        Int?
+  images                String[]                 @default([])
+  livingRoomImages      String[]                 @default([])
+  bedroomImages         String[]                 @default([])
+  bathroomImages        String[]                 @default([])
+  video                 String?
+  propertyOwnershipDocs String[]                 @default([])
+  propertyPlanDocs      String[]                 @default([])
+  propertyDimensionDocs String[]                 @default([])
+  ownershipVerified     Boolean                  @default(false)
+  featured              Boolean                  @default(false)
+  ownerId               String
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  auditLogs             AuditLog[]
+  bookings              Booking[]
+  conversations         Conversation[]           @relation("ConversationProperty")
+  messages              Message[]                @relation("MessageProperty")
+  notifications         Notification[]
+  owner                 User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  likes                 PropertyLike[]
+  ownershipProofs       PropertyOwnershipProof[]
+  views                 PropertyView[]
+  transactions          Transaction[]
+  units                 Unit[]
+
+  @@index([status])
+  @@index([ownerId])
+  @@map("properties")
+}
+
+model Unit {
+  id            String        @id @default(uuid())
+  propertyId    String
+  renterId      String?
+  title         String?
+  description   String?
+  amount        Decimal       @db.Decimal(18, 2)
+  rentalPeriod  RentalPeriod
+  sqft          Float?
+  bedrooms      Int?
+  bathrooms     Int?
+  roomType      RoomType
+  amenities     String[]      @default([])
+  isFurnished   Boolean       @default(false)
+  isForStudents Boolean       @default(false)
+  status        UnitStatus    @default(AVAILABLE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  bookingUnits  BookingUnit[]
+  property      Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  renter        User?         @relation("UnitRenter", fields: [renterId], references: [id])
+
+  @@index([propertyId])
+  @@map("units")
+}
+
+model PropertyLike {
+  id         String   @id @default(uuid())
+  userId     String
+  propertyId String
+  createdAt  DateTime @default(now())
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("property_likes")
+}
+
+model PropertyView {
+  id         String   @id @default(uuid())
+  userId     String
+  propertyId String
+  viewedAt   DateTime @default(now())
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("property_views")
+}
+
+model PropertyOwnershipProof {
+  id              String               @id @default(uuid())
+  propertyId      String
+  userId          String
+  documentType    PropertyDocumentType
+  documentImages  String[]
+  status          VerificationStatus   @default(PENDING)
+  reviewedAt      DateTime?
+  reviewedById    String?
+  rejectionReason String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  property        Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reviewedBy      User?                @relation("OwnershipProofReviewer", fields: [reviewedById], references: [id])
+  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("property_ownership_proofs")
+}
+
+model Booking {
+  id            String         @id @default(uuid())
+  renterId      String
+  propertyId    String
+  amount        Decimal        @db.Decimal(18, 2)
+  status        BookingStatus  @default(PENDING_APPROVAL)
+  requestedAt   DateTime       @default(now())
+  respondedAt   DateTime?
+  startDate     DateTime?
+  endDate       DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  confirmedAt   DateTime?
+  auditLogs     AuditLog[]
+  units         BookingUnit[]
+  property      Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  renter        User           @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
+  disputes      Dispute[]
+  notifications Notification[]
+  transactions  Transaction[]
+
+  @@index([renterId])
+  @@index([propertyId])
+  @@map("bookings")
+}
+
+model BookingUnit {
+  id        String   @id @default(uuid())
+  bookingId String
+  unitId    String
+  createdAt DateTime @default(now())
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, unitId])
+  @@index([bookingId])
+  @@index([unitId])
+  @@map("booking_units")
+}
+
+model Transaction {
+  id            String            @id @default(uuid())
+  type          TransactionType
+  amount        Decimal           @db.Decimal(18, 2)
+  currency      String            @default("NGN")
+  status        TransactionStatus @default(PENDING)
+  reference     String            @unique
+  description   String?
+  userId        String?
+  propertyId    String?
+  adId          String?
+  bookingId     String?
+  metadata      Json?
+  paymentMethod String?
+  gateway       PaymentGateway?
+  gatewayRef    String?           @unique
+  failureReason String?
+  processedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  refunds       Refund[]
+  ad            Ad?               @relation(fields: [adId], references: [id])
+  booking       Booking?          @relation(fields: [bookingId], references: [id])
+  property      Property?         @relation(fields: [propertyId], references: [id])
+  user          User?             @relation(fields: [userId], references: [id])
+
+  @@map("transactions")
+}
+
+model Refund {
+  id            String       @id @default(uuid())
+  transactionId String
+  disputeId     String?
+  amount        Decimal      @db.Decimal(18, 2)
+  reason        String
+  status        RefundStatus @default(PENDING)
+  processedBy   String?
+  processedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  dispute       Dispute?     @relation(fields: [disputeId], references: [id])
+  processor     User?        @relation("ProcessedRefunds", fields: [processedBy], references: [id])
+  transaction   Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@map("refunds")
+}
+
+model Dispute {
+  id            String         @id @default(uuid())
+  bookingId     String
+  initiatorId   String
+  reason        String
+  content       String
+  description   String
+  status        DisputeStatus  @default(PENDING)
+  resolution    String?
+  resolvedAt    DateTime?
+  resolvedBy    String?
+  parentDispute String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  booking       Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  initiator     User           @relation("InitiatedDisputes", fields: [initiatorId], references: [id], onDelete: Cascade)
+  parent        Dispute?       @relation("DisputeHierarchy", fields: [parentDispute], references: [id])
+  children      Dispute[]      @relation("DisputeHierarchy")
+  notifications Notification[]
+  refunds       Refund[]
+
+  @@map("disputes")
+}
+
+model Content {
+  id               String           @id @default(uuid())
+  title            String
+  slug             String           @unique
+  content          String
+  excerpt          String?
+  type             ContentType      @default(PAGE)
+  status           ContentStatus    @default(DRAFT)
+  category         String?
+  tags             String[]
+  metadata         Json?
+  featured         Boolean          @default(false)
+  featuredImage    String?
+  featuredImageAlt String?
+  seoTitle         String?
+  seoDescription   String?
+  seoKeywords      String[]
+  allowComments    Boolean          @default(true)
+  viewCount        Int              @default(0)
+  publishedAt      DateTime?
+  authorId         String
+  updatedById      String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+  version          Int              @default(1)
+  comments         Comment[]        @relation("ContentComments")
+  author           User             @relation("ContentAuthor", fields: [authorId], references: [id])
+  updatedBy        User?            @relation("ContentUpdatedBy", fields: [updatedById], references: [id])
+  disputes         ContentDispute[]
+  versions         ContentVersion[]
+
+  @@map("content")
+}
+
+model ContentVersion {
+  id          String        @id @default(uuid())
+  contentId   String
+  version     Int
+  title       String
+  contentText String
+  excerpt     String?
+  type        ContentType
+  status      ContentStatus
+  metadata    Json?
+  updatedById String?
+  updatedAt   DateTime      @default(now())
+  deletedAt   DateTime?
+  content     Content       @relation(fields: [contentId], references: [id])
+  updatedBy   User?         @relation("ContentVersionUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([contentId, version])
+  @@map("content_versions")
+}
+
+model ContentDispute {
+  id           String        @id @default(uuid())
+  title        String
+  description  String
+  type         DisputeType
+  status       DisputeStatus @default(OPEN)
+  contentId    String?
+  reportedById String
+  assignedToId String?
+  resolvedById String?
+  evidence     Json?         @default("{}")
+  resolution   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  assignedTo   User?         @relation("AssignedContentDisputes", fields: [assignedToId], references: [id])
+  content      Content?      @relation(fields: [contentId], references: [id])
+  reportedBy   User          @relation("InitiatedContentDisputes", fields: [reportedById], references: [id])
+  resolvedBy   User?         @relation("ResolvedContentDisputes", fields: [resolvedById], references: [id])
+
+  @@index([status])
+  @@index([reportedById])
+  @@index([assignedToId])
+  @@index([contentId])
+  @@map("content_disputes")
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  contentId String
+  userId    String
+  text      String
+  parentId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  content   Content   @relation("ContentComments", fields: [contentId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+model FAQ {
+  id        String   @id @default(uuid())
+  question  String
+  answer    String
+  category  String
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updater   User     @relation("FAQUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
+
+  @@map("faqs")
+}
+
+model ContentPage {
+  id        String        @id @default(uuid())
+  slug      String        @unique
+  title     String
+  content   String
+  type      ContentType
+  status    ContentStatus @default(DRAFT)
+  isPublic  Boolean       @default(false)
+  seoTitle  String?
+  seoDesc   String?
+  updatedBy String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  updater   User          @relation("ContentUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
+
+  @@index([slug])
+  @@map("content_pages")
+}
+
+model Conversation {
+  id           String             @id @default(uuid())
+  propertyId   String?
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  property     Property?          @relation("ConversationProperty", fields: [propertyId], references: [id])
+  messages     Message[]
+  participants UserConversation[]
+
+  @@map("conversations")
+}
+
+model UserConversation {
+  id             String       @id @default(uuid())
+  userId         String
+  conversationId String
+  lastReadAt     DateTime?
+  isArchived     Boolean      @default(false)
+  isMuted        Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, conversationId])
+  @@map("user_conversations")
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  senderId       String
+  content        String
+  messageType    MessageType  @default(TEXT)
+  attachments    String[]     @default([])
+  isRead         Boolean      @default(false)
+  isBroadcast    Boolean      @default(false)
+  broadcastId    String?
+  propertyId     String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  property       Property?    @relation("MessageProperty", fields: [propertyId], references: [id])
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([broadcastId])
+  @@map("messages")
+}
+
+model BroadcastMessage {
+  id              String      @id @default(uuid())
+  content         String
+  messageType     MessageType @default(TEXT)
+  senderId        String
+  recipientRoles  RoleEnum[]
+  totalRecipients Int
+  attachments     String[]    @default([])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  sender          User        @relation("BroadcastMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipients      User[]      @relation("BroadcastRecipients")
+
+  @@index([senderId])
+  @@map("broadcast_messages")
+}
+
+model Ad {
+  id           String          @id @default(uuid())
+  title        String
+  description  String?
+  imageUrl     String
+  targetUrl    String
+  position     AdPosition
+  type         AdType          @default(STANDARD)
+  status       AdStatus        @default(PENDING)
+  startDate    DateTime
+  endDate      DateTime
+  budget       Float?
+  costPerClick Float?
+  isActive     Boolean         @default(false)
+  createdBy    String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  analytics    AdAnalytics[]
+  interactions AdInteraction[]
+  creator      User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([position, isActive, startDate, endDate])
+  @@index([createdBy])
+  @@map("ads")
+}
+
+model AdAnalytics {
+  id          String   @id @default(uuid())
+  adId        String
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  conversions Int      @default(0)
+  revenue     Float    @default(0)
+  createdAt   DateTime @default(now())
+  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@unique([adId, date])
+  @@map("ad_analytics")
+}
+
+model AdInteraction {
+  id        String   @id @default(uuid())
+  adId      String
+  userId    String?
+  type      String
+  createdAt DateTime @default(now())
+  ad        Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("ad_interactions")
+}
+
+model PlatformSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  description String?
+  updatedBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  value       Json
+  updater     User     @relation("SettingUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
+
+  @@map("platform_settings")
+}
+
+model EmailTemplate {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  subject   String
+  content   String
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updater   User     @relation("TemplateUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
+
+  @@map("email_templates")
+}
+
+model AdminActionLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  action    String
+  data      Json?
+  createdAt DateTime @default(now())
+  admin     User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@map("admin_action_logs")
+}
+
+model AuditLog {
+  id         String    @id @default(uuid())
+  userId     String?
+  action     String
+  resource   String
+  resourceId String?
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+  propertyId String?
+  bookingId  String?
+  booking    Booking?  @relation(fields: [bookingId], references: [id])
+  property   Property? @relation(fields: [propertyId], references: [id])
+  user       User?     @relation("UserAuditLogs", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  userId     String
+  title      String
+  message    String
+  type       NotificationType
+  data       Json?
+  isRead     Boolean          @default(false)
+  propertyId String?
+  bookingId  String?
+  disputeId  String?
+  createdAt  DateTime         @default(now())
+  booking    Booking?         @relation(fields: [bookingId], references: [id])
+  dispute    Dispute?         @relation(fields: [disputeId], references: [id])
+  property   Property?        @relation(fields: [propertyId], references: [id])
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
 enum RoleEnum {
   RENTER
   LISTER
@@ -54,6 +801,8 @@ enum PropertyStatus {
   PENDING_REVIEW
   ACTIVE
   RENTED
+  SOLD
+  LEASED
   INACTIVE
   REJECTED
   SUSPENDED
@@ -212,17 +961,26 @@ enum TokenType {
 }
 
 enum TransactionType {
+  // Listing-related
   PREMIUM_LISTING
   BASIC_LISTING
   FEATURED_LISTING
+  
+  // Property payment types
+  RENT_PAYMENT
+  LEASE_PAYMENT
+  SALE_PAYMENT
+  
+  // Platform transactions
   AD_PLACEMENT
   API_ACCESS
   SUBSCRIPTION
-  REFUND
-  RENT_PAYMENT
   PLATFORM_FEE
+  
+  // Payment processing
   SPLIT_PAYMENT
   PAYMENT_SPLIT_RECEIVED
+  REFUND
 }
 
 enum TransactionStatus {
@@ -247,7 +1005,6 @@ enum RefundStatus {
   REJECTED
   PROCESSED
 }
-
 
 enum NotificationType {
   EMAIL
@@ -284,16 +1041,17 @@ enum NotificationType {
   SPLIT_PAYMENT_RECEIVED
   BOOKING_COMPLETED
   PAYMENT_REQUIRED
+  TRANSACTION_CREATED
 }
 
 enum BookingStatus {
   PENDING_APPROVAL
-  DECLINED
   PENDING_PAYMENT
+  PAID
   CONFIRMED
-  ACTIVE
   COMPLETED
   CANCELLED
+  REJECTED
   DISPUTED
   EXPIRED
 }
@@ -333,763 +1091,4 @@ enum AuditAction {
   PERMISSION_CHANGE
   STATUS_CHANGE
   OTHER
-}
-
-// Models (Grouped by functionality: User-related, Property-related, Transaction-related, Content-related, etc.)
-
-// User-related Models
-model User {
-  id                      String                   @id @default(uuid())
-  email                   String                   @unique
-  firstName               String
-  lastName                String
-  password                String?
-  phoneNumber             String?                  @unique
-  profilePic              String?
-  address                 String?
-  city                    String?
-  state                   String?
-  country                 String?                  @default("Nigeria")
-  role                    RoleEnum                 @default(RENTER)
-  permissions             PermissionEnum[]
-  provider                ProviderEnum             @default(EMAIL)
-  providerAccounts        ProviderAccount[]
-  isVerified              Boolean                  @default(false)
-  isActive                Boolean                  @default(true)
-  status                  UserStatus               @default(ACTIVE)
-  refreshToken            String?
-  lastLogin               DateTime?
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-  properties              Property[]
-  propertyLikes           PropertyLike[]
-  propertyViews           PropertyView[]
-  identityVerifications   IdentityVerification[]
-  propertyOwnershipProofs PropertyOwnershipProof[]
-  verificationTokens      VerificationToken[]
-  subaccount              Subaccount?
-  notifications           Notification[]
-  userConversations       UserConversation[]
-  sentMessages            Message[]                @relation("SentMessages")
-  adminActionLogs         AdminActionLog[]
-  transactions            Transaction[]
-  processedRefunds        Refund[]                 @relation("ProcessedRefunds")
-  renterBookings          Booking[]                @relation("RenterBookings")
-  initiatedDisputes       Dispute[]                @relation("InitiatedDisputes")
-  createdAds              Ad[]
-  auditLogs               AuditLog[]               @relation("UserAuditLogs")
-  settings                UserSetting?
-  settingUpdates          PlatformSetting[]        @relation("SettingUpdates")
-  contentUpdates          ContentPage[]            @relation("ContentUpdates")
-  faqUpdates              FAQ[]                    @relation("FAQUpdates")
-  templateUpdates         EmailTemplate[]          @relation("TemplateUpdates")
-  presence                UserPresence?
-  presenceHistory         UserPresenceHistory[]
-  broadcastMessages       BroadcastMessage[]       @relation("BroadcastMessages")
-  receivedBroadcasts      BroadcastMessage[]       @relation("BroadcastRecipients")
-  rentedUnits             Unit[]                   @relation("UnitRenter")
-  reviewedOwnershipProofs PropertyOwnershipProof[] @relation("OwnershipProofReviewer")
-  reviewedTokens          VerificationToken[]      @relation("TokenReviewer")
-  comments                Comment[]
-  initiatedContentDisputes ContentDispute[]        @relation("InitiatedContentDisputes")
-  assignedContentDisputes ContentDispute[]        @relation("AssignedContentDisputes")
-  resolvedContentDisputes ContentDispute[]        @relation("ResolvedContentDisputes")
-  adInteractions          AdInteraction[]
-  authoredContent         Content[]                @relation("ContentAuthor")
-  updatedContent          Content[]                @relation("ContentUpdatedBy")
-  updatedContentVersions  ContentVersion[]         @relation("ContentVersionUpdatedBy")
-
-  @@index([email])
-  @@map("users")
-}
-
-model Subaccount {
-  id                    String            @id @default(uuid())
-  userId                String            @unique
-  user                  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subaccountCode        String?           @unique
-  businessName          String
-  accountNumber         String
-  bankCode              String
-  accountName           String?
-  percentageCharge      Float             @default(85)
-  status                SubaccountStatus  @default(PENDING)
-  paystackSubaccountId  Int?
-  isActive              Boolean           @default(false)
-  failureReason         String?
-  retryCount            Int               @default(0)
-  lastRetryAt           DateTime?
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-
-  @@index([userId])
-  @@index([subaccountCode])
-  @@index([status])
-  @@map("subaccounts")
-}
-
-model UserSetting {
-  id                      String                   @id @default(uuid())
-  userId                  String                   @unique
-  user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notificationPreferences Json                     @default("{}")
-  theme                   String?                  @default("light")
-  language                String?                  @default("en")
-  receivePromotions       Boolean                  @default(true)
-  pushNotifications       Boolean                  @default(true)
-  pushToken               String?
-  emailNotifications      Boolean                  @default(true)
-  smsNotifications        Boolean                  @default(false)
-  twoFactorEnabled        Boolean                  @default(false)
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
-
-  @@map("user_settings")
-}
-
-model UserPresence {
-  id       String   @id @default(uuid())
-  userId   String   @unique
-  isOnline Boolean  @default(false)
-  lastSeen DateTime
-  socketId String?
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("user_presence")
-}
-
-model UserPresenceHistory {
-  id        String   @id @default(uuid())
-  userId    String
-  status    String
-  timestamp DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("user_presence_history")
-}
-
-model ProviderAccount {
-  id          String       @id @default(uuid())
-  userId      String
-  provider    ProviderEnum
-  providerId  String
-  accessToken String
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerId])
-  @@map("provider_accounts")
-}
-
-model IdentityVerification {
-  id              String             @id @default(uuid())
-  userId          String
-  documentType    DocumentType
-  documentNumber  String
-  documentImages  String[]
-  status          VerificationStatus @default(PENDING)
-  reviewedAt      DateTime?
-  reviewedBy      String?
-  rejectionReason String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("identity_verifications")
-}
-
-model VerificationToken {
-  id          String    @id @default(uuid())
-  token       String    @unique
-  type        TokenType
-  userId      String
-  email       String
-  used        Boolean   @default(false)
-  expiresAt   DateTime
-  reviewedById String?
-  reviewedBy  User?     @relation("TokenReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("verification_tokens")
-}
-
-// Property-related Models
-model Property {
-  id                    String                   @id @default(uuid())
-  title                 String
-  description           String
-  status                PropertyStatus           @default(PENDING_REVIEW)
-  listingType           PropertyListingType      @default(RENT)
-  amount                Decimal     @db.Decimal(18, 2)
-  rentalPeriod          RentalPeriod
-  address               String
-  city                  String
-  state                 String
-  country               String                   @default("Nigeria")
-  latitude              Float?
-  longitude             Float?
-  sqft                  Float?
-  bedrooms              Int?
-  bathrooms             Int
-  propertyType          PropertyType
-  roomType              RoomType
-  visitingDays          DayOfWeek[]
-  visitingTimeStart     String?
-  visitingTimeEnd       String?
-  amenities             String[]
-  isFurnished           Boolean                  @default(false)
-  isForStudents         Boolean                  @default(false)
-  isStandalone          Boolean                  @default(false)
-  totalUnits            Int?
-  availableUnits        Int?
-  images                String[]                 @default([])
-  livingRoomImages      String[]                 @default([])
-  bedroomImages         String[]                 @default([])
-  bathroomImages        String[]                 @default([])
-  video                 String?
-  propertyOwnershipDocs String[]                 @default([])
-  propertyPlanDocs      String[]                 @default([])
-  propertyDimensionDocs String[]                 @default([])
-  ownershipVerified     Boolean                  @default(false)
-  featured              Boolean                  @default(false)
-  ownerId               String
-  createdAt             DateTime                 @default(now())
-  updatedAt             DateTime                 @updatedAt
-  owner                 User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  units                 Unit[]
-  transactions          Transaction[]
-  bookings              Booking[]
-  likes                 PropertyLike[]
-  views                 PropertyView[]
-  ownershipProofs       PropertyOwnershipProof[]
-  conversations         Conversation[]           @relation("ConversationProperty")
-  messages              Message[]                @relation("MessageProperty")
-  notifications         Notification[]
-  auditLogs             AuditLog[]
-
-  @@index([status])
-  @@index([ownerId])
-  @@map("properties")
-}
-
-model Unit {
-  id           String       @id @default(uuid())
-  propertyId   String
-  renterId     String?
-  title        String?
-  description  String?
-  amount       Decimal     @db.Decimal(18, 2)
-  rentalPeriod RentalPeriod
-  sqft         Float?
-  bedrooms     Int?
-  bathrooms    Int?
-  roomType     RoomType
-  amenities    String[]     @default([])
-  isFurnished  Boolean      @default(false)
-  isForStudents Boolean     @default(false)
-  status       UnitStatus   @default(AVAILABLE)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  renter       User?        @relation("UnitRenter", fields: [renterId], references: [id], onDelete: SetNull)
-  bookingUnits BookingUnit[]
-
-  @@index([propertyId])
-  @@map("units")
-}
-
-model PropertyLike {
-  id         String   @id @default(uuid())
-  userId     String
-  propertyId String
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, propertyId])
-  @@map("property_likes")
-}
-
-model PropertyView {
-  id         String   @id @default(uuid())
-  userId     String
-  propertyId String
-  viewedAt   DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, propertyId])
-  @@map("property_views")
-}
-
-model PropertyOwnershipProof {
-  id              String               @id @default(uuid())
-  propertyId      String
-  userId          String
-  documentType    PropertyDocumentType
-  documentImages  String[]
-  status          VerificationStatus   @default(PENDING)
-  reviewedAt      DateTime?
-  reviewedById    String?
-  reviewedBy      User?                @relation("OwnershipProofReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
-  rejectionReason String?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  property        Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("property_ownership_proofs")
-}
-
-// Booking-related Models
-model Booking {
-  id                  String        @id @default(uuid())
-  renterId            String
-  propertyId          String
-  amount              Decimal     @db.Decimal(18, 2)
-  status              BookingStatus @default(PENDING_APPROVAL)
-  requestedAt         DateTime      @default(now())
-  respondedAt         DateTime?
-  startDate           DateTime?
-  endDate             DateTime?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  renter              User          @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
-  property            Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  units               BookingUnit[]
-  transactions        Transaction[]
-  disputes            Dispute[]
-  notifications       Notification[]
-  auditLogs           AuditLog[]
-
-  @@index([renterId])
-  @@index([propertyId])
-  @@map("bookings")
-}
-
-model BookingUnit {
-  id         String   @id @default(uuid())
-  bookingId  String
-  unitId     String
-  createdAt  DateTime @default(now())
-  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  unit       Unit     @relation(fields: [unitId], references: [id], onDelete: Cascade)
-
-  @@unique([bookingId, unitId])
-  @@index([bookingId])
-  @@index([unitId])
-  @@map("booking_units")
-}
-
-// Transaction-related Models
-
-model Transaction {
-  id                String            @id @default(uuid())
-  type              TransactionType
-  amount            Decimal           @db.Decimal(18, 2)
-  currency          String            @default("NGN")
-  status            TransactionStatus @default(PENDING)
-  reference         String            @unique
-  description       String?
-  userId            String?
-  propertyId        String?
-  adId              String?
-  bookingId         String?
-  metadata          Json?
-  paymentMethod     String?
-  gateway           PaymentGateway?
-  gatewayRef        String?           @unique
-  failureReason     String?
-  processedAt       DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  user              User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
-  property          Property?         @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  ad                Ad?               @relation(fields: [adId], references: [id], onDelete: SetNull)
-  booking           Booking?          @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  refunds           Refund[]
-
-  @@map("transactions")
-}
-
-model Refund {
-  id            String       @id @default(uuid())
-  transactionId String
-  disputeId     String?
-  amount        Decimal     @db.Decimal(18, 2)
-  reason        String
-  status        RefundStatus @default(PENDING)
-  processedBy   String?
-  processedAt   DateTime?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  transaction   Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  dispute       Dispute?     @relation(fields: [disputeId], references: [id], onDelete: SetNull)
-  processor     User?        @relation("ProcessedRefunds", fields: [processedBy], references: [id], onDelete: SetNull)
-
-  @@map("refunds")
-}
-
-model Dispute {
-  id            String        @id @default(uuid())
-  bookingId     String
-  initiatorId   String
-  reason        String
-  content       String
-  description   String
-  status        DisputeStatus @default(PENDING)
-  resolution    String?
-  resolvedAt    DateTime?
-  resolvedBy    String?
-  parentDispute String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  initiator     User          @relation("InitiatedDisputes", fields: [initiatorId], references: [id], onDelete: Cascade)
-  refunds       Refund[]
-  parent        Dispute?      @relation("DisputeHierarchy", fields: [parentDispute], references: [id], onDelete: SetNull)
-  children      Dispute[]     @relation("DisputeHierarchy")
-  notifications Notification[]
-
-  @@map("disputes")
-}
-
-// Content-related Models
-model Content {
-  id             String          @id @default(uuid())
-  title          String
-  slug           String          @unique
-  content        String
-  excerpt        String?
-  type           ContentType     @default(PAGE)
-  status         ContentStatus   @default(DRAFT)
-  category       String?
-  tags           String[]
-  metadata       Json?
-  featured       Boolean         @default(false)
-  featuredImage  String?
-  featuredImageAlt String?
-  seoTitle       String?
-  seoDescription String?
-  seoKeywords    String[]
-  allowComments  Boolean         @default(true)
-  viewCount      Int             @default(0)
-  publishedAt    DateTime?
-  authorId       String
-  updatedById    String?
-  author         User            @relation("ContentAuthor", fields: [authorId], references: [id])
-  updatedBy      User?           @relation("ContentUpdatedBy", fields: [updatedById], references: [id])
-  versions       ContentVersion[]
-  comments       Comment[]       @relation("ContentComments") // Added relation name
-  disputes       ContentDispute[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  deletedAt      DateTime?
-  version        Int             @default(1)
-
-  @@map("content")
-}
-
-model ContentVersion {
-  id          String        @id @default(uuid())
-  contentId   String
-  version     Int
-  title       String
-  contentText String
-  excerpt     String?
-  type        ContentType
-  status      ContentStatus
-  metadata    Json?
-  updatedById String?
-  updatedBy   User?         @relation("ContentVersionUpdatedBy", fields: [updatedById], references: [id])
-  updatedAt   DateTime      @default(now())
-  deletedAt   DateTime?
-  content     Content       @relation(fields: [contentId], references: [id])
-
-  @@unique([contentId, version])
-  @@map("content_versions")
-}
-
-model ContentDispute {
-  id           String       @id @default(uuid())
-  title        String
-  description  String
-  type         DisputeType
-  status       DisputeStatus @default(OPEN)
-  contentId    String?
-  reportedById String
-  assignedToId String?
-  resolvedById String?
-  evidence     Json?        @default("{}")
-  resolution   String?
-  resolvedAt   DateTime?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  content      Content?     @relation(fields: [contentId], references: [id])
-  reportedBy   User         @relation("InitiatedContentDisputes", fields: [reportedById], references: [id])
-  assignedTo   User?        @relation("AssignedContentDisputes", fields: [assignedToId], references: [id])
-  resolvedBy   User?        @relation("ResolvedContentDisputes", fields: [resolvedById], references: [id])
-
-  @@index([status])
-  @@index([reportedById])
-  @@index([assignedToId])
-  @@index([contentId])
-  @@map("content_disputes")
-}
-
-model Comment {
-  id        String    @id @default(uuid())
-  contentId String
-  userId    String
-  text      String
-  parentId  String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  content   Content   @relation("ContentComments", fields: [contentId], references: [id], onDelete: Cascade) // Relation name matches
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
-  replies   Comment[] @relation("CommentReplies")
-
-  @@map("comments")
-}
-model FAQ {
-  id        String   @id @default(uuid())
-  question  String
-  answer    String
-  category  String
-  order     Int      @default(0)
-  isActive  Boolean  @default(true)
-  updatedBy String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  updater   User     @relation("FAQUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
-
-  @@map("faqs")
-}
-
-model ContentPage {
-  id        String        @id @default(uuid())
-  slug      String        @unique
-  title     String
-  content   String
-  type      ContentType
-  status    ContentStatus @default(DRAFT)
-  isPublic  Boolean       @default(false)
-  seoTitle  String?
-  seoDesc   String?
-  updatedBy String
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  updater   User          @relation("ContentUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
-
-  @@index([slug])
-  @@map("content_pages")
-}
-
-// Messaging-related Models
-model Conversation {
-  id           String             @id @default(uuid())
-  propertyId   String?
-  isActive     Boolean            @default(true)
-  createdAt    DateTime           @default(now())
-  updatedAt    DateTime           @updatedAt
-  property     Property?          @relation("ConversationProperty", fields: [propertyId], references: [id], onDelete: SetNull)
-  participants UserConversation[]
-  messages     Message[]
-
-  @@map("conversations")
-}
-
-model UserConversation {
-  id             String       @id @default(uuid())
-  userId         String
-  conversationId String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  lastReadAt     DateTime?
-  isArchived     Boolean      @default(false)
-  isMuted        Boolean      @default(false)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  @@unique([userId, conversationId])
-  @@map("user_conversations")
-}
-
-model Message {
-  id             String       @id @default(uuid())
-  conversationId String
-  senderId       String
-  content        String
-  messageType    MessageType  @default(TEXT)
-  attachments    String[]     @default([])
-  isRead         Boolean      @default(false)
-  isBroadcast    Boolean      @default(false)
-  broadcastId    String?
-  propertyId     String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  property       Property?    @relation("MessageProperty", fields: [propertyId], references: [id], onDelete: SetNull)
-
-  @@index([conversationId])
-  @@index([senderId])
-  @@index([broadcastId])
-  @@map("messages")
-}
-
-model BroadcastMessage {
-  id              String     @id @default(uuid())
-  content         String
-  messageType     MessageType @default(TEXT)
-  senderId        String
-  recipientRoles  RoleEnum[]
-  totalRecipients Int
-  attachments     String[]   @default([])
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  sender          User       @relation("BroadcastMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  recipients      User[]     @relation("BroadcastRecipients")
-
-  @@index([senderId])
-  @@map("broadcast_messages")
-}
-
-// Ad-related Models
-model Ad {
-  id           String        @id @default(uuid())
-  title        String
-  description  String?
-  imageUrl     String
-  targetUrl    String
-  position     AdPosition
-  type         AdType        @default(STANDARD)
-  status       AdStatus      @default(PENDING)
-  startDate    DateTime
-  endDate      DateTime
-  budget       Float?
-  costPerClick Float?
-  isActive     Boolean       @default(false)
-  createdBy    String
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  creator      User          @relation(fields: [createdBy], references: [id], onDelete: Cascade)
-  transactions Transaction[]
-  analytics    AdAnalytics[]
-  interactions AdInteraction[]
-
-  @@index([position, isActive, startDate, endDate])
-  @@index([createdBy])
-  @@map("ads")
-}
-
-model AdAnalytics {
-  id          String   @id @default(uuid())
-  adId        String
-  date        DateTime @db.Date
-  impressions Int      @default(0)
-  clicks      Int      @default(0)
-  conversions Int      @default(0)
-  revenue     Float    @default(0)
-  createdAt   DateTime @default(now())
-  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
-
-  @@unique([adId, date])
-  @@map("ad_analytics")
-}
-
-model AdInteraction {
-  id        String    @id @default(uuid())
-  adId      String
-  userId    String?
-  type      String
-  createdAt DateTime  @default(now())
-  ad        Ad        @relation(fields: [adId], references: [id], onDelete: Cascade)
-  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  @@map("ad_interactions")
-}
-
-// System-related Models
-model PlatformSetting {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       Json
-  description String?
-  updatedBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  updater     User     @relation("SettingUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
-
-  @@map("platform_settings")
-}
-
-model EmailTemplate {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  subject   String
-  content   String
-  updatedBy String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  updater   User     @relation("TemplateUpdates", fields: [updatedBy], references: [id], onDelete: Cascade)
-
-  @@map("email_templates")
-}
-
-model AdminActionLog {
-  id        String   @id @default(uuid())
-  adminId   String
-  action    String
-  data      Json?
-  createdAt DateTime @default(now())
-  admin     User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
-
-  @@map("admin_action_logs")
-}
-
-model AuditLog {
-  id         String    @id @default(uuid())
-  userId     String?
-  action     String
-  resource   String
-  resourceId String?
-  oldValues  Json?
-  newValues  Json?
-  ipAddress  String?
-  userAgent  String?
-  metadata   Json?
-  createdAt  DateTime  @default(now())
-  user       User?     @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
-  property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  propertyId String?
-  booking    Booking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  bookingId  String?
-
-  @@index([userId])
-  @@index([resource, resourceId])
-  @@index([action])
-  @@index([createdAt])
-  @@map("audit_logs")
-}
-
-model Notification {
-  id         String           @id @default(uuid())
-  userId     String
-  title      String
-  message    String
-  type       NotificationType
-  data       Json?
-  isRead     Boolean          @default(false)
-  propertyId String?
-  bookingId  String?
-  disputeId  String?
-  createdAt  DateTime         @default(now())
-  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  property   Property?        @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  booking    Booking?         @relation(fields: [bookingId], references: [id], onDelete: SetNull)
-  dispute    Dispute?         @relation(fields: [disputeId], references: [id], onDelete: SetNull)
-
-  @@map("notifications")
 }

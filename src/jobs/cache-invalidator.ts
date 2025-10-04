@@ -5,7 +5,7 @@ import { logger } from "../utils";
 // Run every hour to clean up expired cache entries
 cron.schedule("0 * * * *", async () => {
   try {
-    logger.info("Running cache invalidation job...");
+    // logger.info("Running cache invalidation job...");
     
     // Get all cache keys with TTL
     const keys = await redis.keys("*");
@@ -25,7 +25,7 @@ cron.schedule("0 * * * *", async () => {
       }
     }
     
-    logger.info(`Cache invalidation complete. Removed ${expiredCount} expired entries.`);
+    // logger.info(`Cache invalidation complete. Removed ${expiredCount} expired entries.`);
     
     // Clear any expired sessions (if using Redis for sessions)
     // This is just an example - adjust based on your session implementation

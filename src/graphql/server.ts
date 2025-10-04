@@ -6,6 +6,11 @@ import { Server } from "http";
 import { Context } from "../types";
 import { appConfig } from "../config";
 import { logger } from "../utils";
+import { processRequest } from 'graphql-upload-ts';
+
+// Increase the body size limit for file uploads
+const maxFileSize = 50 * 1024 * 1024; // 50MB
+const maxFiles = 21;
 
 export async function createApolloServer(
   schema: GraphQLSchema,
@@ -18,6 +23,10 @@ export async function createApolloServer(
       : [],
     introspection: appConfig.isDevelopment,
     includeStacktraceInErrorResponses: appConfig.isDevelopment,
+    // Configure Apollo Server for file uploads
+    csrfPrevention: true,
+    cache: 'bounded',
+    allowBatchedHttpRequests: true,
     formatError: (err) => {
       const originalError =
         (err instanceof GraphQLError && err.originalError) || undefined;

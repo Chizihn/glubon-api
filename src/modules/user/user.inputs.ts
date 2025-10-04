@@ -42,16 +42,18 @@ export class ChangePasswordInput {
   newPassword: string;
 }
 
+import { FileUpload, GraphQLUpload } from 'graphql-upload-ts';
+
 @InputType()
 export class SubmitIdentityVerificationInput {
   @Field(() => DocumentType)
-  documentType: DocumentType; // You might want to create an enum for this
+  documentType: DocumentType;
 
-  @Field(() => [String])
+  @Field(() => String)
   documentNumber: string;
 
-  @Field(() => [String])
-  documentImages: string[];
+  @Field(() => [GraphQLUpload], { description: 'Array of document images (max 3)' })
+  documentImages: FileUpload[];
 }
 
 @InputType()

@@ -7,9 +7,8 @@ import {
   UseMiddleware,
 } from "type-graphql";
 import type { Context } from "../../types/context";
-import { prisma } from "../../config/database";
-import redis from "../../config/redis";
-import { AuthMiddleware } from "../../middleware";
+import { getContainer } from "../../services";
+import { SettingsService } from "../../services/setting";
 import {
   UserSetting,
   PlatformSetting,
@@ -26,15 +25,19 @@ import {
   Prisma,
   ProviderEnum,
   UserStatus,
+  PrismaClient,
 } from "@prisma/client";
-import { SettingsService } from "../../services/setting";
+import { AuthMiddleware } from "../../middleware/auth";
 
 @Resolver()
 export class SettingsResolver {
   private settingsService: SettingsService;
+  private prisma: PrismaClient;
 
   constructor() {
-    this.settingsService = new SettingsService(prisma, redis);
+    const container = getContainer();
+    this.settingsService = container.resolve('settingsService');
+    this.prisma = container.getPrisma();
   }
 
   @Query(() => UserSetting, { nullable: true })
@@ -91,8 +94,8 @@ export class SettingsResolver {
       ];
     }
 
-    const [settings, totalCount] = await prisma.$transaction([
-      prisma.platformSetting.findMany({
+    const [settings, totalCount] = await this.prisma.$transaction([
+      this.prisma.platformSetting.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
@@ -124,7 +127,7 @@ export class SettingsResolver {
           },
         },
       }),
-      prisma.platformSetting.count({ where }),
+      this.prisma.platformSetting.count({ where }),
     ]);
 
     // Convert the raw database result to PlatformSetting objects

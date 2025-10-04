@@ -4,11 +4,6 @@ import {
   PrismaClient,
   Property,
   PropertyStatus,
-  PropertyType,
-  RoomType,
-  RentalPeriod,
-  PropertyListingType,
-  DayOfWeek,
   User,
   RoleEnum,
 } from "@prisma/client";
@@ -52,14 +47,17 @@ export class PropertyService extends BaseService {
     files?: any[]
   ): Promise<IBaseResponse<Property>> {
     try {
+      // console.log('🏠 PROPERTY SERVICE: createProperty started');
+      // console.log('Files received:', files?.length || 0);
+      
       const user = await this.prisma.user.findUnique({
         where: { id: ownerId },
       });
-
+  
       if (!user || user.role !== RoleEnum.LISTER) {
         return this.failure("Only property owners can create properties");
       }
-
+  
       // Validate property and unit configuration
       const validation = await this.validator.validatePropertyCreation(input);
       if (!validation.isValid) {
@@ -67,26 +65,65 @@ export class PropertyService extends BaseService {
           `Validation failed: ${validation.errors.join(", ")}`
         );
       }
-
+  
       let s3UploadResult: any = {};
+      
+      // IMPROVED FILE HANDLING
       if (files && files.length > 0) {
-        const mappedFiles = await this.mapGraphQLFilesToS3Files(files);
-        const uploadRes = await this.s3Service.uploadFiles(
-          mappedFiles,
-          ownerId,
-          "properties"
-        );
-        if (!uploadRes.success || !uploadRes.data) {
-          return this.failure(uploadRes.message);
+        // console.log('📁 PROPERTY SERVICE: Processing files...');
+    
+        
+        try {
+          // Wait for all promises to resolve first
+          const resolvedFiles = await Promise.all(files.map(async (file) => {
+            if (file instanceof Promise) {
+              // console.log('⏳ Resolving file promise...');
+              return await file;
+            }
+            return file;
+          }));
+          
+          // console.log('✅ All file promises resolved');
+      
+          
+          // Map the resolved files
+          const mappedFiles = await this.s3Service.mapGraphQLFilesToS3Files(resolvedFiles);
+          // console.log('✅ Files mapped successfully:', mappedFiles.length);
+          
+          const uploadRes = await this.s3Service.uploadFiles(
+            mappedFiles,
+            ownerId,
+            "properties"
+          );
+          
+          if (!uploadRes.success) {
+            console.error('❌ S3 upload failed:', uploadRes.message);
+            console.error('Upload errors:', uploadRes.errors);
+            return this.failure(`File upload failed: ${uploadRes.message}`);
+          }
+          
+          if (!uploadRes.data || uploadRes.data.length === 0) {
+            // console.error('❌ No upload data returned');
+            return this.failure('File upload completed but no data returned');
+          }
+          
+          // console.log('✅ S3 upload successful:', uploadRes.data.length, 'files');
+          s3UploadResult = this.organizeS3Uploads(uploadRes.data);
+          console.log('📦 Organized S3 results:', Object.keys(s3UploadResult));
+          
+        } catch (fileError) {
+          console.error('❌ File processing error:', fileError);
+          return this.failure(`File upload failed: ${fileError instanceof Error ? fileError.message : 'Unknown error'}`);
         }
-        s3UploadResult = this.organizeS3Uploads(uploadRes.data);
+      } else {
+        console.log('ℹ️ No files to process');
       }
-
+  
       const coordinates = await this.getCoordinatesFromAddress(
         `${input.address}, ${input.city}, ${input.state}, Nigeria`
       );
-
-      // Use transaction to create property and units together
+  
+      // Continue with property creation...
       const result = await this.prisma.$transaction(async (tx) => {
         const property = await this.repository.create(
           {
@@ -102,7 +139,7 @@ export class PropertyService extends BaseService {
             country: "Nigeria",
             status: PropertyStatus.PENDING_REVIEW,
             isStandalone: (input as any).isStandalone ?? false,
-            totalUnits: 0, // Will be updated after units are created
+            totalUnits: 0,
             availableUnits: 0,
             owner: {
               connect: { id: ownerId },
@@ -110,12 +147,11 @@ export class PropertyService extends BaseService {
           },
           tx
         );
-
-        // Handle unit creation based on property type
+  
+        // Handle unit creation logic...
         const inputWithUnits = input as any;
-
+  
         if (inputWithUnits.units && inputWithUnits.units.length > 0) {
-          // Create specific units
           for (const unitInput of inputWithUnits.units) {
             await this.unitRepository.create(
               {
@@ -126,7 +162,6 @@ export class PropertyService extends BaseService {
             );
           }
         } else if (inputWithUnits.isStandalone) {
-          // For standalone properties, create a single unit with property details
           await this.unitRepository.create(
             {
               propertyId: property.id,
@@ -145,9 +180,7 @@ export class PropertyService extends BaseService {
             tx
           );
         } else if (inputWithUnits.bulkUnits) {
-          // Handle bulk unit creation (e.g., "Unit A" with count 5)
-          const { unitTitle, unitCount, unitDetails } =
-            inputWithUnits.bulkUnits;
+          const { unitTitle, unitCount, unitDetails } = inputWithUnits.bulkUnits;
           for (let i = 1; i <= unitCount; i++) {
             await this.unitRepository.create(
               {
@@ -168,51 +201,104 @@ export class PropertyService extends BaseService {
             );
           }
         }
-
+  
         return property;
       });
-
+  
+      console.log('✅ PROPERTY SERVICE: Property created successfully');
       return this.success(result, "Property created successfully");
+      
     } catch (error) {
+      console.error('❌ PROPERTY SERVICE: Error in createProperty:', error);
       return this.handleError(error, "createProperty");
     }
   }
-
+  
   async updateProperty(
     id: string,
     ownerId: string,
     input: UpdatePropertyInput,
     files?: any[]
   ): Promise<IBaseResponse<Property>> {
+    console.log('🔄 PROPERTY SERVICE: updateProperty started');
+    
     try {
       let coordinates;
       let s3UploadResult: any = {};
+      
+      // Get existing property for reference
+      const existingProperty = await this.prisma.property.findFirst({
+        where: { id, ownerId },
+      });
+      
+      if (!existingProperty) {
+        console.error('❌ Property not found or access denied');
+        return this.failure("Property not found or access denied");
+      }
+      
+      // Update coordinates if address changed
       if (input.address || input.city || input.state) {
-        const existingProperty = await this.prisma.property.findFirst({
-          where: { id, ownerId },
-        });
-        if (!existingProperty) {
-          return this.failure("Property not found or access denied");
-        }
         const address = `${input.address || existingProperty.address}, ${
           input.city || existingProperty.city
         }, ${input.state || existingProperty.state}, Nigeria`;
         coordinates = await this.getCoordinatesFromAddress(address);
       }
-
+  
+      // Handle file uploads if any
       if (files && files.length > 0) {
-        const mappedFiles = await this.mapGraphQLFilesToS3Files(files);
-        const uploadRes = await this.s3Service.uploadFiles(
-          mappedFiles,
-          id,
-          "properties"
-        );
-        if (!uploadRes.success || !uploadRes.data) {
-          return this.failure(uploadRes.message);
+        console.log('📁 PROPERTY SERVICE: Processing files for update...');
+        console.log('Raw files structure:', JSON.stringify(files.map(f => ({
+          keys: Object.keys(f || {}),
+          isPromise: f instanceof Promise,
+          hasFile: !!f?.file,
+          filename: f?.filename || f?.originalname || f?.file?.filename || f?.file?.originalname
+        })), null, 2));
+        
+        try {
+          // Wait for all promises to resolve first
+          const resolvedFiles = await Promise.all(files.map(async (file) => {
+            if (file instanceof Promise) {
+              console.log('⏳ Resolving file promise for update...');
+              return await file;
+            }
+            return file;
+          }));
+          
+          console.log('✅ All file promises resolved for update');
+          
+          // Map the resolved files
+          const mappedFiles = await this.s3Service.mapGraphQLFilesToS3Files(resolvedFiles);
+          console.log('✅ Files mapped for update:', mappedFiles.length);
+          
+          const uploadRes = await this.s3Service.uploadFiles(
+            mappedFiles,
+            id,
+            "properties"
+          );
+          
+          if (!uploadRes.success) {
+            console.error('❌ S3 update upload failed:', uploadRes.message);
+            console.error('Upload errors:', uploadRes.errors);
+            return this.failure(`File upload failed: ${uploadRes.message}`);
+          }
+          
+          if (!uploadRes.data || uploadRes.data.length === 0) {
+            console.error('❌ No upload data returned for update');
+            return this.failure('File upload completed but no data returned');
+          }
+          
+          console.log('✅ S3 upload successful for update:', uploadRes.data.length, 'files');
+          s3UploadResult = this.organizeS3Uploads(uploadRes.data);
+          console.log('📦 Organized S3 results for update:', Object.keys(s3UploadResult));
+          
+        } catch (fileError) {
+          console.error('❌ File processing error during update:', fileError);
+          return this.failure(`File upload failed: ${fileError instanceof Error ? fileError.message : 'Unknown error'}`);
         }
-        s3UploadResult = this.organizeS3Uploads(uploadRes.data);
+      } else {
+        console.log('ℹ️ No files to process for update');
       }
-
+  
       const updateData: any = {
         ...input,
         ...s3UploadResult,
@@ -221,12 +307,12 @@ export class PropertyService extends BaseService {
         visitingTimeStart: input.visitingTimeStart ?? null,
         visitingTimeEnd: input.visitingTimeEnd ?? null,
       };
-
+  
       if (coordinates) {
         updateData.latitude = coordinates.latitude ?? null;
         updateData.longitude = coordinates.longitude ?? null;
       }
-
+  
       // Use transaction to update property and handle unit updates
       const result = await this.prisma.$transaction(async (tx) => {
         const updatedProperty = await this.repository.update(
@@ -235,10 +321,10 @@ export class PropertyService extends BaseService {
           updateData,
           tx
         );
-
+  
         // Handle unit updates if provided
         const inputWithUnits = input as any;
-
+  
         if (inputWithUnits.units && inputWithUnits.units.length > 0) {
           // Update existing units or create new ones
           for (const unitInput of inputWithUnits.units) {
@@ -257,18 +343,17 @@ export class PropertyService extends BaseService {
             }
           }
         }
-
+  
         if (inputWithUnits.bulkUnits) {
           // Handle bulk unit updates/creation
-          const { unitTitle, unitCount, unitDetails } =
-            inputWithUnits.bulkUnits;
-
+          const { unitTitle, unitCount, unitDetails } = inputWithUnits.bulkUnits;
+  
           // Get existing units for this property
           const existingUnits = await tx.unit.findMany({
             where: { propertyId: id },
             orderBy: { createdAt: "asc" },
           });
-
+  
           // Update existing units up to the count
           for (let i = 0; i < Math.min(unitCount, existingUnits.length); i++) {
             const unit = existingUnits[i];
@@ -278,8 +363,7 @@ export class PropertyService extends BaseService {
                 id,
                 {
                   title: `${unitTitle} ${i + 1}`,
-                  description:
-                    unitDetails.description || `${unitTitle} ${i + 1}`,
+                  description: unitDetails.description || `${unitTitle} ${i + 1}`,
                   amount: unitDetails.amount,
                   rentalPeriod: unitDetails.rentalPeriod,
                   sqft: unitDetails.sqft,
@@ -294,7 +378,7 @@ export class PropertyService extends BaseService {
               );
             }
           }
-
+  
           // Create additional units if needed
           for (let i = existingUnits.length; i < unitCount; i++) {
             await this.unitRepository.create(
@@ -321,7 +405,7 @@ export class PropertyService extends BaseService {
               tx
             );
           }
-
+  
           // Remove excess units if count is reduced (only if they're not rented)
           if (unitCount < existingUnits.length) {
             const unitsToRemove = existingUnits.slice(unitCount);
@@ -332,65 +416,17 @@ export class PropertyService extends BaseService {
             }
           }
         }
-
+  
         return updatedProperty;
       });
-
+  
+      console.log('✅ PROPERTY SERVICE: Property updated successfully');
       return this.success(result, "Property updated successfully");
+      
     } catch (error) {
+      console.error('❌ PROPERTY SERVICE: Error in updateProperty:', error);
       return this.handleError(error, "updateProperty");
     }
-  }
-
-  private async mapGraphQLFilesToS3Files(files: any[]): Promise<FileUpload[]> {
-    return Promise.all(
-      files.map(async (file: any) => {
-        try {
-          const { createReadStream, filename, mimetype, encoding } = await file;
-          const stream = createReadStream();
-          const chunks: Buffer[] = [];
-
-          // Read the stream into a buffer
-          for await (const chunk of stream) {
-            chunks.push(Buffer.from(chunk));
-          }
-          const buffer = Buffer.concat(chunks);
-
-          // Get file type and category
-          const fileType = this.getFileType(mimetype);
-          const category = this.getFileCategory(filename);
-
-          // Create a file object that matches our S3 service expectations
-          const fileObj: any = {
-            buffer,
-            originalname: filename,
-            mimetype,
-            size: buffer.length,
-            fieldname: "file",
-            encoding,
-            destination: "",
-            filename,
-            path: "",
-          };
-
-          // Add stream only if needed
-          if (stream) {
-            fileObj.stream = stream;
-          }
-
-          return {
-            file: fileObj,
-            type: fileType,
-            category,
-          };
-        } catch (error: any) {
-          console.error("Error processing file:", error);
-          throw new Error(
-            `Failed to process file: ${error?.message || "Unknown error"}`
-          );
-        }
-      })
-    );
   }
 
   async searchPropertiesOnMap(
@@ -426,7 +462,7 @@ export class PropertyService extends BaseService {
         AND: [
           { latitude: { gte: latMin, lte: latMax } },
           { longitude: { gte: lngMin, lte: lngMax } },
-          { status: "APPROVED" }, // Only show approved properties
+          { status: "ACTIVE" }, 
         ],
       };
 
@@ -577,81 +613,106 @@ export class PropertyService extends BaseService {
     return deg * (Math.PI / 180);
   }
 
-  private getFileType(mimetype: string): "image" | "video" | "document" {
-    if (mimetype.startsWith("image/")) return "image";
-    if (mimetype.startsWith("video/")) return "video";
-    if (mimetype === "application/pdf") return "document";
-    throw new Error("Invalid file type");
-  }
+  // private getFileType(mimetype: string): "image" | "video" | "document" {
+  //   if (mimetype.startsWith("image/")) return "image";
+  //   if (mimetype.startsWith("video/")) return "video";
+  //   if (mimetype === "application/pdf") return "document";
+  //   throw new Error("Invalid file type");
+  // }
 
-  private getFileCategory(
-    filename: string
-  ):
-    | "property"
-    | "livingRoom"
-    | "bedroom"
-    | "bathroom"
-    | "ownership"
-    | "plan"
-    | "dimension" {
-    if (filename.includes("living")) return "livingRoom";
-    if (filename.includes("bedroom")) return "bedroom";
-    if (filename.includes("bathroom")) return "bathroom";
-    if (filename.includes("ownership")) return "ownership";
-    if (filename.includes("plan")) return "plan";
-    if (filename.includes("dimension")) return "dimension";
-    return "property";
-  }
+  // private getFileCategory(
+  //   filename: string
+  // ):
+  //   | "property"
+  //   | "livingRoom"
+  //   | "bedroom"
+  //   | "bathroom"
+  //   | "ownership"
+  //   | "plan"
+  //   | "dimension" {
+  //   if (filename.includes("living")) return "livingRoom";
+  //   if (filename.includes("bedroom")) return "bedroom";
+  //   if (filename.includes("bathroom")) return "bathroom";
+  //   if (filename.includes("ownership")) return "ownership";
+  //   if (filename.includes("plan")) return "plan";
+  //   if (filename.includes("dimension")) return "dimension";
+  //   return "property";
+  // }
 
   private organizeS3Uploads(
-    uploadResults: { url: string; key: string }[]
+    uploadResults: Array<{ url: string; key: string; type: string; category: string }>
   ): any {
     const result: any = {};
+    
+    console.log('Organizing S3 uploads:', JSON.stringify(uploadResults, null, 2));
+    
     for (const upload of uploadResults) {
-      const parts = upload.key.split("/");
-      const category = parts[parts.length - 2];
+      const { url, key, type, category } = upload;
       
-      // Check if this is a video file (key contains 'video' or mimetype is video)
-      const isVideo = upload.key.toLowerCase().includes('video') || 
-                     upload.url.toLowerCase().includes('video') ||
-                     (upload as any).mimetype?.startsWith('video/');
+      console.log(`Processing upload - Type: ${type}, Category: ${category}, URL: ${url}`);
       
-      if (isVideo) {
-        // For video files, we set the video URL directly
-        result.video = upload.url;
+      // Handle video files
+      if (type === 'video') {
+        console.log(`Setting video URL: ${url}`);
+        result.video = url;
         continue;
       }
       
-      // Handle other file types
+      // Handle document types
+      if (type === 'document') {
+        switch (category) {
+          case 'ownership':
+            result.propertyOwnershipDocs = result.propertyOwnershipDocs || [];
+            result.propertyOwnershipDocs.push(url);
+            console.log(`Added to propertyOwnershipDocs: ${url}`);
+            break;
+          case 'plan':
+            result.propertyPlanDocs = result.propertyPlanDocs || [];
+            result.propertyPlanDocs.push(url);
+            console.log(`Added to propertyPlanDocs: ${url}`);
+            break;
+          case 'dimension':
+            result.propertyDimensionDocs = result.propertyDimensionDocs || [];
+            result.propertyDimensionDocs.push(url);
+            console.log(`Added to propertyDimensionDocs: ${url}`);
+            break;
+          default:
+            // For other document types, add to a generic docs array
+            result.documents = result.documents || [];
+            result.documents.push({ url, category, type });
+            console.log(`Added to generic documents: ${url} (${category})`);
+        }
+        continue;
+      }
+      
+      // Handle images (default case)
       switch (category) {
-        case "property":
+        case 'property':
+        case 'images':
           result.images = result.images || [];
-          result.images.push(upload.url);
+          result.images.push(url);
+          console.log(`Added to images: ${url}`);
           break;
-        case "livingRoom":
+        case 'livingRoom':
           result.livingRoomImages = result.livingRoomImages || [];
-          result.livingRoomImages.push(upload.url);
+          result.livingRoomImages.push(url);
+          console.log(`Added to livingRoomImages: ${url}`);
           break;
-        case "bedroom":
+        case 'bedroom':
           result.bedroomImages = result.bedroomImages || [];
-          result.bedroomImages.push(upload.url);
+          result.bedroomImages.push(url);
+          console.log(`Added to bedroomImages: ${url}`);
           break;
-        case "bathroom":
+        case 'bathroom':
           result.bathroomImages = result.bathroomImages || [];
-          result.bathroomImages.push(upload.url);
+          result.bathroomImages.push(url);
+          console.log(`Added to bathroomImages: ${url}`);
           break;
-        case "ownership":
-          result.propertyOwnershipDocs = result.propertyOwnershipDocs || [];
-          result.propertyOwnershipDocs.push(upload.url);
-          break;
-        case "plan":
-          result.propertyPlanDocs = result.propertyPlanDocs || [];
-          result.propertyPlanDocs.push(upload.url);
-          break;
-        case "dimension":
-          result.propertyDimensionDocs = result.propertyDimensionDocs || [];
-          result.propertyDimensionDocs.push(upload.url);
-          break;
+        default:
+          // For any other category, use the category name directly
+          result[category] = result[category] || [];
+          result[category].push(url);
+          console.log(`Added to ${category}: ${url}`);
       }
     }
     return result;
@@ -695,19 +756,19 @@ export class PropertyService extends BaseService {
     user?: User
   ): Promise<IBaseResponse<PropertyWithDetails>> {
     try {
-      logger.info(
-        `Service: Getting property ${id} for user ${
-          user?.id || "anonymous"
-        } with role ${user?.role || "none"}`
-      );
+      // logger.info(
+      //   `Service: Getting property ${id} for user ${
+      //     user?.id || "anonymous"
+      //   } with role ${user?.role || "none"}`
+      // );
 
       const property = await this.repository.findById(id, user);
       if (!property) {
-        logger.info(`Service: Property ${id} not found`);
+        // logger.info(`Service: Property ${id} not found`);
         return this.failure("Property not found");
       }
 
-      logger.info(`Service: Property ${id} retrieved successfully`);
+      // logger.info(`Service: Property ${id} retrieved successfully`);
       return this.success(property, "Property retrieved successfully");
     } catch (error) {
       logger.error(`Service: Error getting property ${id}:`, error);
@@ -971,7 +1032,7 @@ export class PropertyService extends BaseService {
     address: string
   ): Promise<{ latitude: number; longitude: number } | null> {
     try {
-      logger.info(`Geocoding address: ${address}`);
+      // logger.info(`Geocoding address: ${address}`);
       return null; // Placeholder for geocoding logic
     } catch (error) {
       logger.warn("Failed to geocode address:", error);

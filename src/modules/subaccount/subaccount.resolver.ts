@@ -8,10 +8,10 @@ import {
   ID,
 } from "type-graphql";
 import { Context } from "../../types/context";
+import { getContainer } from "../../services";
 import { SubaccountService } from "../../services/subaccount";
 import { PaystackService } from "../../services/payment";
 import { AuthMiddleware, RequireRole } from "../../middleware";
-import { prisma, redis,  } from "../../config";
 import { RoleEnum } from "@prisma/client";
 import {
   Subaccount,
@@ -34,8 +34,10 @@ export class SubaccountResolver {
   private paystackService: PaystackService;
 
   constructor() {
-    this.subaccountService = new SubaccountService(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis);
+        const container = getContainer();
+    
+    this.subaccountService = container.resolve('subaccountService');
+    this.paystackService = container.resolve('paystackService');
   }
 
   @Query(() => Subaccount, { nullable: true })

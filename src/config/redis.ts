@@ -14,7 +14,7 @@ const redisConfig = {
 export const redis = new Redis(redisConfig);
 
 redis.on("connect", () => {
-  logger.info("✅ Redis connected successfully");
+  // logger.info("✅ Redis connected successfully");
 });
 
 redis.on("error", (error) => {

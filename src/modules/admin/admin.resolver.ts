@@ -10,8 +10,7 @@ import {
 import type { Context } from "../../types/context";
 import { RoleEnum, UserStatus } from "@prisma/client";
 import { BaseResponse } from "../../types/responses";
-import { prisma } from "../../config/database";
-import redis from "../../config/redis";
+import { getContainer } from "../../services";
 import { AuthMiddleware, RequireRole } from "../../middleware";
 import {
   PaginatedLogsResponse,
@@ -62,11 +61,14 @@ export class AdminResolver {
   private adminStatsService: AdminStatsService;
   private adminUsersService: AdminUsersService;
   private adminPropertyService: AdminPropertyService;
+  private userService: any;
 
   constructor() {
-    this.adminStatsService = new AdminStatsService(prisma, redis);
-    this.adminUsersService = new AdminUsersService(prisma, redis);
-    this.adminPropertyService = new AdminPropertyService(prisma, redis);
+    const container = getContainer();
+    this.adminUsersService = container.resolve('adminUserService');
+    this.adminStatsService = container.resolve('adminStatsService');
+    this.adminPropertyService = container.resolve('adminPropertyService');
+    this.userService = container.resolve('userService');
   }
 
   @Query(() => RecentDataResponse, { description: 'Get recent activities and transactions' })

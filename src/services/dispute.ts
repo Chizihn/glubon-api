@@ -1,4 +1,4 @@
-import { DisputeStatus, PrismaClient } from "@prisma/client";
+import { BookingStatus, DisputeStatus, PrismaClient } from "@prisma/client";
 import { Redis } from "ioredis";
 import { NotFoundError } from "../utils";
 import { BaseService } from "./base";
@@ -74,7 +74,7 @@ export class DisputeService extends BaseService {
       if (!booking || booking.renterId !== initiatorId)
         return this.failure("Invalid booking");
 
-      if (booking.status === "DISPUTED")
+      if (booking.status === BookingStatus.DISPUTED)
         return this.failure("Booking already disputed");
 
       return await this.prisma.$transaction(async (tx) => {
@@ -103,7 +103,7 @@ export class DisputeService extends BaseService {
 
         await tx.booking.update({
           where: { id: data.bookingId },
-          data: { status: "DISPUTED" },
+          data: { status: BookingStatus.DISPUTED },
         });
 
         // Notify initiator
@@ -199,11 +199,15 @@ export class DisputeService extends BaseService {
             throw new Error("Refund amount exceeds booking amount");
           }
 
-          // Find the main payment transaction
+          // Find the main payment transaction (check all payment types)
           const paymentTx = booking.transactions.find(
-            (t) => t.type === "RENT_PAYMENT" && t.status === "COMPLETED"
+            (t) => ["RENT_PAYMENT", "LEASE_PAYMENT", "SALE_PAYMENT"].includes(t.type) && 
+                  t.status === "COMPLETED"
           );
-          if (!paymentTx) throw new Error("No completed payment transaction found");
+          
+          if (!paymentTx) {
+            throw new Error("No completed payment transaction found for this booking");
+          }
 
           // Create refund record
           const refundData = {

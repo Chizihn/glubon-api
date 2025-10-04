@@ -11,8 +11,9 @@ import {
 import { UserPresence, TypingStatus } from "./presence.types";
 import { pubSub, SUBSCRIPTION_EVENTS } from "../../utils/pubsub";
 import { Context } from "../../types/context";
-import { Services } from "../../services";
+import { getContainer } from "../../services";
 import { AuthMiddleware } from "../../middleware/auth";
+import { PresenceService } from "../../services/presence";
 
 type PubSubPayload = {
   [key: string]: any;
@@ -20,14 +21,12 @@ type PubSubPayload = {
 
 @Resolver()
 export class PresenceResolver {
-  private getPresenceService(services: Services | undefined) {
-    if (!services) {
-      throw new Error('Services are not available in the context');
-    }
-    if (!services.presenceService) {
-      throw new Error('PresenceService is not initialized in the services');
-    }
-    return services.presenceService;
+  private presenceService: PresenceService;
+
+  constructor() {
+        const container = getContainer();
+    
+    this.presenceService = container.resolve('presenceService');
   }
 
   @Query(() => UserPresence, { nullable: true })
@@ -36,8 +35,7 @@ export class PresenceResolver {
     @Arg("userId") userId: string,
     @Ctx() ctx: Context
   ) {
-    const presenceService = this.getPresenceService(ctx.services);
-    return presenceService.getUserPresence(userId);
+    return this.presenceService.getUserPresence(userId);
   }
 
   @Query(() => [UserPresence])
@@ -46,8 +44,7 @@ export class PresenceResolver {
     @Arg("userIds", () => [String]) userIds: string[],
     @Ctx() ctx: Context
   ) {
-    const presenceService = this.getPresenceService(ctx.services);
-    return presenceService.getBatchUserPresence(userIds);
+    return this.presenceService.getBatchUserPresence(userIds);
   }
 
   @Subscription(() => UserPresence, {
@@ -119,8 +116,7 @@ export class PresenceResolver {
       throw new Error("User not authenticated");
     }
     try {
-      const presenceService = this.getPresenceService(ctx.services);
-      await presenceService.userConnected(ctx.user.id, "heartbeat");
+      await this.presenceService.userConnected(ctx.user.id, "heartbeat");
       return true;
     } catch (error) {
       console.error('Error in heartbeat mutation:', error);

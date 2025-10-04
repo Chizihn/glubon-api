@@ -17,7 +17,11 @@ import {
   UpdateProfileInput,
   UsersSearchResponse,
 } from "./user.inputs";
+import { getContainer } from "../../services";
 import { UserService } from "../../services/user";
+import { AuthService } from "../../services/auth";
+import { OAuthService } from "../../services/oauth";
+import { NotificationService } from "../../services/notification";
 import { prisma, redis } from "../../config";
 import { AuthMiddleware, RequireRole } from "../../middleware";
 import { BaseResponse, Context } from "../../types";
@@ -29,10 +33,17 @@ import { PaystackService } from "../../services/payment";
 export class UserResolver {
   private userService: UserService;
   private paystackService: PaystackService;
+  private authService: AuthService;
+  private oAuthService: OAuthService;
+  private notificationService: NotificationService;
 
   constructor() {
-    this.userService = new UserService(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis)
+    const container = getContainer();
+    this.userService = container.resolve('userService');
+    this.authService = container.resolve('authService');
+    this.oAuthService = container.resolve('oAuthService');
+    this.notificationService = container.resolve('notificationService');
+    this.paystackService = container.resolve('paystackService');
   }
 
   @Query(() => User)
@@ -101,14 +112,30 @@ export class UserResolver {
     @Arg("input") input: SubmitIdentityVerificationInput,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.userService.submitIdentityVerification(
-      ctx.user!.id as string,
-      input
-    );
-    if (!result.success) {
-      throw new Error(result.message);
+    try {
+      // Process file uploads
+      const documentImages = await Promise.all(
+        input.documentImages.map(async (filePromise) => {
+          const file = await filePromise;
+          return file;
+        })
+      );
+
+      const result = await this.userService.submitIdentityVerification(
+        ctx.user!.id as string,
+        {
+          ...input,
+          documentImages
+        }
+      );
+      
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      return new BaseResponse(true, result.message);
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Failed to submit identity verification');
     }
-    return new BaseResponse(true, result.message);
   }
 
   @Query(() => IdentityVerificationStatusResponse)

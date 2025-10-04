@@ -70,7 +70,7 @@ cron.schedule("0 10 * * *", async () => {
       booking.property !== null
     );
 
-    logger.info(`Sending review reminders for ${completedBookings.length} completed bookings`);
+    // logger.info(`Sending review reminders for ${completedBookings.length} completed bookings`);
 
     for (const booking of completedBookings) {
       try {
@@ -92,7 +92,7 @@ cron.schedule("0 10 * * *", async () => {
         });
 
         if (existingReminder) {
-          logger.info(`Skipping booking ${booking.id} - reminder already sent`);
+          // logger.info(`Skipping booking ${booking.id} - reminder already sent`);
           continue;
         }
 
@@ -110,7 +110,7 @@ cron.schedule("0 10 * * *", async () => {
           })
         });
 
-        logger.info(`Sent review reminder for booking ${booking.id}`);
+        // logger.info(`Sent review reminder for booking ${booking.id}`);
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         logger.error(`Error sending review reminder for booking ${booking.id}:`, errorMessage);

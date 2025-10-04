@@ -34,3 +34,12 @@ export class RespondToBookingRequestInput {
   @Field()
   accept: boolean;
 }
+
+@InputType()
+export class VerifyPaymentInput {
+  @Field()
+  reference: string;
+
+  @Field(() => ID)
+  userId: string;
+}

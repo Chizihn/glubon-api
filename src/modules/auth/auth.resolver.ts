@@ -23,9 +23,9 @@ import {
   SetPasswordInput,
 } from "./auth.inputs";
 import { User } from "../user/user.types";
+import { getContainer } from "../../services";
 import { AuthService } from "../../services/auth";
 import { EmailService } from "../../services/email";
-import { prisma, redis } from "../../config";
 import { BaseResponse, Context } from "../../types";
 import { AuthMiddleware } from "../../middleware";
 import { registerSchema } from "../../validators";
@@ -38,8 +38,10 @@ export class AuthResolver {
   private emailService: EmailService;
 
   constructor() {
-    this.emailService = new EmailService(prisma, redis);
-    this.authService = new AuthService(prisma, redis);
+        const container = getContainer();
+    
+    this.authService = container.resolve('authService');
+    this.emailService = container.resolve('emailService');
   }
 
   @Mutation(() => AuthResponse)

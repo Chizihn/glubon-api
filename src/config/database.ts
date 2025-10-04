@@ -21,7 +21,7 @@ if (process.env.NODE_ENV === "production") {
 prisma
   .$connect()
   .then(() => {
-    logger.info("✅ Database connected successfully");
+    // logger.info("✅ Database connected successfully");
   })
   .catch((error: unknown) => {
     logger.error("❌ Database connection failed:", error);

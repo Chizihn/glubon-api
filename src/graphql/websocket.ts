@@ -75,7 +75,7 @@ export async function createWebSocketServer(
           const userId = (ctx.extra?.user as any)?.id;
           if (userId) {
             await presenceService.userDisconnected(userId);
-            logger.info(`User ${userId} disconnected from WebSocket`);
+            // logger.info(`User ${userId} disconnected from WebSocket`);
           }
         } catch (error) {
           logger.error("Error in onDisconnect:", error);

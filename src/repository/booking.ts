@@ -4,6 +4,21 @@ import { BaseRepository } from "./base";
 import { Decimal } from "@prisma/client/runtime/library";
 
 export class BookingRepository extends BaseRepository {
+  async update(
+    id: string, 
+    data: Prisma.BookingUpdateInput
+  ): Promise<Booking> {
+    return this.prisma.booking.update({
+      where: { id },
+      data,
+      include: {
+        renter: true,
+        property: true,
+        transactions: true,
+        units: { include: { unit: true } }
+      }
+    });
+  }
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
   }
@@ -226,7 +241,7 @@ export class BookingRepository extends BaseRepository {
       throw new Error('This booking is not awaiting approval');
     }
 
-    const status = accepted ? BookingStatus.PENDING_PAYMENT : BookingStatus.DECLINED;
+    const status = accepted ? BookingStatus.PENDING_PAYMENT : BookingStatus.REJECTED;
     
     const updatedBooking = await this.prisma.booking.update({
       where: { id },

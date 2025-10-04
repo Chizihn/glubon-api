@@ -1,4 +1,4 @@
-import { PrismaClient, BookingStatus, TransactionStatus } from '@prisma/client';
+import { PrismaClient, BookingStatus, TransactionStatus, UnitStatus } from '@prisma/client';
 import { ServiceResponse } from '../types/responses';
 import { logger } from '../utils/logger';
 
@@ -32,7 +32,7 @@ export class ExpiredBookingWorker {
       });
     }, this.checkInterval);
 
-    logger.info('ExpiredBookingWorker started');
+    // logger.info('ExpiredBookingWorker started');
   }
 
   /**
@@ -42,7 +42,7 @@ export class ExpiredBookingWorker {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      logger.info('ExpiredBookingWorker stopped');
+      // logger.info('ExpiredBookingWorker stopped');
     }
   }
 
@@ -57,10 +57,15 @@ export class ExpiredBookingWorker {
       // Find all PENDING_PAYMENT bookings older than 48 hours
       const expiredBookings = await this.prisma.booking.findMany({
         where: {
-          status: BookingStatus.PENDING_PAYMENT,
-          updatedAt: {
-            lt: fortyEightHoursAgo,
-          },
+          AND: [
+            { status: BookingStatus.PENDING_PAYMENT },
+            {
+              OR: [
+                { updatedAt: { lt: fortyEightHoursAgo } },
+                { requestedAt: { lt: fortyEightHoursAgo } } // Fallback to requestedAt if updatedAt is not available
+              ]
+            }
+          ]
         },
         include: {
           transactions: {
@@ -68,6 +73,7 @@ export class ExpiredBookingWorker {
               status: TransactionStatus.PENDING,
             },
           },
+          units: true
         },
       });
 
@@ -81,6 +87,15 @@ export class ExpiredBookingWorker {
             where: { id: booking.id },
             data: { status: BookingStatus.CANCELLED },
           });
+
+          if (booking.units.length > 0) {
+             for (const bookingUnit of booking.units) {
+                        await tx.unit.update({
+                          where: { id: bookingUnit.id },
+                          data: { status: UnitStatus.AVAILABLE },
+                        });
+          }
+        }
 
           // Update all PENDING transactions to CANCELLED
           if (booking.transactions.length > 0) {
@@ -98,7 +113,7 @@ export class ExpiredBookingWorker {
         });
 
         expiredCount++;
-        logger.info(`Expired booking ${booking.id} due to non-payment`);
+        // logger.info(`Expired booking ${booking.id} due to non-payment`);
       }
 
       return {

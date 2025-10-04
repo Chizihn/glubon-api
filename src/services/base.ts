@@ -556,9 +556,9 @@ export abstract class BaseService {
       })
     );
 
-    logger.info(
-      `Cache warming completed: ${successful} successful, ${failed} failed`
-    );
+    // logger.info(
+    //   `Cache warming completed: ${successful} successful, ${failed} failed`
+    // );
     return { successful, failed };
   }
 }

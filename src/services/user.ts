@@ -1,20 +1,13 @@
-import { S3Service } from "./s3";
-import { ReadStream } from "fs";
-import {
-  UserStatus,
-  VerificationStatus,
-  PrismaClient,
-  User,
-} from "@prisma/client";
+import { FileUpload } from 'graphql-upload-ts';
+import { DocumentType, VerificationStatus, PrismaClient, User, UserStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { ServiceResponse } from "../types";
 import { securityConfig } from "../config";
 import { UserRepository } from "../repository/user";
-
+import { S3Service } from "./s3";
 import { BaseService } from "./base";
 import {
   ChangePasswordInput,
-  SubmitIdentityVerificationInput,
   UpdateProfileInput,
   UserWithStats,
 } from "../types/services/user";
@@ -214,19 +207,66 @@ export class UserService extends BaseService {
 
   async submitIdentityVerification(
     userId: string,
-    input: SubmitIdentityVerificationInput
+    input: {
+      documentType: DocumentType;
+      documentNumber: string;
+      documentImages: FileUpload[];
+    }
   ): Promise<ServiceResponse> {
     try {
       const { documentType, documentNumber, documentImages } = input;
+      const s3Service = new S3Service(this.prisma, this.redis);
 
-      // Check if user already has a pending or approved verification
-      const existingVerification =
-        await this.userRepository.findIdentityVerification(userId);
+      // Process file uploads in parallel
+      const uploadPromises = documentImages.map(async (fileUpload) => {
+        try {
+          // Create a file object that matches the expected type for S3 service
+          const file = {
+            createReadStream: () => fileUpload.createReadStream(),
+            filename: fileUpload.filename,
+            mimetype: fileUpload.mimetype,
+            encoding: fileUpload.encoding,
+            size: 0, // This will be updated by the S3 service
+            originalname: fileUpload.filename,
+            fieldname: 'document',
+            destination: '',
+            path: '',
+            buffer: Buffer.from([])
+          };
+
+          const uploadResult = await s3Service.uploadFiles(
+            [{
+              file,
+              type: 'document',
+              category: 'identity_verification'
+            }],
+            userId,
+            'verification'
+          );
+          
+          if (!uploadResult.success || !uploadResult.data?.[0]?.url) {
+            throw new Error(uploadResult.message || 'Failed to upload document');
+          }
+          
+          return uploadResult.data[0].url;
+        } catch (error) {
+          console.error('Error uploading file:', error);
+          throw new Error('Failed to process document upload');
+        }
+      });
+
+      // Wait for all uploads to complete
+      const documentImageUrls = await Promise.all(uploadPromises);
+
+      // Check for existing verification
+      const existingVerification = await this.userRepository.findIdentityVerification(
+        userId
+      );
 
       if (
         existingVerification &&
-        (existingVerification.status === VerificationStatus.APPROVED ||
-          existingVerification.status === VerificationStatus.PENDING)
+        (existingVerification.status === VerificationStatus.PENDING ||
+          existingVerification.status === VerificationStatus.APPROVED)
       ) {
         return this.failure(
           existingVerification.status === VerificationStatus.APPROVED
@@ -235,10 +275,14 @@ export class UserService extends BaseService {
         );
       }
 
-      // Create new verification request
+      // Create new verification request with S3 URLs
       const verification = await this.userRepository.createIdentityVerification(
         userId,
-        { documentType, documentNumber, documentImages }
+        { 
+          documentType, 
+          documentNumber, 
+          documentImages: documentImageUrls 
+        }
       );
 
       return this.success(
@@ -246,6 +290,7 @@ export class UserService extends BaseService {
         "Identity verification submitted successfully"
       );
     } catch (error) {
+      console.error('Error in submitIdentityVerification:', error);
       return this.handleError(error, "submitIdentityVerification");
     }
   }

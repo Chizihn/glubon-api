@@ -24,27 +24,27 @@ async function bootstrap() {
 
     // Start server
     httpServer.listen(appConfig.port, () => {
-      logger.info(`
-🚀 Glubon API Server is running!
-📍 Environment: ${appConfig.env}
-🌐 GraphQL: http://localhost:${appConfig.port}/graphql
-📊 Health Check: http://localhost:${appConfig.port}/health
-🔌 WebSocket: ws://localhost:${appConfig.port}/graphql
-${
-  appConfig.isDevelopment
-    ? `🎮 GraphQL Playground: http://localhost:${appConfig.port}/graphql`
-    : ""
-}
-      `);
+//       logger.info(`
+// 🚀 Glubon API Server is running!
+// 📍 Environment: ${appConfig.env}
+// 🌐 GraphQL: http://localhost:${appConfig.port}/graphql
+// 📊 Health Check: http://localhost:${appConfig.port}/health
+// 🔌 WebSocket: ws://localhost:${appConfig.port}/graphql
+// ${
+//   appConfig.isDevelopment
+//     ? `🎮 GraphQL Playground: http://localhost:${appConfig.port}/graphql`
+//     : ""
+// }
+//       `);
     });
   } catch (error) {
-    logger.error("Failed to start server:", error);
+    // logger.error("Failed to start server:", error);
     process.exit(1);
   }
 }
 
 // Initialize the application
 bootstrap().catch((error) => {
-  logger.error("Bootstrap failed:", error);
+  // logger.error("Bootstrap failed:", error);
   process.exit(1);
 });

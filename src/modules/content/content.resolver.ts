@@ -25,8 +25,8 @@ import {
   CreateContentDisputeInput,
   UpdateContentDisputeInput
 } from "./content.inputs";
-import { ContentFilters, ContentService } from "../../services/content";
-import { prisma, redis } from "../../config";
+import { ContentService, ContentFilters } from "../../services/content";
+import { getContainer } from "../../services";
 import { AuthMiddleware, RequireRole } from "../../middleware";
 import { Context } from "../../types";
 import { SUBSCRIPTION_EVENTS } from "../../utils";
@@ -37,7 +37,9 @@ export class ContentResolver {
   private contentService: ContentService;
 
   constructor() {
-    this.contentService = new ContentService(prisma, redis);
+        const container = getContainer();
+    
+    this.contentService = container.resolve('contentService');
   }
 
   @Query(() => ContentResponse)

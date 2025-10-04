@@ -1,11 +1,12 @@
-import { Request, Response } from "express";
+//src/routes/webhook.ts
+import express, { Request, Response } from "express";
 import { createHmac } from "crypto";
 import { PrismaClient, TransactionStatus } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BookingService } from "../services/booking";
 import { PaystackService } from "../services/payment";
 
-export class WebhookController {
+class WebhookController {
   private prisma: PrismaClient;
   private redis: Redis;
   private bookingService: BookingService;
@@ -140,4 +141,21 @@ export class WebhookController {
       console.error("Error handling transfer failure:", error);
     }
   }
+}
+
+export function createWebhookRouter(prisma: PrismaClient, redis: Redis) {
+  const router = express.Router();
+
+  const webhookController = new WebhookController(prisma, redis);
+
+  // Raw body parser for Paystack signature verification
+  router.post(
+    "/paystack",
+    express.raw({ type: "application/json" }),
+    (req, res) => {
+      webhookController.handlePaystackWebhook(req, res);
+    }
+  );
+
+  return router;
 }

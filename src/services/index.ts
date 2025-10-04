@@ -1,7 +1,28 @@
 // src/services/index.ts
-import { PrismaClient } from "@prisma/client";
-import { Redis } from "ioredis";
+import { Container } from '../container';
 import { emailServiceSingleton } from "./email";
+
+// Import and re-export all service types
+export * from "./auth";
+export * from "./user";
+export * from "./notification";
+export * from "./oauth";
+export * from "./property";
+export * from "./unit";
+export * from "./admin-user";
+export * from "./admin-stats";
+export * from "./conversation";
+export * from "./transaction";
+export * from "./admin-property";
+export * from "./booking";
+export * from "./platform-service";
+export * from "./subaccount";
+export * from "./presence";
+export * from "./ad";
+export * from "./ad-analytics";
+export * from "./payment";
+
+// Import service implementations for internal use
 import { AuthService } from "./auth";
 import { UserService } from "./user";
 import { NotificationService } from "./notification";
@@ -19,7 +40,110 @@ import { SubaccountService } from "./subaccount";
 import { PresenceService } from "./presence";
 import { AdService } from "./ad";
 import { AdAnalyticsService } from "./ad-analytics";
+import { PaystackService } from "./payment";
+import { SettingsService } from "./setting";
 
+// Export the Container class for type information
+export { Container } from '../container';
+
+// This will be set when the app starts
+let containerInstance: Container | null = null;
+
+export function getContainer(): Container {
+  if (!containerInstance) {
+    throw new Error('Container has not been initialized. Call setContainer() first.');
+  }
+  return containerInstance;
+}
+
+export function setContainer(container: Container): void {
+  containerInstance = container;
+}
+
+// Register all services with the container
+export function registerServices(container: Container): void {
+  // Register singleton services
+  container.register('emailService', () => emailServiceSingleton);
+  
+  // Register other services
+  container.register('authService', (container) => 
+    new AuthService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('oAuthService', (container) => 
+    new OAuthService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('userService', (container) => 
+    new UserService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('propertyService', (container) => 
+    new PropertyService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('unitService', (container) => 
+    new UnitService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('adminPropertyService', (container) => 
+    new AdminPropertyService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('bookingService', (container) => 
+    new BookingService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('platformService', (container) => 
+    new PlatformService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('notificationService', (container) => 
+    new NotificationService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('adminUserService', (container) => 
+    new AdminUsersService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('adminStatsService', (container) => 
+    new AdminStatsService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('conversationService', (container) => 
+    new ConversationService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('transactionService', (container) => 
+    new TransactionService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('subaccountService', (container) => 
+    new SubaccountService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('presenceService', (container) => 
+    new PresenceService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('adService', (container) => 
+    new AdService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('adAnalyticsService', (container) => 
+    new AdAnalyticsService(container.getPrisma(), container.getRedis())
+  );
+
+  container.register('paystackService', (container) => 
+    new PaystackService(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register('settingsService', (container) => 
+    new SettingsService(container.getPrisma(), container.getRedis())
+  );
+}
+
+// For backward compatibility
 export interface Services {
   authService: AuthService;
   oAuthService: OAuthService;
@@ -39,47 +163,33 @@ export interface Services {
   presenceService: PresenceService;
   adService: AdService;
   adAnalyticsService: AdAnalyticsService;
+  paystackService: PaystackService;
+  settingsService: SettingsService;
 }
 
-export function createServices(prisma: PrismaClient, redis: Redis): Services {
-  // Initialize services with proper dependencies
-  const emailService = emailServiceSingleton;
-  const authService = new AuthService(prisma, redis);
-  const oAuthService = new OAuthService(prisma, redis);
-  const userService = new UserService(prisma, redis);
-  const propertyService = new PropertyService(prisma, redis);
-  const unitService = new UnitService(prisma, redis);
-  const adminPropertyService = new AdminPropertyService(prisma, redis);
-  const bookingService = new BookingService(prisma, redis);
-  const platformService = new PlatformService(prisma, redis);
-  const notificationService = new NotificationService(prisma, redis);
-  const adminUserService = new AdminUsersService(prisma, redis);
-  const adminStatsService = new AdminStatsService(prisma, redis);
-  const conversationService = new ConversationService(prisma, redis);
-  const transactionService = new TransactionService(prisma, redis);
-  const subaccountService = new SubaccountService(prisma, redis);
-  const presenceService = new PresenceService(prisma, redis);
-  const adService = new AdService(prisma, redis);
-  const adAnalyticsService = new AdAnalyticsService(prisma, redis);
-
+// Legacy function for backward compatibility
+export function createServices(prisma: any, redis: any): Services {
+  const container = getContainer();
   return {
-    authService,
-    oAuthService,
-    userService,
-    adminUserService,
-    adminStatsService,
-    adminPropertyService,
-    bookingService,
-    platformService,
-    conversationService,
-    propertyService,
-    unitService,
-    emailService,
-    notificationService,
-    transactionService,
-    subaccountService,
-    presenceService,
-    adService,
-    adAnalyticsService
+    authService: container.resolve('authService'),
+    oAuthService: container.resolve('oAuthService'),
+    userService: container.resolve('userService'),
+    adminUserService: container.resolve('adminUserService'),
+    adminStatsService: container.resolve('adminStatsService'),
+    adminPropertyService: container.resolve('adminPropertyService'),
+    bookingService: container.resolve('bookingService'),
+    platformService: container.resolve('platformService'),
+    conversationService: container.resolve('conversationService'),
+    propertyService: container.resolve('propertyService'),
+    unitService: container.resolve('unitService'),
+    emailService: container.resolve('emailService'),
+    notificationService: container.resolve('notificationService'),
+    transactionService: container.resolve('transactionService'),
+    subaccountService: container.resolve('subaccountService'),
+    presenceService: container.resolve('presenceService'),
+    adService: container.resolve('adService'),
+    adAnalyticsService: container.resolve('adAnalyticsService'),
+    paystackService: container.resolve('paystackService'),
+    settingsService: container.resolve('settingsService'),
   };
 }

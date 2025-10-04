@@ -1,6 +1,6 @@
 //src/services/payment.ts
 import axios from "axios";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, TransactionType } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { Redis } from "ioredis";
 import { BaseService, CACHE_TTL } from "./base";
@@ -603,12 +603,141 @@ export class PaystackService extends BaseService {
     }
   }
 
+  /**
+   * Retry a failed payment by creating a new payment URL for an existing booking
+   * @param bookingId The ID of the booking to retry payment for
+   * @param userId The ID of the user making the payment
+   */
+  async retryPayment(
+    bookingId: string,
+    userId: string
+  ): Promise<ServiceResponse<{ paymentUrl: string; reference: string; expiresAt: Date }>> {
+    try {
+      // 1. Verify the booking exists and belongs to the user
+      const booking = await this.prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          renter: true,
+          property: {
+            include: {
+              owner: {
+                include: { subaccount: true }
+              }
+            }
+          },
+          transactions: {
+            where: {
+              status: 'PENDING',
+              type: {
+                in: [
+                  'RENT_PAYMENT',
+                  'LEASE_PAYMENT',
+                  'SALE_PAYMENT'
+                ] as any[] // Temporary workaround for Prisma client type issue
+              }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          }
+        }
+      });
+
+      if (!booking) {
+        return this.failure('Booking not found');
+      }
+
+      if (booking.renterId !== userId) {
+        return this.failure('Unauthorized');
+      }
+
+      // 2. Check if booking is in a state that allows payment
+      if (!['PENDING_PAYMENT', 'PENDING_APPROVAL'].includes(booking.status)) {
+        return this.failure('This booking is not eligible for payment');
+      }
+
+      // 3. Create a new transaction record or reuse existing pending one
+      let transaction = booking.transactions[0];
+      
+      if (!transaction) {
+        // Determine transaction type based on property listing type
+        let transactionType: string;
+        switch (booking.property.listingType) {
+          case 'RENT':
+            transactionType = 'RENT_PAYMENT';
+            break;
+          case 'LEASE':
+            transactionType = 'LEASE_PAYMENT';
+            break;
+          case 'SALE':
+            transactionType = 'SALE_PAYMENT';
+            break;
+          default:
+            // Fallback to RENT_PAYMENT for backward compatibility
+            transactionType = 'RENT_PAYMENT';
+        }
+
+        // Create a new transaction if none exists
+        const newTransaction = await this.prisma.transaction.create({
+          data: {
+            type: transactionType as any, // Type assertion needed due to Prisma client type issue
+            amount: booking.amount,
+            currency: 'NGN',
+            status: 'PENDING' as const,
+            reference: `PSTK-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`,
+            userId,
+            propertyId: booking.propertyId,
+            bookingId: booking.id,
+            description: `Payment for ${booking.property.listingType.toLowerCase()} booking ${booking.id}`
+          }
+        });
+        transaction = newTransaction;
+      }
+
+      // 4. Generate payment URL
+      const paymentResult = await this.createSplitPayment(
+        booking.renter.email!,
+        booking.amount,
+        transaction.reference,
+        booking.property.owner.subaccount?.subaccountCode || '',
+        booking.property.owner.subaccount?.percentageCharge || 85
+      );
+
+      if (!paymentResult.success || !paymentResult.data?.data?.authorization_url) {
+        return this.failure('Failed to generate payment URL');
+      }
+
+      // 5. Update booking with new payment URL
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
+      
+      await this.prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'PENDING_PAYMENT',
+          updatedAt: new Date()
+        }
+      });
+
+      return this.success({
+        paymentUrl: paymentResult.data.data.authorization_url,
+        reference: transaction.reference,
+        expiresAt
+      });
+    } catch (error) {
+      const safeError = this.extractErrorInfo(error);
+      logger.error('Error retrying payment:', safeError);
+      return this.handleError(error, 'retryPayment');
+    }
+  }
+
+  /**
+   * Create a split payment with Paystack
+   */
   async createSplitPayment(
     email: string,
     amount: Decimal | number,
     reference: string,
     subaccountCode: string,
-    subaccountPercentage: number
+    subaccountPercentage: number,
   ): Promise<ServiceResponse<PaystackInitializeResponse>> {
     try {
       const splitConfig = {
@@ -621,7 +750,7 @@ export class PaystackService extends BaseService {
           }
         ],
         bearer_type: "subaccount",
-        bearer_subaccount: subaccountCode
+        bearer_subaccount: subaccountCode,
       };
 
       return await this.splitPayment(email, amount, reference, splitConfig);

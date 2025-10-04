@@ -2,7 +2,7 @@ import type { MiddlewareFn } from "type-graphql";
 import jwt from "jsonwebtoken";
 import { PermissionEnum, RoleEnum, UserStatus } from "@prisma/client";
 import { Context } from "../types";
-import { ForbiddenError, UnauthorizedError } from "../utils";
+import { ForbiddenError, logger, UnauthorizedError } from "../utils";
 import { jwtConfig } from "../config";
 
 export const AuthMiddleware: MiddlewareFn<Context> = async (
@@ -21,6 +21,7 @@ export const AuthMiddleware: MiddlewareFn<Context> = async (
   }
 
   const token = authHeader.substring(7);
+  // logger.info(`[AuthMiddleware] Token: ${token}`);
 
   try {
     const decoded = jwt.verify(token, jwtConfig.secret) as any;

@@ -8,15 +8,15 @@ import { WebSocketServer } from "ws";
 import { expressMiddleware } from "@as-integrations/express5";
 import { createGraphQLSchema } from "./graphql/schemas";
 import { errorHandler } from "./middleware/errorHandler";
-import { createServices } from "./services";
+import { createServices, registerServices, setContainer } from "./services";
+import { Container } from "./container";
 import { appConfig, corsConfig, prisma, redis } from "./config";
 import { createApolloServer } from "./graphql/server";
 import { createWebSocketServer } from "./graphql/websocket";
 import { graphqlUploadExpress } from "graphql-upload-ts";
 import { createGraphQLContext } from "./graphql/context";
 import { logger } from "./utils";
-import { upload } from "./middleware/multer";
-import { WebhookController } from "./routes/webhook";
+import { createWebhookRouter } from "./routes/webhook";
 import { oauthRestRouter } from "./routes/oauth";
 import { initializeWorkers } from "./workers";
 
@@ -28,7 +28,16 @@ export async function createApp() {
     // Create HTTP server
     const httpServer = createServer(app);
 
-    // Initialize services
+    // Initialize container with prisma and redis
+    const container = Container.getInstance(prisma, redis);
+    
+    // Set the container instance for services to use
+    setContainer(container);
+    
+    // Register all services with the container
+    registerServices(container);
+    
+    // For backward compatibility
     const services = createServices(prisma, redis);
 
     // Initialize background workers
@@ -63,28 +72,26 @@ export async function createApp() {
     // CORS
     app.use(cors(corsConfig));
 
-    // Body parsing
-
-    app.use(express.json({ limit: "10mb" }));
-    app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-    // app.use((req, res, next) => {
-    //   if (req.path === "/graphql") {
-    //     return next(); // Skip JSON and URL-encoded parsing for GraphQL
-    //   }
-    //   express.json({ limit: "10mb" })(req, res, () => {
-    //     express.urlencoded({ extended: true, limit: "10mb" })(req, res, next);
-    //   });
-    // });
-
+    // Body parsing - Configure before GraphQL upload middleware
+    app.use(express.json({ limit: '50mb' }));
+    app.use(express.urlencoded({ limit: '50mb', extended: true }));
+    
     // OAuth REST endpoints
     app.use("/api/oauth", oauthRestRouter);
-    const webhookController = new WebhookController(prisma, redis);
 
     // Paystack webhook endpoint
-    app.post("/api/webhook/paystack", express.raw({ type: "application/json" }), (req, res) => {
-  webhookController.handlePaystackWebhook(req, res);
-});
+    app.use("/api/webhook", createWebhookRouter(prisma, redis));
+    app.get('/payment-callback', (req, res) => {
+      const { reference, status } = req.query;
+      
+      if (status === 'success') {
+        res.redirect('glubon://payment/successful?reference=' + reference);
+      } else {
+        res.redirect('glubon://payment/failed?reference=' + reference);
+      }
+    });
+    
+
 
     // Health check endpoint
     app.get("/health", (req, res) => {
@@ -102,18 +109,20 @@ export async function createApp() {
 
     // app.use(upload);
 
-    // GraphQL endpoint
-    
+    // GraphQL endpoint with file upload support
     app.use(
       "/graphql",
+      // Apply the graphqlUploadExpress middleware first to handle file uploads
       graphqlUploadExpress({
-        maxFileSize: 50 * 1024 * 1024,
+        maxFileSize: 50 * 1024 * 1024, // 50MB
         maxFiles: 21,
-        overrideSendResponse: false,
       }),
+      // Then apply the Apollo Server middleware
       expressMiddleware(apolloServer, {
         context: async ({ req }) => {
-          return createGraphQLContext(services, req);
+          // Create GraphQL context
+          const context = createGraphQLContext(req, req?.user);
+          return context;
         },
       })
     );
@@ -123,31 +132,31 @@ export async function createApp() {
 
     // Graceful shutdown function
     const gracefulShutdown = async (signal: string) => {
-      logger.info(`Received ${signal}. Starting graceful shutdown...`);
+      // logger.info(`Received ${signal}. Starting graceful shutdown...`);
 
       try {
         // Close HTTP server
         httpServer.close(() => {
-          logger.info("HTTP server closed");
+          // logger.info("HTTP server closed");
         });
 
         // Close Apollo Server
         await apolloServer.stop();
-        logger.info("Apollo Server stopped");
+        // logger.info("Apollo Server stopped");
 
         // Close WebSocket server
         if (wsCleanup) {
           await wsCleanup.dispose();
-          logger.info("WebSocket server closed");
+          // logger.info("WebSocket server closed");
         }
 
         // Close database connections
         await prisma.$disconnect();
-        logger.info("Database disconnected");
+        // logger.info("Database disconnected");
 
         // Close Redis connection
         redis.disconnect();
-        logger.info("Redis disconnected");
+        // logger.info("Redis disconnected");
 
         process.exit(0);
       } catch (error) {

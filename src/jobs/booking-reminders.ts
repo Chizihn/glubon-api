@@ -1,13 +1,18 @@
 import cron from "node-cron";
-import { prisma, redis } from "../config";
 import { logger } from "../utils";
+import { Container } from "../container";
 import { NotificationService } from "../services/notification";
 import { NotificationType } from "@prisma/client";
 
 // Run every hour to check for upcoming bookings
 cron.schedule("0 * * * *", async () => {
   try {
-    const notificationService = new NotificationService(prisma, redis);
+    const container = Container.getInstance();
+    const prisma = container.getPrisma();
+    const notificationService = new NotificationService(
+      prisma,
+      container.getRedis()
+    );
     const now = new Date();
     
     // Get all upcoming bookings in the next 24 hours
@@ -54,35 +59,45 @@ cron.schedule("0 * * * *", async () => {
         });
 
         if (existingReminder) {
-          logger.info(`Reminder already sent for booking ${booking.id}`);
+          // logger.info(`Reminder already sent for booking ${booking.id}`);
           continue;
         }
 
-        // Send notification to renter
-        await notificationService.createNotification({
-          userId: booking.renterId,
-          type: "BOOKING_REMINDER" as any,
-          title: "Upcoming Booking",
-          message: `Your booking for ${booking.property.title} is coming up soon!`,
-          data: JSON.stringify({
-            type: "BOOKING_REMINDER",
-            bookingId: booking.id,
-            propertyId: booking.propertyId,
-            startDate: booking.startDate.toISOString(),
-          })
+        // Skip if startDate is not available
+        if (!booking.startDate) {
+          logger.warn(`Skipping booking ${booking.id} due to missing start date`);
+          continue;
+        }
+
+        const startDateISO = booking.startDate.toISOString();
+
+        // Create notification record
+        await prisma.notification.create({
+          data: {
+            userId: booking.renterId,
+            type: NotificationType.BOOKING_CONFIRMED,
+            title: 'Upcoming Booking',
+            message: `Your booking for ${booking.property.title} is coming up soon!`,
+            data: JSON.stringify({
+              type: "BOOKING_CONFIRMED",
+              bookingId: booking.id,
+              propertyId: booking.propertyId,
+              startDate: startDateISO,
+            })
+          }
         });
 
         // Send notification to property owner
         await notificationService.createNotification({
           userId: booking.property.owner.id,
-          type: "HOST_BOOKING_REMINDER" as any,
+          type: NotificationType.BOOKING_REQUEST_RECEIVED,
           title: "Upcoming Booking",
           message: `You have a booking for ${booking.property.title} coming up soon!`,
           data: JSON.stringify({
-            type: "HOST_BOOKING_REMINDER",
+            type: "BOOKING_REQUEST_RECEIVED",
             bookingId: booking.id,
             propertyId: booking.propertyId,
-            startDate: booking.startDate.toISOString(),
+            startDate: startDateISO,
             renterId: booking.renterId,
           })
         });
@@ -94,7 +109,7 @@ cron.schedule("0 * * * *", async () => {
     }
 
     if (reminderCount > 0) {
-      logger.info(`Sent ${reminderCount} booking reminders`);
+      // logger.info(`Sent ${reminderCount} booking reminders`);
     }
   } catch (error) {
     logger.error("Error in booking reminders job:", error);

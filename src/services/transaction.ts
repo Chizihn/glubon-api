@@ -56,16 +56,20 @@ export class TransactionService extends BaseService {
       await this.deleteCachePattern(`transactions:user:${userId}`);
 
       // Notify user based on transaction type
-      if (data.type === "RENT_PAYMENT") {
+      const paymentTypes = ["RENT_PAYMENT", "LEASE_PAYMENT", "SALE_PAYMENT"];
+      if (paymentTypes.includes(data.type)) {
+        const transactionType = data.type.toLowerCase().replace('_', ' ');
         await this.notificationService.createNotification({
           userId,
           title: "Transaction Initiated",
-          message: `A new transaction of ${new Decimal(data.amount).toNumber()} NGN for ${data.description} has been initiated.`,
-          type: "BOOKING_CREATED", // Align with booking creation
+          message: `A new ${transactionType} of ${new Decimal(data.amount).toNumber()} NGN has been initiated.`,
+          type: "TRANSACTION_CREATED",
           data: {
             transactionId: transaction.id,
             bookingId: data.bookingId,
+            propertyId: data.propertyId,
             amount: new Decimal(data.amount).toNumber(),
+            type: data.type
           },
         });
       }

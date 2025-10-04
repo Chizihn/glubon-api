@@ -2,6 +2,7 @@
 import "reflect-metadata";
 import { PubSub } from "graphql-subscriptions";
 import { buildSchema } from "type-graphql";
+import { GraphQLUpload } from "graphql-upload-ts";
 import { GraphQLDecimal } from "./scalars/Decimal";
 import { AuthResolver } from "../modules/auth/auth.resolver";
 import { UserResolver } from "../modules/user/user.resolver";
@@ -28,7 +29,10 @@ export async function createGraphQLSchema() {
   const pubSub = new PubSub() as any;
 
   return await buildSchema({
-    scalarsMap: [{ type: Object, scalar: GraphQLDecimal }],
+    scalarsMap: [
+      { type: Object, scalar: GraphQLDecimal },
+      { type: Object, scalar: GraphQLUpload },
+    ],
     resolvers: [
       AuthResolver,
       UserResolver,

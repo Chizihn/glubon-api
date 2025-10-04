@@ -27,8 +27,8 @@ import {
   SimpleCreatePropertyInput,
   SimpleUpdatePropertyInput,
 } from "./property.simple.inputs";
+import { getContainer } from "../../services";
 import { PropertyService } from "../../services/property";
-import { prisma, redis } from "../../config";
 import { Context } from "../../types";
 import { AuthMiddleware, RequireRole } from "../../middleware";
 import { logger } from "../../utils";
@@ -44,7 +44,8 @@ export class PropertyResolver {
   private propertyService: PropertyService;
 
   constructor() {
-    this.propertyService = new PropertyService(prisma, redis);
+    const container = getContainer();
+    this.propertyService = container.resolve('propertyService');
   }
 
   private transformPropertyToResponse(property: any): Property {
@@ -162,11 +163,7 @@ export class PropertyResolver {
     @Arg("id") id: string,
     @Ctx() ctx: Context
   ): Promise<Property> {
-    logger.info(
-      `Resolver: Getting property ${id} for user ${
-        ctx.user?.id || "anonymous"
-      } with role ${ctx.user?.role || "none"}`
-    );
+  
 
     const result = await this.propertyService.getPropertyById(id, ctx.user!);
 
@@ -336,39 +333,53 @@ export class PropertyResolver {
     files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<Property> {
-    // Transform simple input to internal format
-    const internalInput: any = {
-      ...input,
-      isStandalone: !input.numberOfUnits || input.numberOfUnits === 1,
-    };
-
-    if (input.numberOfUnits && input.numberOfUnits > 1) {
-      internalInput.bulkUnits = {
-        unitTitle: "Unit",
-        unitCount: input.numberOfUnits,
-        unitDetails: {
-          amount: input.amount,
-          rentalPeriod: input.rentalPeriod,
-          sqft: input.sqft,
-          bedrooms: input.bedrooms,
-          bathrooms: input.bathrooms,
-          roomType: input.roomType,
-          amenities: input.amenities,
-          isFurnished: input.isFurnished,
-          isForStudents: input.isForStudents,
-        },
+    // console.log('🚀 RESOLVER: createProperty called');
+    // console.log('Files received:', files?.length || 0);
+    
+    try {
+      // Transform simple input to internal format
+      const internalInput: any = {
+        ...input,
+        isStandalone: !input.numberOfUnits || input.numberOfUnits === 1,
       };
+  
+      if (input.numberOfUnits && input.numberOfUnits > 1) {
+        internalInput.bulkUnits = {
+          unitTitle: "Unit",
+          unitCount: input.numberOfUnits,
+          unitDetails: {
+            amount: input.amount,
+            rentalPeriod: input.rentalPeriod,
+            sqft: input.sqft,
+            bedrooms: input.bedrooms,
+            bathrooms: input.bathrooms,
+            roomType: input.roomType,
+            amenities: input.amenities,
+            isFurnished: input.isFurnished,
+            isForStudents: input.isForStudents,
+          },
+        };
+      }
+  
+      // console.log('🔄 RESOLVER: Calling propertyService.createProperty');
+      const result = await this.propertyService.createProperty(
+        ctx.user!.id,
+        internalInput,
+        files
+      );
+  
+      if (!result.success) {
+        console.error('❌ RESOLVER: Property creation failed:', result.message);
+        throw new Error(result.message);
+      }
+  
+      // console.log('✅ RESOLVER: Property created successfully');
+      return this.transformPropertyToResponse(result.data!);
+      
+    } catch (error) {
+      console.error('❌ RESOLVER: Error in createProperty:', error);
+      throw error;
     }
-
-    const result = await this.propertyService.createProperty(
-      ctx.user!.id,
-      internalInput,
-      files
-    );
-
-    if (!result.success) throw new Error(result.message);
-
-    return this.transformPropertyToResponse(result.data!);
   }
 
   @Mutation(() => Property)
@@ -380,38 +391,54 @@ export class PropertyResolver {
     files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<Property> {
-    // Transform simple input to internal format
-    const internalInput: any = {
-      ...input,
-    };
-
-    if (input.numberOfUnits) {
-      internalInput.bulkUnits = {
-        unitTitle: "Unit",
-        unitCount: input.numberOfUnits,
-        unitDetails: {
-          amount: input.amount,
-          rentalPeriod: input.rentalPeriod,
-          sqft: input.sqft,
-          bedrooms: input.bedrooms,
-          bathrooms: input.bathrooms,
-          roomType: input.roomType,
-          amenities: input.amenities,
-          isFurnished: input.isFurnished,
-          isForStudents: input.isForStudents,
-        },
+    // console.log('🔄 RESOLVER: updateProperty called');
+    // console.log('Files received for update:', files?.length || 0);
+    
+    try {
+      // Transform simple input to internal format
+      const internalInput: any = {
+        ...input,
       };
+
+      if (input.numberOfUnits) {
+        // console.log('🔄 Setting up bulk units for update');
+        internalInput.bulkUnits = {
+          unitTitle: "Unit",
+          unitCount: input.numberOfUnits,
+          unitDetails: {
+            amount: input.amount,
+            rentalPeriod: input.rentalPeriod,
+            sqft: input.sqft,
+            bedrooms: input.bedrooms,
+            bathrooms: input.bathrooms,
+            roomType: input.roomType,
+            amenities: input.amenities,
+            isFurnished: input.isFurnished,
+            isForStudents: input.isForStudents,
+          },
+        };
+      }
+
+      // console.log('🔄 RESOLVER: Calling propertyService.updateProperty');
+      const result = await this.propertyService.updateProperty(
+        id,
+        ctx.user!.id,
+        internalInput,
+        files
+      );
+
+      if (!result.success) {
+        console.error('❌ RESOLVER: Property update failed:', result.message);
+        throw new Error(result.message);
+      }
+
+      // console.log('✅ RESOLVER: Property updated successfully');
+      return this.transformPropertyToResponse(result.data!);
+      
+    } catch (error) {
+      console.error('❌ RESOLVER: Error in updateProperty:', error);
+      throw error;
     }
-
-    const result = await this.propertyService.updateProperty(
-      id,
-      ctx.user!.id,
-      internalInput,
-      files
-    );
-    if (!result.success) throw new Error(result.message);
-
-    return this.transformPropertyToResponse(result.data!);
   }
 
   @Mutation(() => Boolean)

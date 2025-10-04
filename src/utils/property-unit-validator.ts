@@ -1,4 +1,4 @@
-import { PrismaClient, UnitStatus, PropertyStatus } from "@prisma/client";
+import { PrismaClient, UnitStatus, PropertyStatus, BookingStatus } from "@prisma/client";
 import { logger } from "./logger";
 
 export class PropertyUnitValidator {
@@ -236,7 +236,7 @@ export class PropertyUnitValidator {
       // Check if unit has active bookings
       const activeBookings = unit.bookingUnits.filter(
         (bu) =>
-          bu.booking.status === "CONFIRMED" || bu.booking.status === "ACTIVE"
+          bu.booking.status === BookingStatus.CONFIRMED 
       );
 
       if (activeBookings.length > 0) {
@@ -292,9 +292,9 @@ export class PropertyUnitValidator {
           },
         });
 
-        logger.info(
-          `Fixed unit counts for property ${propertyId}: total=${totalUnits}, available=${availableUnits}`
-        );
+        // logger.info(
+        //   `Fixed unit counts for property ${propertyId}: total=${totalUnits}, available=${availableUnits}`
+        // );
       }
     } catch (error) {
       logger.error(

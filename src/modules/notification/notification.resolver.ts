@@ -13,8 +13,7 @@ import type { Context } from "../../types/context";
 import { AuthMiddleware } from "../../middleware/auth";
 import { BaseResponse } from "../../types/responses";
 import { logger, SUBSCRIPTION_EVENTS } from "../../utils";
-import { prisma } from "../../config/database";
-import redis from "../../config/redis";
+import { getContainer } from "../../services";
 import {
   BulkNotificationResponse,
   NotificationCreatedPayload,
@@ -35,7 +34,9 @@ export class NotificationResolver {
   private notificationService: NotificationService;
 
   constructor() {
-    this.notificationService = new NotificationService(prisma, redis);
+        const container = getContainer();
+    
+    this.notificationService = container.resolve('notificationService');
   }
 
   @Query(() => PaginatedNotificationsResponse)

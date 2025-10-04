@@ -13,8 +13,7 @@ import {
   Field,
 } from "type-graphql";
 import type { Context } from "../../types/context";
-import { prisma } from "../../config/database";
-import redis from "../../config/redis";
+import { getContainer } from "../../services";
 import { AuthMiddleware } from "../../middleware";
 import { SUBSCRIPTION_EVENTS } from "../../utils/pubsub";
 import {
@@ -28,13 +27,10 @@ import {
   PaginatedBroadcastMessagesResponse,
   BroadcastMessageResponse,
 } from "./conversation.types";
-import { MessageType, RoleEnum, Prisma } from "@prisma/client";
+import { MessageType, RoleEnum, Prisma, PrismaClient } from "@prisma/client";
 import { ConversationService } from "../../services/conversation";
 import { BroadcastMessageInput, BroadcastMessageFilter } from "./broadcast.inputs";
-
 import { PubSub } from "graphql-subscriptions";
-
-
 import {
   ConversationFilters,
   MessageFilters,
@@ -44,9 +40,13 @@ import {
 @Resolver()
 export class ConversationResolver {
   private conversationService: ConversationService;
+  private prisma: PrismaClient;
 
   constructor() {
-    this.conversationService = new ConversationService(prisma, redis);
+        const container = getContainer();
+    
+    this.conversationService = container.resolve('conversationService');
+    this.prisma = container.getPrisma() as unknown as PrismaClient;
   }
 
 
@@ -295,8 +295,8 @@ export class ConversationResolver {
       };
     }
 
-    const [broadcastMessages, totalCount] = await prisma.$transaction([
-      prisma.broadcastMessage.findMany({
+    const [broadcastMessages, totalCount] = await this.prisma.$transaction([
+      this.prisma.broadcastMessage.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
@@ -306,14 +306,14 @@ export class ConversationResolver {
           recipients: { select: { id: true } },
         },
       }),
-      prisma.broadcastMessage.count({ where }),
+      this.prisma.broadcastMessage.count({ where }),
     ]);
 
     const response = broadcastMessages.map(
-      (msg) =>
+      (msg: any) =>
         new BroadcastMessageResponse({
           ...msg,
-          sentToUserIds: msg.recipients.map((r) => r.id),
+          sentToUserIds: msg.recipients.map((r: { id: string }) => r.id),
         })
     );
 
@@ -327,7 +327,7 @@ export class ConversationResolver {
     @Ctx() ctx: Context
   ): Promise<BroadcastMessageResponse> {
     // Ensure user has appropriate permissions or is a recipient
-    const broadcast = await prisma.broadcastMessage.findUnique({
+    const broadcast = await this.prisma.broadcastMessage.findUnique({
       where: { id: broadcastId },
       include: {
         sender: true,
@@ -339,7 +339,7 @@ export class ConversationResolver {
       throw new Error("Broadcast message not found");
     }
 
-    const isRecipient = broadcast.recipients.some((r) => r.id === ctx.user!.id);
+    const isRecipient = broadcast.recipients.some((r: { id: string }) => r.id === ctx.user!.id);
     const isAdmin = ctx.user?.permissions.includes("SUPER_ADMIN") || ctx.user?.role === RoleEnum.ADMIN;
 
     if (!isRecipient && !isAdmin) {
@@ -363,19 +363,19 @@ export class ConversationResolver {
       throw new Error("Unauthorized: Only admins can send broadcast messages");
     }
 
-    const recipients = await prisma.user.findMany({
+    const recipients = await this.prisma.user.findMany({
       where: { role: { in: input.recipientRoles } },
       select: { id: true },
     });
 
-    const broadcast = await prisma.broadcastMessage.create({
+    const broadcast = await this.prisma.broadcastMessage.create({
       data: {
         content: input.content,
         messageType: input.messageType,
         senderId: ctx.user!.id,
         recipientRoles: input.recipientRoles,
         recipients: {
-          connect: recipients.map((r) => ({ id: r.id })),
+          connect: recipients.map((r: { id: string }) => ({ id: r.id })),
         },
         totalRecipients: recipients.length,
         attachments: input.attachments || [],
@@ -391,7 +391,7 @@ export class ConversationResolver {
     await pubSub.publish(SUBSCRIPTION_EVENTS.BROADCAST_MESSAGE_SENT, {
       broadcastMessage: {
         ...broadcast,
-        sentToUserIds: broadcast.recipients.map((r) => r.id),
+        sentToUserIds: broadcast.recipients.map((r: { id: string }) => r.id),
       },
     });
 
@@ -412,7 +412,7 @@ export class ConversationResolver {
       throw new Error("Unauthorized: Only admins can delete broadcast messages");
     }
 
-    const broadcast = await prisma.broadcastMessage.findUnique({
+    const broadcast = await this.prisma.broadcastMessage.findUnique({
       where: { id: broadcastId },
     });
 
@@ -420,7 +420,7 @@ export class ConversationResolver {
       throw new Error("Broadcast message not found");
     }
 
-    await prisma.broadcastMessage.delete({
+    await this.prisma.broadcastMessage.delete({
       where: { id: broadcastId },
     });
 

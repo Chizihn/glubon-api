@@ -11,24 +11,21 @@ import { Ad, AdAnalyticsType, AdType } from "./ad.types";
 import { CreateAdInput, UpdateAdStatusInput, AdAnalyticsFilter } from "./ad.inputs";
 import { AdPosition } from "@prisma/client";
 import { AuthMiddleware } from "../../middleware";
+import { getContainer } from "../../services";
+import { AdService } from "../../services/ad";
+import { AdAnalyticsService } from "../../services/ad-analytics";
 
 @Resolver(() => Ad)
 export class AdResolver {
-  private get adService() {
-    if (!this.ctx.services.adService) {
-      throw new Error('AdService is not available in the context');
-    }
-    return this.ctx.services.adService;
-  }
+  private adService: AdService;
+  private adAnalyticsService: AdAnalyticsService;
 
-  private get adAnalyticsService() {
-    if (!this.ctx.services.adAnalyticsService) {
-      throw new Error('AdAnalyticsService is not available in the context');
-    }
-    return this.ctx.services.adAnalyticsService;
+  constructor() {
+        const container = getContainer();
+    
+    this.adService = container.resolve('adService');
+    this.adAnalyticsService = container.resolve('adAnalyticsService');
   }
-
-  constructor(private ctx: Context) {}
 
   @Query(() => [Ad])
   async getActiveAds(

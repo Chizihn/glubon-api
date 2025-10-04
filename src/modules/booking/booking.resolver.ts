@@ -9,8 +9,7 @@ import {
   Int,
 } from "type-graphql";
 import { Context } from "../../types/context";
-import { prisma } from "../../config";
-import { redis } from "../../config";
+import { getContainer } from "../../services";
 import { AuthMiddleware, RequireRole } from "../../middleware/auth";
 import { BookingService } from "../../services/booking";
 import { BookingStatus, RoleEnum } from "@prisma/client";
@@ -18,6 +17,7 @@ import {
   CreateBookingInput,
   CreateBookingRequestInput,
   RespondToBookingRequestInput,
+  VerifyPaymentInput,
 } from "./booking.inputs";
 import {
   BookingResponse,
@@ -29,8 +29,12 @@ import {
 export class BookingResolver {
   private bookingService: BookingService;
 
+  private paymentService: any; // We'll use any type to avoid import issues
+
   constructor() {
-    this.bookingService = new BookingService(prisma, redis);
+    const container = getContainer();
+    this.bookingService = container.resolve('bookingService');
+    this.paymentService = container.resolve('paystackService');
   }
 
   /**
@@ -102,11 +106,65 @@ export class BookingResolver {
       throw new Error(result.message);
     }
 
+    if (!result.data) {
+      throw new Error('Failed to create booking');
+    }
+    
+    return {
+      booking: result.data.booking,
+      paymentUrl: result.data.paymentUrl,
+      success: true,
+      message: result.message,
+    };
+  }
+
+  /**
+   * Verify payment for a booking (for renter)
+   */
+  @Mutation(() => BookingResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.RENTER))
+  async verifyPayment(
+    @Arg("reference") reference: string,
+    @Ctx() ctx: Context
+  ): Promise<BookingResponse> {
+    const result = await this.bookingService.verifyPayment(
+      reference,
+      ctx.user!.id
+    );
+    
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+
     return {
       booking: result.data!.booking,
-      paymentUrl: result.data!.paymentUrl,
       success: true,
-      message: "Booking created successfully. Please complete payment.",
+      message: 'Payment verified successfully',
+    };
+  }
+
+  /**
+   * Confirm funds received (for lister)
+   */
+  @Mutation(() => BookingResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
+  async confirmFundsReceived(
+    @Arg("bookingId") bookingId: string,
+    @Ctx() ctx: Context
+  ): Promise<BookingResponse> {
+    const result = await this.bookingService.confirmFundsReceived(
+      bookingId,
+      ctx.user!.id
+    );
+    
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+
+    return {
+      booking: result.data!.booking,
+      success: true,
+      message: 'Funds confirmed successfully',
     };
   }
 
@@ -256,26 +314,57 @@ export class BookingResolver {
   /**
    * Complete a booking (for hosts)
    */
+  // @Mutation(() => BookingResponse)
+  // @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
+  // async completeBooking(
+  //   @Arg("bookingId") bookingId: string,
+  //   @Ctx() ctx: Context
+  // ): Promise<BookingResponse> {
+  //   const result = await this.bookingService.updateBookingStatus({
+  //     bookingId,
+  //     status: BookingStatus.COMPLETED,
+  //     userId: ctx.user!.id,
+  //   });
+    
+  //   if (!result.success) {
+  //     throw new Error(result.message);
+  //   }
+
+  //   return {
+  //     booking: result.data!.booking,
+  //     success: true,
+  //     message: "Booking completed successfully",
+  //   };
+  // }
+
+  /**
+   * Retry payment for a booking
+   */
   @Mutation(() => BookingResponse)
-  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
-  async completeBooking(
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.RENTER))
+  async retryPayment(
     @Arg("bookingId") bookingId: string,
     @Ctx() ctx: Context
   ): Promise<BookingResponse> {
-    const result = await this.bookingService.updateBookingStatus({
-      bookingId,
-      status: BookingStatus.COMPLETED,
-      userId: ctx.user!.id,
-    });
+    // Call the payment service to generate a new payment URL
+    const result = await this.paymentService.retryPayment(bookingId, ctx.user!.id);
     
     if (!result.success) {
-      throw new Error(result.message);
+      throw new Error(result.error || 'Failed to retry payment');
     }
-
+    
+    // Get the updated booking with payment URL
+    const bookingResult = await this.bookingService.getUserBookingById(bookingId, ctx.user!.id);
+    
+    if (!bookingResult.success || !bookingResult.data) {
+      throw new Error('Failed to retrieve booking after payment retry');
+    }
+    
     return {
-      booking: result.data!.booking,
+      booking: bookingResult.data,
+      paymentUrl: result.data.paymentUrl,
       success: true,
-      message: "Booking completed successfully",
+      message: 'Payment URL generated successfully',
     };
   }
 

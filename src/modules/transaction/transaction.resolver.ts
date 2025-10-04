@@ -1,6 +1,7 @@
 import { Resolver, Query, Mutation, Args, ID, Ctx, Arg } from 'type-graphql';
 import { Context } from '../../types/context';
-import { TransactionService } from '../../services/transaction';
+import { getContainer } from '../../services';
+import { TransactionService } from "../../services/transaction";
 import { 
   Transaction, 
   PaginatedTransactions, 
@@ -16,16 +17,16 @@ import {
   GenerateTransactionReportInput
 } from './transaction.inputs';
 import { RoleEnum, TransactionStatus, TransactionType } from '@prisma/client';
-import { Services } from '../../services';
 import { prisma, redis } from '../../config';
 
 @Resolver(() => Transaction)
 export class TransactionResolver {
   private transactionService: TransactionService;
 
-constructor() {
-  this.transactionService = new TransactionService(prisma, redis);
-}
+  constructor() {
+    const container = getContainer();
+    this.transactionService = container.resolve('transactionService');
+  }
 
   @Query(() => Transaction, { nullable: true })
   async transaction(

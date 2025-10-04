@@ -1,15 +1,19 @@
 import cron from "node-cron";
-import { prisma, redis } from "../config";
 import { logger } from "../utils";
+import { Container } from "../container";
 import { TransactionService } from "../services/transaction";
 
 // Run every 15 minutes to process pending payments
 cron.schedule("*/15 * * * *", async () => {
   try {
-    const transactionService = new TransactionService(prisma, redis);
+    const container = Container.getInstance();
+    const transactionService = new TransactionService(
+      container.getPrisma(),
+      container.getRedis()
+    );
     
     // Find pending transactions older than 5 minutes
-    const pendingTransactions = await prisma.transaction.findMany({
+    const pendingTransactions = await container.getPrisma().transaction.findMany({
       where: {
         status: "PENDING",
         createdAt: {
@@ -21,7 +25,7 @@ cron.schedule("*/15 * * * *", async () => {
       },
     });
 
-    logger.info(`Found ${pendingTransactions.length} pending transactions to process`);
+    // logger.info(`Found ${pendingTransactions.length} pending transactions to process`);
 
     for (const tx of pendingTransactions) {
       try {
@@ -44,6 +48,7 @@ cron.schedule("*/15 * * * *", async () => {
         
         // Update transaction status to failed after max retries
         if (currentRetryCount >= maxRetries) {
+          const prisma = container.getPrisma();
           await prisma.transaction.update({
             where: { id: tx.id },
             data: { 
@@ -58,6 +63,7 @@ cron.schedule("*/15 * * * *", async () => {
           });
         } else {
           // Increment retry count
+          const prisma = container.getPrisma();
           await prisma.transaction.update({
             where: { id: tx.id },
             data: { 

@@ -1,21 +1,24 @@
 import {
   Resolver,
   Query,
-  Mutation,
-  Arg,
   Args,
-  Ctx,
   UseMiddleware,
 } from "type-graphql";
-import { Context } from "../../types";
-import { AuditLogService } from "../../services/audit-log";
+import { getContainer } from "../../services";
 import { AuthMiddleware } from "../../middleware";
+import { AuditLogService } from "../../services/audit-log";
 import { AuditLogType, AuditLogsResponse, AuditAction } from "./audit-log.types";
-import { AuditLogFilter, CreateAuditLogInput } from "./audit-log.inputs";
+import { AuditLogFilter } from "./audit-log.inputs";
 
 @Resolver(() => AuditLogType)
 export class AuditLogResolver {
-  constructor(private readonly auditLogService: AuditLogService) {}
+  private auditLogService: AuditLogService;
+
+  constructor() {
+        const container = getContainer();
+    
+    this.auditLogService = container.resolve('auditLogService');
+  }
 
   @Query(() => AuditLogsResponse)
   @UseMiddleware(AuthMiddleware)
@@ -65,27 +68,4 @@ export class AuditLogResolver {
     return response;
   }
 
-  @Mutation(() => Boolean)
-  @UseMiddleware(AuthMiddleware)
-  async createAuditLog(
-    @Args() input: CreateAuditLogInput,
-    @Ctx() ctx: Context
-  ): Promise<boolean> {
-    try {
-      const log = await this.auditLogService.createLog({
-        userId: input.userId ?? ctx.user?.id,
-        action: input.action,
-        resource: input.resource,
-        resourceId: input.resourceId,
-        ipAddress: input.ipAddress,
-        userAgent: input.userAgent,
-        metadata: input.metadata ? JSON.parse(input.metadata) : null,
-      });
-
-      return !!log;
-    } catch (error) {
-      console.error('Error creating audit log:', error);
-      return false;
-    }
-  }
 }

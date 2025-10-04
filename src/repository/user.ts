@@ -129,14 +129,18 @@ export class UserRepository extends BaseRepository {
 
   async createIdentityVerification(
     userId: string,
-    data: SubmitIdentityVerificationInput
+    data: {
+      documentType: DocumentType;
+      documentNumber: string;
+      documentImages: string[]; // Expecting S3 URLs as strings
+    }
   ) {
     return this.prisma.identityVerification.create({
       data: {
         userId,
         documentType: data.documentType,
         documentNumber: data.documentNumber,
-        documentImages: data.documentImages,
+        documentImages: data.documentImages, // This should now be an array of strings (S3 URLs)
         status: VerificationStatus.PENDING,
       },
     });

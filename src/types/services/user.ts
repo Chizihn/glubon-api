@@ -16,10 +16,12 @@ export interface ChangePasswordInput {
   newPassword: string;
 }
 
+import { FileUpload } from 'graphql-upload-ts';
+
 export interface SubmitIdentityVerificationInput {
   documentType: DocumentType;
   documentNumber: string;
-  documentImages: string[];
+  documentImages: FileUpload[];
 }
 
 export interface UserWithStats extends Omit<User, "password" | "refreshToken"> {

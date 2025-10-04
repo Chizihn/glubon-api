@@ -83,7 +83,7 @@ export class EmailService extends BaseService {
           logger.error("Email transporter configuration error:", error);
           EmailService.transporter = null; // Reset on error to allow retry
         } else {
-          logger.info("Email transporter is ready", { service: "graphql-api" });
+          // logger.info("Email transporter is ready", { service: "graphql-api" });
         }
       });
     } catch (error) {
@@ -135,7 +135,7 @@ export class EmailService extends BaseService {
 
         try {
           await this.sendEmailDirectly(queuedEmail);
-          logger.info(`Email sent successfully: ${queuedEmail.id}`);
+          // logger.info(`Email sent successfully: ${queuedEmail.id}`);
         } catch (error) {
           logger.error(`Failed to send email: ${queuedEmail.id}`, error);
           queuedEmail.attempts++;
@@ -146,9 +146,9 @@ export class EmailService extends BaseService {
               this.emailQueue,
               JSON.stringify(queuedEmail)
             );
-            logger.info(
-              `Email requeued for retry: ${queuedEmail.id}, attempt ${queuedEmail.attempts}`
-            );
+            // logger.info(
+            //   `Email requeued for retry: ${queuedEmail.id}, attempt ${queuedEmail.attempts}`
+            // );
           } else {
             logger.error(`Email failed permanently: ${queuedEmail.id}`);
           }

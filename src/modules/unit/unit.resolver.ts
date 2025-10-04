@@ -17,18 +17,23 @@ import {
   GetUnitsArgs,
 } from "./unit.types";
 import { UnitStatus, RoleEnum } from "@prisma/client";
+import { getContainer } from "../../services";
 import { UnitService } from "../../services/unit";
-import { prisma, redis } from "../../config";
 import { Context } from "../../types";
 import { AuthMiddleware, RequireRole } from "../../middleware";
 import { Decimal } from "@prisma/client/runtime/library";
+import { PrismaClient } from "@prisma/client";
 
 @Resolver()
 export class UnitResolver {
   private unitService: UnitService;
+  private prisma: PrismaClient;
 
   constructor() {
-    this.unitService = new UnitService(prisma, redis);
+        const container = getContainer();
+    
+    this.unitService = container.resolve('unitService');
+    this.prisma = container.getPrisma() as unknown as PrismaClient;
   }
 
   // PUBLIC: Property owners can view their units
@@ -72,7 +77,7 @@ export class UnitResolver {
     @Ctx() ctx: Context
   ): Promise<Unit[]> {
     // Verify property ownership first
-    const property = await prisma.property.findFirst({
+    const property = await this.prisma.property.findFirst({
       where: { id: propertyId, ownerId: ctx.user!.id },
     });
 
@@ -95,7 +100,7 @@ export class UnitResolver {
     @Ctx() ctx: Context
   ): Promise<UnitCounts> {
     // Verify property ownership first
-    const property = await prisma.property.findFirst({
+    const property = await this.prisma.property.findFirst({
       where: { id: propertyId, ownerId: ctx.user!.id },
     });
 
