@@ -58,7 +58,7 @@ export class EmailService extends BaseService {
     try {
       if (config.NODE_ENV === "production") {
         EmailService.transporter = nodemailer.createTransport({
-          host: "gmail",
+          host: config.EMAIL_HOST || "gmail",
           port: Number(config.EMAIL_PORT) || 465,
           secure: true,
           auth: {
@@ -68,7 +68,7 @@ export class EmailService extends BaseService {
         });
       } else {
         EmailService.transporter = nodemailer.createTransport({
-          service: "gmail",
+          service: config.EMAIL_HOST || "gmail",
           port: Number(config.EMAIL_PORT) || 587,
           auth: {
             user: config.EMAIL_USER,
