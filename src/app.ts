@@ -61,14 +61,20 @@ export async function createApp() {
     const wsCleanup = await createWebSocketServer(wsServer, schema, services);
 
     // Security middleware
-    // src/app.ts
     app.use(
       helmet({
-        contentSecurityPolicy:
-          appConfig.env === "production" ? undefined : false,
+        contentSecurityPolicy: appConfig.env === "production" ? {
+          directives: {
+            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+            "script-src": ["'self'", "'unsafe-inline'", "https://embeddable-sandbox.cdn.apollographql.com"],
+            "frame-src": ["'self'", "https://embeddable-sandbox.cdn.apollographql.com"],
+            "img-src": ["'self'", "data:", "https://embeddable-sandbox.cdn.apollographql.com"],
+          },
+        } : false,
         crossOriginEmbedderPolicy: false,
       } as HelmetOptions)
     );
+
     // CORS
     app.use(cors(corsConfig));
 
@@ -91,6 +97,20 @@ export async function createApp() {
       }
     });
     
+
+    // Root endpoint
+app.get("/", (req, res) => {
+  res.status(200).json({
+    message: "Glubon API Server",
+    version: "1.0.0",
+    endpoints: {
+      graphql: "/graphql",
+      health: "/health",
+      webhook: "/api/webhook",
+      oauth: "/api/oauth"
+    }
+  });
+});
 
 
     // Health check endpoint
