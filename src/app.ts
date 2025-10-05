@@ -60,7 +60,6 @@ export async function createApp() {
     // Set up WebSocket server for subscriptions
     const wsCleanup = await createWebSocketServer(wsServer, schema, services);
 
-    // Security middleware
   // Skip helmet for GraphQL to allow embedded Apollo landing page
 app.use((req, res, next) => {
   if (req.path === '/graphql') {

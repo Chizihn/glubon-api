@@ -11,7 +11,7 @@ const envSchema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
   PORT: z.coerce.number().default(4000),
-  API_URL: z.string().url().default("https://subtle-cuddly-colt.ngrok-free.app "),
+  API_URL: z.string(),
 
   // Database
   DATABASE_URL: z.string().min(1, "Database URL is required"),
@@ -156,7 +156,7 @@ export const appConfig = {
   description: "Property Rental Platform for Nigeria",
   port: config.PORT,
   env: config.NODE_ENV,
-  apiUrl: config.NODE_ENV === "development" ? `http://localhost:${config.PORT}` : config.API_URL,
+  apiUrl: config.NODE_ENV === "development" ? `localhost:${config.PORT}` : config.API_URL,
   frontendUrl: config.FRONTEND_URL,
   isDevelopment: config.NODE_ENV === "development",
   isProduction: config.NODE_ENV === "production",

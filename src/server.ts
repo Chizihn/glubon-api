@@ -1,6 +1,6 @@
 // src/server.ts
 import { createApp } from "./app";
-import { appConfig } from "./config";
+import { appConfig, config } from "./config";
 import { logger } from "./utils";
 
 async function bootstrap() {
@@ -24,18 +24,18 @@ async function bootstrap() {
 
     // Start server
     httpServer.listen(appConfig.port, () => {
-//       logger.info(`
-// 🚀 Glubon API Server is running!
-// 📍 Environment: ${appConfig.env}
-// 🌐 GraphQL: http://localhost:${appConfig.port}/graphql
-// 📊 Health Check: http://localhost:${appConfig.port}/health
-// 🔌 WebSocket: ws://localhost:${appConfig.port}/graphql
-// ${
-//   appConfig.isDevelopment
-//     ? `🎮 GraphQL Playground: http://localhost:${appConfig.port}/graphql`
-//     : ""
-// }
-//       `);
+      logger.info(`
+🚀 Glubon API Server is running!
+📍 Environment: ${appConfig.env}
+🌐 GraphQL: ${config.API_URL}/graphql
+📊 Health Check: ${config.API_URL}/health
+🔌 WebSocket: ws://${config.API_URL}/graphql
+${
+  appConfig.isDevelopment
+    ? `🎮 GraphQL Playground: http://${config.API_URL}/graphql`
+    : ""
+}
+      `);
     });
   } catch (error) {
     // logger.error("Failed to start server:", error);
