@@ -17,7 +17,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "Database URL is required"),
 
   // Redis
-  REDIS_URL: z.string().min(1, "Redis URL is required"),
+  REDIS_HOST: z.string().min(1, "Redis URL is required"),
+  REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().optional(),
 
   // JWT
@@ -79,7 +80,8 @@ export const databaseConfig = {
 
 // Redis configuration
 export const redisConfig = {
-  url: config.REDIS_URL,
+  url: config.REDIS_HOST,
+  port: config.REDIS_PORT,
   password: config.REDIS_PASSWORD,
   retryDelayOnFailover: 100,
   enableReadyCheck: false,
