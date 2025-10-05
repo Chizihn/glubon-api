@@ -61,14 +61,17 @@ export async function createApp() {
     const wsCleanup = await createWebSocketServer(wsServer, schema, services);
 
     // Security middleware
-    // src/app.ts
-    app.use(
-      helmet({
-        contentSecurityPolicy:
-          appConfig.env === "production" ? undefined : false,
-        crossOriginEmbedderPolicy: false,
-      } as HelmetOptions)
-    );
+  // Skip helmet for GraphQL to allow embedded Apollo landing page
+app.use((req, res, next) => {
+  if (req.path === '/graphql') {
+    return next();
+  }
+  
+  helmet({
+    contentSecurityPolicy: appConfig.env === 'production' ? undefined : false,
+    crossOriginEmbedderPolicy: false,
+  } as HelmetOptions)(req, res, next);
+});
     
     // CORS
     app.use(cors(corsConfig));

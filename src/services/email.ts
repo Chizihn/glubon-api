@@ -31,6 +31,7 @@ interface QueuedEmail extends EmailOptions {
 export class EmailService extends BaseService {
   private static transporter: Transporter | null = null;
   private static isInitializing: boolean = false;
+  private static isConfigured: boolean = false;
   private emailQueue = "email_queue";
 
   constructor(prisma: PrismaClient, redis: Redis) {
@@ -56,43 +57,73 @@ export class EmailService extends BaseService {
     EmailService.isInitializing = true;
 
     try {
-      if (config.NODE_ENV === "production") {
-        EmailService.transporter = nodemailer.createTransport({
-          host: config.EMAIL_HOST || "gmail",
-          port: Number(config.EMAIL_PORT) || 465,
-          secure: true,
-          auth: {
-            user: config.EMAIL_USER,
-            pass: config.EMAIL_PASS,
-          },
+      // Validate required configuration
+      if (!config.EMAIL_HOST || !config.EMAIL_USER || !config.EMAIL_PASS) {
+        logger.warn('Email configuration incomplete. Email functionality disabled.', {
+          hasHost: !!config.EMAIL_HOST,
+          hasUser: !!config.EMAIL_USER,
+          hasPass: !!config.EMAIL_PASS
         });
-      } else {
-        EmailService.transporter = nodemailer.createTransport({
-          service: config.EMAIL_HOST || "gmail",
-          port: Number(config.EMAIL_PORT) || 587,
-          auth: {
-            user: config.EMAIL_USER,
-            pass: config.EMAIL_PASS,
-          },
-        });
+        EmailService.isInitializing = false;
+        return;
       }
 
+      // Universal configuration that works with any SMTP provider
+      const transportConfig: any = {
+        host: config.EMAIL_HOST, // e.g., smtp.gmail.com, smtp.sendgrid.net, smtp.mailgun.org
+        port: Number(config.EMAIL_PORT) || 587, // Default to 587 (TLS)
+        secure: config.EMAIL_PORT === 465, // true for 465, false for other ports
+        auth: {
+          user: config.EMAIL_USER,
+          pass: config.EMAIL_PASS,
+        },
+        // Connection settings to prevent timeouts
+        connectionTimeout: 10000, // 10 seconds
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
+        // Recommended settings
+        pool: true, // Use pooled connections
+        maxConnections: 5,
+        maxMessages: 100,
+        // Logging for debugging
+        logger: config.NODE_ENV === 'development',
+        debug: config.NODE_ENV === 'development',
+      };
+
+      EmailService.transporter = nodemailer.createTransport(transportConfig);
+
+      // Verify connection asynchronously (non-blocking)
       EmailService.transporter.verify((error) => {
         EmailService.isInitializing = false;
         if (error) {
-          logger.error("Email transporter configuration error:", error);
-          EmailService.transporter = null; // Reset on error to allow retry
+          logger.error("Email transporter configuration error:", {
+            error: error.message,
+            // code: error.code,
+            host: config.EMAIL_HOST,
+            port: config.EMAIL_PORT
+          });
+          EmailService.transporter = null;
+          EmailService.isConfigured = false;
+          logger.warn("⚠️  Email functionality disabled. Server continues running.");
         } else {
-          // logger.info("Email transporter is ready", { service: "graphql-api" });
+          logger.info("✅ Email transporter configured successfully", {
+            host: config.EMAIL_HOST,
+            port: config.EMAIL_PORT,
+            user: config.EMAIL_USER
+          });
+          EmailService.isConfigured = true;
         }
       });
+
     } catch (error) {
       EmailService.isInitializing = false;
       logger.error("Failed to initialize email transporter:", error);
+      logger.warn("Email functionality disabled. Server continues running.");
     }
   }
 
   private async startEmailProcessor(): Promise<void> {
+    // Process queue every 30 seconds
     setInterval(async () => {
       await this.processEmailQueue();
     }, 30000);
@@ -112,10 +143,15 @@ export class EmailService extends BaseService {
     };
 
     await this.redis.lpush(this.emailQueue, JSON.stringify(queuedEmail));
-    logger.info(`Email queued: ${queuedEmail.id}`);
+    logger.info(`Email queued: ${queuedEmail.id}`, { to: emailOptions.to });
   }
 
   private async processEmailQueue(): Promise<void> {
+    // Skip processing if email not configured
+    if (!EmailService.isConfigured) {
+      return;
+    }
+
     try {
       const queueLength = await this.redis.llen(this.emailQueue);
       if (queueLength === 0) return;
@@ -128,6 +164,7 @@ export class EmailService extends BaseService {
 
         const queuedEmail: QueuedEmail = JSON.parse(emailData);
 
+        // Check if email should be sent now
         if (queuedEmail.scheduledFor && new Date() < queuedEmail.scheduledFor) {
           await this.redis.lpush(this.emailQueue, emailData);
           continue;
@@ -135,22 +172,23 @@ export class EmailService extends BaseService {
 
         try {
           await this.sendEmailDirectly(queuedEmail);
-          // logger.info(`Email sent successfully: ${queuedEmail.id}`);
+          logger.info(`Email sent successfully: ${queuedEmail.id}`, { to: queuedEmail.to });
         } catch (error) {
           logger.error(`Failed to send email: ${queuedEmail.id}`, error);
           queuedEmail.attempts++;
+          
+          // Retry with exponential backoff
           if (queuedEmail.attempts < queuedEmail.maxAttempts) {
-            const delay = Math.pow(2, queuedEmail.attempts) * 60000;
+            const delay = Math.pow(2, queuedEmail.attempts) * 60000; // 2min, 4min, 8min
             queuedEmail.scheduledFor = new Date(Date.now() + delay);
-            await this.redis.lpush(
-              this.emailQueue,
-              JSON.stringify(queuedEmail)
+            await this.redis.lpush(this.emailQueue, JSON.stringify(queuedEmail));
+            logger.info(
+              `Email requeued for retry: ${queuedEmail.id}, attempt ${queuedEmail.attempts}/${queuedEmail.maxAttempts}`
             );
-            // logger.info(
-            //   `Email requeued for retry: ${queuedEmail.id}, attempt ${queuedEmail.attempts}`
-            // );
           } else {
-            logger.error(`Email failed permanently: ${queuedEmail.id}`);
+            logger.error(`Email failed permanently after ${queuedEmail.maxAttempts} attempts: ${queuedEmail.id}`);
+            // Optionally store failed emails for manual review
+            await this.redis.lpush('failed_emails', JSON.stringify(queuedEmail));
           }
         }
       }
@@ -160,22 +198,29 @@ export class EmailService extends BaseService {
   }
 
   private async sendEmailDirectly(emailOptions: EmailOptions): Promise<void> {
-    if (!EmailService.transporter) {
-      throw new Error("Email transporter not initialized");
+    if (!EmailService.transporter || !EmailService.isConfigured) {
+      throw new Error("Email service not configured or not ready");
     }
     
     try {
-      await EmailService.transporter.sendMail({
+      const info = await EmailService.transporter.sendMail({
         from: emailOptions.from || `"Glubon" <${config.EMAIL_USER}>`,
         to: emailOptions.to,
         subject: emailOptions.subject,
         html: emailOptions.html,
         text: emailOptions.text,
       });
+
+      return info;
     } catch (error) {
       logger.error("Error sending email:", error);
       throw error;
     }
+  }
+
+  // Check if email service is ready
+  isReady(): boolean {
+    return EmailService.isConfigured;
   }
 
   async sendWelcomeEmail(
@@ -183,6 +228,11 @@ export class EmailService extends BaseService {
     firstName: string
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping welcome email', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = UserEmailTemplates.welcomeEmail(firstName);
       await this.addToQueue({
         to: email,
@@ -202,6 +252,11 @@ export class EmailService extends BaseService {
     password: string
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping admin welcome email', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = AdminEmailTemplates.adminWelcomeEmail(firstName, password);
       await this.addToQueue({
         to: email,
@@ -222,6 +277,11 @@ export class EmailService extends BaseService {
     purpose: "email_verification" | "password_reset"
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, cannot send verification code', { to: email });
+        return this.failure("Email service not configured");
+      }
+
       const template = UserEmailTemplates.verificationCode(
         firstName,
         code,
@@ -248,6 +308,11 @@ export class EmailService extends BaseService {
     alertType: "new_match" | "price_drop" | "status_change"
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping property alert', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = PropertyEmailTemplates.propertyAlert(
         firstName,
         propertyTitle,
@@ -274,6 +339,11 @@ export class EmailService extends BaseService {
     approved: boolean
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping property approval notification', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = PropertyEmailTemplates.propertyApproval(
         ownerName,
         propertyTitle,
@@ -302,6 +372,11 @@ export class EmailService extends BaseService {
     approved: boolean
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping identity verification notification', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = AdminEmailTemplates.identityVerification(
         firstName,
         verificationType,
@@ -329,6 +404,11 @@ export class EmailService extends BaseService {
     reason?: string
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping user status change notification', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = UserEmailTemplates.userStatusChangeNotification(
         firstName,
         status,
@@ -354,6 +434,11 @@ export class EmailService extends BaseService {
     firstName: string
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping admin deactivation notification', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = AdminEmailTemplates.adminDeactivationNotification(firstName);
       await this.addToQueue({
         to: email,
@@ -379,6 +464,11 @@ export class EmailService extends BaseService {
     chatId: string
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping chat notification', { to: recipientEmail });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = ChatEmailTemplates.chatNotification(
         recipientName,
         senderName,
@@ -408,6 +498,10 @@ export class EmailService extends BaseService {
     delayBetween: number = 1000
   ): Promise<ServiceResponse<{ sent: number; failed: number }>> {
     try {
+      if (!this.isReady()) {
+        return this.failure("Email service not configured");
+      }
+
       let sent = 0;
       let failed = 0;
 
@@ -439,14 +533,15 @@ export class EmailService extends BaseService {
   }
 
   async getQueueStatus(): Promise<
-    ServiceResponse<{ queueLength: number; processingStatus: string }>
+    ServiceResponse<{ queueLength: number; processingStatus: string; isConfigured: boolean }>
   > {
     try {
       const queueLength = await this.redis.llen(this.emailQueue);
       return this.success(
         {
           queueLength,
-          processingStatus: "Active",
+          processingStatus: EmailService.isConfigured ? "Active" : "Disabled",
+          isConfigured: EmailService.isConfigured
         },
         "Queue status retrieved successfully"
       );
@@ -460,6 +555,10 @@ export class EmailService extends BaseService {
     emailOptions: EmailOptions
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        return this.failure("Email service not configured");
+      }
+
       await this.sendEmailDirectly(emailOptions);
       return this.success(undefined, "Email sent immediately");
     } catch (error) {
@@ -476,6 +575,11 @@ export class EmailService extends BaseService {
     type: string
   ): Promise<ServiceResponse<void>> {
     try {
+      if (!this.isReady()) {
+        logger.warn('Email service not configured, skipping notification email', { to: email });
+        return this.success(undefined, "Email service not configured");
+      }
+
       const template = UserEmailTemplates.notificationEmail(
         firstName,
         title,
@@ -507,7 +611,9 @@ export class EmailService extends BaseService {
 
   async getFailedEmails(): Promise<ServiceResponse<QueuedEmail[]>> {
     try {
-      return this.success([], "No failed emails tracking implemented");
+      const failedEmailsData = await this.redis.lrange('failed_emails', 0, -1);
+      const failedEmails = failedEmailsData.map(data => JSON.parse(data));
+      return this.success(failedEmails, "Failed emails retrieved successfully");
     } catch (error) {
       logger.error("Error getting failed emails:", error);
       return this.failure("Failed to get failed emails");
