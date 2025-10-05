@@ -1,7 +1,7 @@
 // src/graphql/server.ts
 import { ApolloServer } from "@apollo/server";
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
-import { ApolloServerPluginLandingPageLocalDefault, ApolloServerPluginLandingPageProductionDefault } from "@apollo/server/plugin/landingPage/default";
+import { ApolloServerPluginLandingPageLocalDefault } from "@apollo/server/plugin/landingPage/default";
 import { GraphQLError, GraphQLSchema } from "graphql";
 import { Server } from "http";
 import { Context } from "../types";
@@ -16,15 +16,10 @@ export async function createApolloServer(
     schema,
     plugins: [
       ...(httpServer ? [ApolloServerPluginDrainHttpServer({ httpServer })] : []),
-      // Enable Apollo Sandbox in production
-      appConfig.isDevelopment
-        ? ApolloServerPluginLandingPageLocalDefault({ embed: true })
-        : ApolloServerPluginLandingPageProductionDefault({
-            embed: true,
-            graphRef: 'your-graph-id@current', // Optional: for Apollo Studio integration
-          }),
+      // Use local default for both dev and production - no auth needed!
+      ApolloServerPluginLandingPageLocalDefault({ embed: true }),
     ],
-    introspection: true, // You already have this - keep it!
+    introspection: true,
     includeStacktraceInErrorResponses: appConfig.isDevelopment,
     csrfPrevention: true,
     cache: 'bounded',
