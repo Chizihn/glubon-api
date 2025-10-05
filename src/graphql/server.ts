@@ -21,7 +21,7 @@ export async function createApolloServer(
     plugins: httpServer
       ? [ApolloServerPluginDrainHttpServer({ httpServer })]
       : [],
-    introspection: appConfig.isDevelopment,
+    introspection: true,
     includeStacktraceInErrorResponses: appConfig.isDevelopment,
     // Configure Apollo Server for file uploads
     csrfPrevention: true,
