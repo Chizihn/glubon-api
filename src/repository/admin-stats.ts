@@ -7,7 +7,7 @@ import {
   Prisma,
   type User,
   type Property,
-  type Transaction
+  type Transaction,
 } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { Redis } from "ioredis";
@@ -21,10 +21,10 @@ import {
   type GeographicData,
   type PerformanceMetrics,
 } from "../types/services/admin";
-import { 
-  type RecentDataResponse as GraphQLRecentDataResponse, 
-  type RecentActivity, 
-  type RecentTransaction 
+import {
+  type RecentDataResponse as GraphQLRecentDataResponse,
+  type RecentActivity,
+  type RecentTransaction,
 } from "../modules/admin/admin.types";
 import { BaseRepository } from "../repository/base";
 
@@ -35,6 +35,15 @@ function toDate(date: DateInput): Date {
   if (!date) return new Date();
   if (date instanceof Date) return date;
   
+  // Handle ISO date strings
+  if (typeof date === 'string' && date.includes('T')) {
+    const parsed = new Date(date);
+    if (!isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+  
+  // Fallback for other date string formats
   const parsed = new Date(date);
   return isNaN(parsed.getTime()) ? new Date() : parsed;
 }
@@ -58,15 +67,19 @@ export class AdminStatsRepository extends BaseRepository {
     if (cached) return cached;
 
     const now = new Date();
-    const today = toDate(now); 
+    const today = toDate(now);
     today.setHours(0, 0, 0, 0);
-    
+
     const startOfDay = new Date(today);
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay()); // Start of current week (Sunday)
-    
+
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+    const lastMonth = new Date(
+      today.getFullYear(),
+      today.getMonth() - 1,
+      today.getDate()
+    );
     const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const [
@@ -152,7 +165,9 @@ export class AdminStatsRepository extends BaseRepository {
       // Property counts
       this.prisma.property.count(),
       this.prisma.property.count({ where: { status: PropertyStatus.ACTIVE } }),
-      this.prisma.property.count({ where: { status: PropertyStatus.PENDING_REVIEW } }),
+      this.prisma.property.count({
+        where: { status: PropertyStatus.PENDING_REVIEW },
+      }),
       this.prisma.property.count({
         where: { createdAt: { gte: startOfDay } } as Prisma.PropertyWhereInput,
       }),
@@ -160,7 +175,9 @@ export class AdminStatsRepository extends BaseRepository {
         where: { createdAt: { gte: startOfWeek } } as Prisma.PropertyWhereInput,
       }),
       this.prisma.property.count({
-        where: { createdAt: { gte: startOfMonth } } as Prisma.PropertyWhereInput,
+        where: {
+          createdAt: { gte: startOfMonth },
+        } as Prisma.PropertyWhereInput,
       }),
       this.prisma.property.count({ where: { createdAt: { gte: lastMonth } } }),
 
@@ -276,7 +293,7 @@ export class AdminStatsRepository extends BaseRepository {
           ),
         },
       },
-      totalRevenue: 0, // Placeholder - would need transaction/payment data
+      totalRevenue: await this.calculateTotalRevenue(),
     };
 
     await this.setCache(cacheKey, stats, 300); // Cache for 5 minutes
@@ -292,24 +309,26 @@ export class AdminStatsRepository extends BaseRepository {
     // Ensure we have valid dates, defaulting to last 30 days
     const defaultStartDate = new Date();
     defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    
-    const start = dateRange?.startDate ? toDate(dateRange.startDate) : defaultStartDate;
+
+    const start = dateRange?.startDate
+      ? toDate(dateRange.startDate)
+      : defaultStartDate;
     const end = dateRange?.endDate ? toDate(dateRange.endDate) : new Date();
 
     // Ensure dates are valid
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new Error('Invalid date range provided');
+      throw new Error("Invalid date range provided");
     }
 
     // Format dates for cache key using our safe formatDate helper
-    const startStr = formatDate(start).split('T')[0];
-    const endStr = formatDate(end).split('T')[0];
+    const startStr = formatDate(start).split("T")[0];
+    const endStr = formatDate(end).split("T")[0];
 
     const cacheKey = this.generateCacheKey(
       "admin",
       "user_growth",
-      startStr || '',
-      endStr || ''
+      startStr || "",
+      endStr || ""
     );
 
     const cached = await this.getCache<UserGrowthData[]>(cacheKey);
@@ -339,24 +358,26 @@ export class AdminStatsRepository extends BaseRepository {
     // Ensure we have valid dates, defaulting to last 30 days
     const defaultStartDate = new Date();
     defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    
-    const start = dateRange?.startDate ? toDate(dateRange.startDate) : defaultStartDate;
+
+    const start = dateRange?.startDate
+      ? toDate(dateRange.startDate)
+      : defaultStartDate;
     const end = dateRange?.endDate ? toDate(dateRange.endDate) : new Date();
 
     // Ensure dates are valid
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new Error('Invalid date range provided');
+      throw new Error("Invalid date range provided");
     }
 
     // Format dates for cache key using our safe formatDate helper
-    const startStr = formatDate(start).split('T')[0];
-    const endStr = formatDate(end).split('T')[0];
+    const startStr = formatDate(start).split("T")[0];
+    const endStr = formatDate(end).split("T")[0];
 
     const cacheKey = this.generateCacheKey(
       "admin",
       "property_growth",
-      startStr || '',
-      endStr || ''
+      startStr || "",
+      endStr || ""
     );
 
     const cached = await this.getCache<PropertyGrowthData[]>(cacheKey);
@@ -454,12 +475,14 @@ export class AdminStatsRepository extends BaseRepository {
     dateRange?: AnalyticsDateRange
   ): Promise<ActivityData[]> {
     // Set default date range if not provided (last 7 days)
-    const startDate = toDate(dateRange?.startDate ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+    const startDate = toDate(
+      dateRange?.startDate ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    );
     const endDate = toDate(dateRange?.endDate ?? new Date());
 
     // Ensure dates are valid
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      throw new Error('Invalid date range provided');
+      throw new Error("Invalid date range provided");
     }
 
     const cacheKey = this.generateCacheKey(
@@ -612,7 +635,7 @@ export class AdminStatsRepository extends BaseRepository {
           amount: true,
           bedrooms: true,
           bathrooms: true,
-          sqft: true
+          sqft: true,
         },
         where: { status: PropertyStatus.ACTIVE },
       }),
@@ -654,7 +677,7 @@ export class AdminStatsRepository extends BaseRepository {
   }
 
   /**
-   * Get revenue analytics (placeholder - depends on payment implementation)
+   * Get revenue analytics with proper Paystack split calculation
    */
   async getRevenueAnalytics(
     dateRange?: AnalyticsDateRange
@@ -666,7 +689,7 @@ export class AdminStatsRepository extends BaseRepository {
 
     // Ensure dates are valid
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      throw new Error('Invalid date range provided');
+      throw new Error("Invalid date range provided");
     }
 
     const cacheKey = this.generateCacheKey(
@@ -679,15 +702,115 @@ export class AdminStatsRepository extends BaseRepository {
     const cached = await this.getCache<RevenueData[]>(cacheKey);
     if (cached) return cached;
 
-    // Generate date range and create placeholder data
-    const dateRangeArray = this.generateDateRange(startDate, endDate);
-    const data: RevenueData[] = dateRangeArray.map((date) => ({
-      date: toDate(date),
-      revenue: new Decimal(0),
-      transactions: 0,
-      subscriptions: 0,
-      commissions: new Decimal(0),
-    }));
+    // Get completed transactions within date range
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        status: "COMPLETED",
+        processedAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+        type: {
+          in: [
+            "RENT_PAYMENT",
+            "LEASE_PAYMENT",
+            "SALE_PAYMENT",
+            "SUBSCRIPTION",
+            "PLATFORM_FEE",
+          ],
+        },
+      },
+      include: {
+        property: {
+          include: {
+            owner: {
+              include: {
+                subaccount: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        processedAt: "asc",
+      },
+    });
+
+    // Group transactions by date and calculate platform revenue
+    const dateMap = new Map<
+      string,
+      {
+        revenue: Decimal;
+        transactions: number;
+        subscriptions: number;
+        commissions: Decimal;
+      }
+    >();
+
+    // Initialize all dates in range
+    const currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dateKey = currentDate.toISOString().split("T")[0] || "";
+      dateMap.set(dateKey, {
+        revenue: new Decimal(0),
+        transactions: 0,
+        subscriptions: 0,
+        commissions: new Decimal(0),
+      });
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Process transactions
+    transactions.forEach((transaction) => {
+      const dateKey = transaction.processedAt
+        ? new Date(transaction.processedAt).toISOString().split("T")[0] || ""
+        : new Date(transaction.createdAt).toISOString().split("T")[0] || "";
+
+      const existing = dateMap.get(dateKey);
+      if (!existing) return;
+
+      existing.transactions += 1;
+
+      // Calculate platform revenue based on transaction type
+      let platformRevenue = new Decimal(0);
+
+      if (
+        transaction.type === "SUBSCRIPTION" ||
+        transaction.type === "PLATFORM_FEE"
+      ) {
+        // Direct platform revenue
+        platformRevenue = new Decimal(transaction.amount);
+      } else if (
+        ["RENT_PAYMENT", "LEASE_PAYMENT", "SALE_PAYMENT"].includes(
+          transaction.type
+        )
+      ) {
+        // Calculate platform commission from split payments
+        const subaccountPercentage =
+          transaction.property?.owner?.subaccount?.percentageCharge || 85;
+        const platformPercentage = 100 - subaccountPercentage; // Platform gets the remaining percentage
+        platformRevenue = new Decimal(transaction.amount)
+          .mul(platformPercentage)
+          .div(100);
+        existing.commissions = existing.commissions.add(platformRevenue);
+      }
+
+      if (transaction.type === "SUBSCRIPTION") {
+        existing.subscriptions += 1;
+      }
+
+      existing.revenue = existing.revenue.add(platformRevenue);
+    });
+
+    const data: RevenueData[] = Array.from(dateMap.entries()).map(
+      ([date, stats]) => ({
+        date: toDate(date),
+        revenue: stats.revenue,
+        transactions: stats.transactions,
+        subscriptions: stats.subscriptions,
+        commissions: stats.commissions,
+      })
+    );
 
     await this.setCache(cacheKey, data, 3600); // Cache for 1 hour
     return data;
@@ -843,14 +966,25 @@ export class AdminStatsRepository extends BaseRepository {
     }
 
     // Define type-safe activity type
-    type ActivityType = keyof Omit<ActivityData, 'date'>;
-    const activityTypes: ActivityType[] = ['views', 'likes', 'messages', 'conversations'];
+    type ActivityType = keyof Omit<ActivityData, "date">;
+    const activityTypes: ActivityType[] = [
+      "views",
+      "likes",
+      "messages",
+      "conversations",
+    ];
 
     // Aggregate all activity types
     activityTypes.forEach((type) => {
-      const items = data[type];
+      const items = data[type] || [];
       items.forEach((item) => {
-        const dateKey = new Date(item.createdAt).toISOString().split("T")[0] || "";
+        // Add null/undefined check and ensure createdAt is a valid date
+        if (!item || !item.createdAt) return;
+        
+        const date = new Date(item.createdAt);
+        if (isNaN(date.getTime())) return; // Skip invalid dates
+        
+        const dateKey = date.toISOString().split("T")[0] || '';
         const existing = dateMap.get(dateKey);
         if (existing) {
           existing[type] = (existing[type] || 0) + (item._count?.id || 0);
@@ -932,6 +1066,70 @@ export class AdminStatsRepository extends BaseRepository {
   }
 
   /**
+   * Calculate total platform revenue from completed transactions
+   */
+  private async calculateTotalRevenue(): Promise<number> {
+    try {
+      // Get all completed transactions
+      const transactions = await this.prisma.transaction.findMany({
+        where: {
+          status: "COMPLETED",
+          type: {
+            in: [
+              "RENT_PAYMENT",
+              "LEASE_PAYMENT",
+              "SALE_PAYMENT",
+              "SUBSCRIPTION",
+              "PLATFORM_FEE",
+            ],
+          },
+        },
+        include: {
+          property: {
+            include: {
+              owner: {
+                include: {
+                  subaccount: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      let totalRevenue = new Decimal(0);
+
+      transactions.forEach((transaction) => {
+        if (
+          transaction.type === "SUBSCRIPTION" ||
+          transaction.type === "PLATFORM_FEE"
+        ) {
+          // Direct platform revenue
+          totalRevenue = totalRevenue.add(new Decimal(transaction.amount));
+        } else if (
+          ["RENT_PAYMENT", "LEASE_PAYMENT", "SALE_PAYMENT"].includes(
+            transaction.type
+          )
+        ) {
+          // Calculate platform commission from split payments
+          const subaccountPercentage =
+            transaction.property?.owner?.subaccount?.percentageCharge || 85;
+          const platformPercentage = 100 - subaccountPercentage; // Platform gets the remaining percentage
+          const platformRevenue = new Decimal(transaction.amount)
+            .mul(platformPercentage)
+            .div(100);
+          totalRevenue = totalRevenue.add(platformRevenue);
+        }
+      });
+
+      return totalRevenue.toNumber();
+    } catch (error) {
+      console.error("Error calculating total revenue:", error);
+      return 0;
+    }
+  }
+
+  /**
    * Get recent activity and transactions
    * @param limit Number of items to return (default: 10)
    * @returns Promise containing recent activities and transactions
@@ -981,24 +1179,25 @@ export class AdminStatsRepository extends BaseRepository {
       });
 
       // Get recent verifications (using identityVerifications instead of verification)
-      const recentVerifications = await this.prisma.identityVerification.findMany({
-        where: {
-          status: { not: VerificationStatus.REJECTED },
-        },
-        orderBy: { createdAt: "desc" },
-        take: limit,
-        include: {
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              profilePic: true,
+      const recentVerifications =
+        await this.prisma.identityVerification.findMany({
+          where: {
+            status: { not: VerificationStatus.REJECTED },
+          },
+          orderBy: { createdAt: "desc" },
+          take: limit,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                profilePic: true,
+              },
             },
           },
-        },
-      });
+        });
 
       // Get recent transactions
       const recentTransactions = await this.prisma.transaction.findMany({
@@ -1025,87 +1224,112 @@ export class AdminStatsRepository extends BaseRepository {
         const timestamp = toDate(user.createdAt);
         return {
           id: user.id,
-          type: 'USER_SIGNUP',
-          description: `New user signup: ${user.firstName} ${user.lastName || ''}`.trim(),
+          type: "USER_SIGNUP",
+          description: `New user signup: ${user.firstName} ${
+            user.lastName || ""
+          }`.trim(),
           userId: user.id,
-          userName: user.firstName && user.lastName
-            ? `${user.firstName} ${user.lastName}`
-            : user.email || 'Unknown User',
+          userName:
+            user.firstName && user.lastName
+              ? `${user.firstName} ${user.lastName}`
+              : user.email || "Unknown User",
           userAvatar: user.profilePic || null,
           timestamp: timestamp,
           metadata: JSON.stringify({
-            email: user.email || '',
-            role: user.role || 'USER',
+            email: user.email || "",
+            role: user.role || "USER",
           }),
         };
       });
 
       // Process properties into activities with proper date handling
-      const propertyActivities: RecentActivity[] = recentProperties.map((property) => {
-        const timestamp = toDate(property.createdAt);
-        return {
-          id: property.id,
-          type: 'PROPERTY_ADDED',
-          description: `New property listed: ${property.title || 'Untitled Property'}`,
-          userId: property.ownerId || 'unknown',
-          userName: property.owner?.firstName && property.owner?.lastName
-            ? `${property.owner.firstName} ${property.owner.lastName}`
-            : property.owner?.email || 'Unknown User',
-          userAvatar: property.owner?.profilePic || null,
-          timestamp: timestamp,
-          metadata: JSON.stringify({
-            propertyId: property.id,
-            status: property.status || 'UNKNOWN',
-          }),
-        };
-      });
+      const propertyActivities: RecentActivity[] = recentProperties.map(
+        (property) => {
+          const timestamp = toDate(property.createdAt);
+          return {
+            id: property.id,
+            type: "PROPERTY_ADDED",
+            description: `New property listed: ${
+              property.title || "Untitled Property"
+            }`,
+            userId: property.ownerId || "unknown",
+            userName:
+              property.owner?.firstName && property.owner?.lastName
+                ? `${property.owner.firstName} ${property.owner.lastName}`
+                : property.owner?.email || "Unknown User",
+            userAvatar: property.owner?.profilePic || null,
+            timestamp: timestamp,
+            metadata: JSON.stringify({
+              propertyId: property.id,
+              status: property.status || "UNKNOWN",
+            }),
+          };
+        }
+      );
 
       // Process verifications into activities with proper typing and date handling
-      const verificationActivities: RecentActivity[] = recentVerifications.map((verification: any) => {
-        const user = verification.user || {};
-        const timestamp = toDate(verification.createdAt);
-        return {
-          id: verification.id,
-          type: 'VERIFICATION_SUBMITTED',
-          description: `Verification submitted by ${user.firstName || 'User'}`,
-          userId: user.id || 'unknown',
-          userName: user.firstName && user.lastName
-            ? `${user.firstName} ${user.lastName}`
-            : 'Unknown User',
-          userAvatar: user.profilePic || null,
-          timestamp: timestamp,
-          metadata: JSON.stringify({
-            status: verification.status || 'PENDING',
-            type: verification.type || 'IDENTITY',
-          }),
-        };
-      });
+      const verificationActivities: RecentActivity[] = recentVerifications.map(
+        (verification: any) => {
+          const user = verification.user || {};
+          const timestamp = toDate(verification.createdAt);
+          return {
+            id: verification.id,
+            type: "VERIFICATION_SUBMITTED",
+            description: `Verification submitted by ${
+              user.firstName || "User"
+            }`,
+            userId: user.id || "unknown",
+            userName:
+              user.firstName && user.lastName
+                ? `${user.firstName} ${user.lastName}`
+                : "Unknown User",
+            userAvatar: user.profilePic || null,
+            timestamp: timestamp,
+            metadata: JSON.stringify({
+              status: verification.status || "PENDING",
+              type: verification.type || "IDENTITY",
+            }),
+          };
+        }
+      );
 
       // Combine and sort all activities with proper date handling
       const allActivities = [
         ...signupActivities,
         ...propertyActivities,
         ...verificationActivities,
-      ].sort((a, b) => {
-        const timeA = a.timestamp.getTime();
-        const timeB = b.timestamp.getTime();
-        return timeB - timeA; // Sort in descending order (newest first)
-      }).slice(0, limit);
+      ]
+        .sort((a, b) => {
+          const timeA = a.timestamp.getTime();
+          const timeB = b.timestamp.getTime();
+          return timeB - timeA; // Sort in descending order (newest first)
+        })
+        .slice(0, limit);
 
       // Process transactions with proper date handling
       const transactions: RecentTransaction[] = recentTransactions.map((tx) => {
         const timestamp = toDate(tx.createdAt);
         return {
           id: tx.id,
-          type: (tx.type || 'DEPOSIT') as 'SUBSCRIPTION' | 'COMMISSION' | 'REFUND' | 'WITHDRAWAL' | 'DEPOSIT',
+          type: (tx.type || "DEPOSIT") as
+            | "SUBSCRIPTION"
+            | "COMMISSION"
+            | "REFUND"
+            | "WITHDRAWAL"
+            | "DEPOSIT",
           amount: tx.amount ? Number(tx.amount) : 0,
-          currency: tx.currency || 'NGN',
-          status: (tx.status || 'COMPLETED') as 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED',
+          currency: tx.currency || "NGN",
+          status: (tx.status || "COMPLETED") as
+            | "PENDING"
+            | "COMPLETED"
+            | "FAILED"
+            | "REFUNDED",
           timestamp: timestamp,
-          userId: tx.user?.id || 'unknown',
-          userName: tx.user?.firstName && tx.user?.lastName
-            ? `${tx.user.firstName} ${tx.user.lastName}`
-            : tx.user?.email || 'Unknown User',
+          userId: tx.user?.id || "unknown",
+          userName:
+            tx.user?.firstName && tx.user?.lastName
+              ? `${tx.user.firstName} ${tx.user.lastName}`
+              : tx.user?.email || "Unknown User",
           userAvatar: tx.user?.profilePic || null,
           reference: tx.reference || `tx-${tx.id}`,
           description: tx.description || `Transaction #${tx.id}`,
@@ -1120,7 +1344,7 @@ export class AdminStatsRepository extends BaseRepository {
       await this.setCache(cacheKey, result, 300); // Cache for 5 minutes
       return result;
     } catch (error) {
-      console.error('Error in getRecentData:', error);
+      console.error("Error in getRecentData:", error);
       return {
         recentActivity: [],
         recentTransactions: [],

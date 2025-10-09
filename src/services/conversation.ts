@@ -4,7 +4,7 @@ import {
   NotificationType,
   RoleEnum,
   Prisma,
-  User
+  User,
 } from "@prisma/client";
 import Redis from "ioredis";
 import { IBaseResponse } from "../types/responses";
@@ -393,7 +393,6 @@ export class ConversationService extends BaseService {
                 firstName: true,
                 lastName: true,
                 profilePic: true,
-
               },
             },
             property: {
@@ -406,12 +405,12 @@ export class ConversationService extends BaseService {
                 listingType: true,
                 rentalPeriod: true,
                 address: true,
-              }
-            }
+              },
+            },
           },
           skip,
           take: validatedLimit,
-          orderBy: { createdAt: "desc" },
+          orderBy: { createdAt: "asc" },
         }),
         this.prisma.message.count({ where }),
       ]);
@@ -419,7 +418,7 @@ export class ConversationService extends BaseService {
       const pagination = this.buildPagination(page, validatedLimit, totalCount);
 
       const result = {
-        messages: messages.reverse(), // Show oldest first
+        messages: messages, // Return in chronological order (oldest first)
         totalCount,
         pagination,
       };
@@ -438,35 +437,43 @@ export class ConversationService extends BaseService {
     input: SendMessageInput
   ): Promise<IBaseResponse<any>> {
     try {
-      const { conversationId, content, messageType, attachments, propertyId, recipientIds } = input;
-      
+      const {
+        conversationId,
+        content,
+        messageType,
+        attachments,
+        propertyId,
+        recipientIds,
+      } = input;
+
       let conversation;
-      
+
       // If no conversationId is provided, create a new conversation
       if (!conversationId) {
         if (!recipientIds || recipientIds.length === 0) {
-          return this.failure("Recipient IDs are required when creating a new conversation", [
-            StatusCodes.BAD_REQUEST,
-          ]);
+          return this.failure(
+            "Recipient IDs are required when creating a new conversation",
+            [StatusCodes.BAD_REQUEST]
+          );
         }
-        
+
         // Create a new conversation with the sender and recipients
         const createInput: CreateConversationInput & { initiatorId: string } = {
           participantIds: [senderId, ...(recipientIds || [])],
           initiatorId: senderId,
         };
-        
+
         // Only add propertyId if it exists
         if (propertyId) {
           createInput.propertyId = propertyId;
         }
-        
+
         const createResult = await this.createConversation(createInput);
-        
+
         if (!createResult.success || !createResult.data) {
           return createResult;
         }
-        
+
         conversation = createResult.data;
       } else {
         // Get existing conversation
@@ -544,20 +551,22 @@ export class ConversationService extends BaseService {
               },
             },
             // Include property details if propertyId exists
-            ...(propertyId ? {
-              property: {
-                select: {
-                  id: true,
-                  title: true,
-                  images: true,
-                  amount: true,
-                  city: true,
-                  state: true,
-                  address: true,
-                  rentalPeriod: true
-                },
-              },
-            } : {}),
+            ...(propertyId
+              ? {
+                  property: {
+                    select: {
+                      id: true,
+                      title: true,
+                      images: true,
+                      amount: true,
+                      city: true,
+                      state: true,
+                      address: true,
+                      rentalPeriod: true,
+                    },
+                  },
+                }
+              : {}),
           },
         });
 
@@ -578,7 +587,7 @@ export class ConversationService extends BaseService {
       // Publish to real-time subscription
       await (pubSub as RedisPubSub).publish(SUBSCRIPTION_EVENTS.MESSAGE_SENT, {
         message,
-        conversationId,
+        conversationId: conversation.id, // Use the correct conversation ID
         recipientIds: recipients.map((r: User) => r.id),
       });
 
@@ -641,7 +650,7 @@ export class ConversationService extends BaseService {
       });
 
       if (!conversation) {
-        return this.failure("Conversation not found or access denied",);
+        return this.failure("Conversation not found or access denied");
       }
 
       // Mark all unread messages from other participants as read
@@ -681,7 +690,7 @@ export class ConversationService extends BaseService {
       });
 
       if (!message) {
-        return this.failure("Message not found or access denied", );
+        return this.failure("Message not found or access denied");
       }
 
       // Delete message
@@ -715,7 +724,7 @@ export class ConversationService extends BaseService {
       });
 
       if (!conversation) {
-        return this.failure("Conversation not found or access denied", );
+        return this.failure("Conversation not found or access denied");
       }
 
       // Archive conversation
@@ -815,7 +824,7 @@ export class ConversationService extends BaseService {
       });
 
       if (!conversation) {
-        return this.failure("Conversation not found or access denied", );
+        return this.failure("Conversation not found or access denied");
       }
 
       // Validate pagination

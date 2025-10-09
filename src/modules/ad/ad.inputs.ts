@@ -1,5 +1,6 @@
-import { Field, InputType } from 'type-graphql';
+import { Field, InputType, Int } from 'type-graphql';
 import { AdPosition, AdType, AdStatus } from '@prisma/client';
+import { PaginationInput } from '../transaction/transaction.types';
 
 @InputType()
 export class CreateAdInput {
@@ -41,6 +42,56 @@ export class UpdateAdStatusInput {
 
   @Field(() => AdStatus)
   status: AdStatus;
+}
+
+
+
+@InputType()
+class SortInput {
+  @Field(() => String, { nullable: true })
+  field?: string;
+
+  @Field(() => String, { nullable: true })
+  order?: 'asc' | 'desc';
+}
+
+@InputType()
+export class GetAdsFilter {
+  @Field(() => [String], { nullable: true })
+  ids?: string[];
+
+  @Field(() => [AdStatus], { nullable: true })
+  statuses?: AdStatus[];
+
+  @Field(() => [AdPosition], { nullable: true })
+  positions?: AdPosition[];
+
+  @Field(() => [AdType], { nullable: true })
+  types?: AdType[];
+
+  @Field(() => Date, { nullable: true })
+  startDateAfter?: Date;
+
+  @Field(() => Date, { nullable: true })
+  startDateBefore?: Date;
+
+  @Field(() => Date, { nullable: true })
+  endDateAfter?: Date;
+
+  @Field(() => Date, { nullable: true })
+  endDateBefore?: Date;
+
+  @Field(() => Boolean, { nullable: true })
+  isActive?: boolean;
+
+  @Field(() => String, { nullable: true })
+  search?: string;
+
+  @Field(() => PaginationInput, { nullable: true })
+  pagination?: PaginationInput;
+
+  @Field(() => SortInput, { nullable: true })
+  sort?: SortInput;
 }
 
 @InputType()

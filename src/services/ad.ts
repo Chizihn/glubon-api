@@ -1,4 +1,5 @@
 import { PrismaClient, Ad, AdStatus, AdType, AdPosition } from "@prisma/client";
+import { GetAdsFilter } from "../modules/ad/ad.inputs";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
 import { logger } from "../utils";
@@ -7,6 +8,46 @@ import { ServiceResponse } from "../types";
 export class AdService extends BaseService {
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
+  }
+
+  async getAdById(id: string): Promise<ServiceResponse<Ad | null>> {
+    try {
+      console.log(`Fetching ad with ID: ${id}`);
+      const ad = await this.prisma.ad.findUnique({
+        where: { id },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (!ad) {
+        return { 
+          success: false, 
+          message: 'Ad not found',
+          data: null 
+        };
+      }
+
+      return { 
+        success: true, 
+        data: ad, 
+        message: 'Ad fetched successfully' 
+      };
+    } catch (error) {
+      console.error(`Error in getAdById: ${error}`);
+      return { 
+        success: false, 
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        data: null
+      };
+    }
   }
 
   async createAd(data: {
@@ -34,6 +75,95 @@ export class AdService extends BaseService {
       return this.success(ad, 'Ad created successfully');
     } catch (error) {
       return this.handleError(error, 'createAd');
+    }
+  }
+
+  async getAds(
+    filter?: GetAdsFilter
+  ): Promise<ServiceResponse<{ data: Ad[]; totalItems: number; page: number; limit: number; totalPages: number }>> {
+    try {
+      console.log('getAds service called with filter:', JSON.stringify(filter, null, 2));
+      
+      const where: any = {};
+      const { pagination = { page: 1, limit: 10 }, sort, search, ...filters } = filter || {};
+      const page = Math.max(1, pagination?.page || 1);
+      const limit = Math.min(100, Math.max(1, pagination?.limit || 10));
+      const skip = (page - 1) * limit;
+
+      // Apply filters
+      if (filters.ids?.length) where.id = { in: filters.ids };
+      if (filters.statuses?.length) where.status = { in: filters.statuses };
+      if (filters.positions?.length) where.position = { in: filters.positions };
+      if (filters.types?.length) where.type = { in: filters.types };
+      if (filters.isActive !== undefined) where.isActive = filters.isActive;
+      
+      // Date range filters
+      if (filters.startDateAfter || filters.startDateBefore) {
+        where.startDate = {};
+        if (filters.startDateAfter) where.startDate.gte = new Date(filters.startDateAfter);
+        if (filters.startDateBefore) where.startDate.lte = new Date(filters.startDateBefore);
+      }
+      
+      if (filters.endDateAfter || filters.endDateBefore) {
+        where.endDate = {};
+        if (filters.endDateAfter) where.endDate.gte = new Date(filters.endDateAfter);
+        if (filters.endDateBefore) where.endDate.lte = new Date(filters.endDateBefore);
+      }
+
+      // Search functionality
+      if (search) {
+        where.OR = [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ];
+      }
+
+      console.log('Constructed Prisma where clause:', JSON.stringify(where, null, 2));
+
+      // Build orderBy
+      const orderBy: any[] = [];
+      if (sort?.field) {
+        orderBy.push({ [sort.field]: sort.order || 'asc' });
+      } else {
+        orderBy.push({ createdAt: 'desc' }); // Default sort
+      }
+
+      // Get total count for pagination
+      const total = await this.prisma.ad.count({ where });
+      const totalPages = Math.ceil(total / limit);
+
+      console.log(`Found ${total} total ads matching filters`);
+
+      // Get paginated results
+      const data = await this.prisma.ad.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limit,
+        include: {
+          creator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      return this.success(
+        {
+          data,
+          totalItems: total,
+          page,
+          limit,
+          totalPages,
+        },
+        'Ads retrieved successfully'
+      );
+    } catch (error) {
+      return this.handleError(error, 'getAds');
     }
   }
 

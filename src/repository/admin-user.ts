@@ -574,9 +574,11 @@ export class AdminUsersRepository extends BaseRepository {
     };
   }
 
-  async getPendingVerifications(
+  async getVerifications(
     page: number,
-    limit: number
+    limit: number,
+    status?: VerificationStatus,
+    search?: string
   ): Promise<{ verifications: any[]; totalCount: number }> {
     const { skip, limit: validatedLimit } = this.validatePagination(
       page,
@@ -584,7 +586,9 @@ export class AdminUsersRepository extends BaseRepository {
     );
     const cacheKey = this.generateCacheKey(
       "admin",
-      "pending_verifications",
+      "verifications",
+      status || 'all',
+      search || 'no-search',
       page.toString(),
       limit.toString()
     );
@@ -594,9 +598,24 @@ export class AdminUsersRepository extends BaseRepository {
     }>(cacheKey);
     if (cached) return cached;
 
+    const where: any = {};
+    
+    if (status) {
+      where.status = status;
+    }
+    
+    if (search) {
+      where.OR = [
+        { user: { firstName: { contains: search, mode: 'insensitive' } } },
+        { user: { lastName: { contains: search, mode: 'insensitive' } } },
+        { user: { email: { contains: search, mode: 'insensitive' } } },
+        { documentNumber: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
     const [verifications, totalCount] = await Promise.all([
       this.prisma.identityVerification.findMany({
-        where: { status: VerificationStatus.PENDING },
+        where,
         include: {
           user: {
             select: {

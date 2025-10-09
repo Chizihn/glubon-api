@@ -7,8 +7,9 @@ import {
   UseMiddleware,
 } from "type-graphql";
 import { Context } from "../../types";
-import { Ad, AdAnalyticsType, AdType } from "./ad.types";
-import { CreateAdInput, UpdateAdStatusInput, AdAnalyticsFilter } from "./ad.inputs";
+import { Ad, AdAnalyticsType, AdType, PaginatedAdResponse } from "./ad.types";
+import { PaginationInfo } from "../../types/responses";
+import { CreateAdInput, UpdateAdStatusInput, AdAnalyticsFilter, GetAdsFilter } from "./ad.inputs";
 import { AdPosition } from "@prisma/client";
 import { AuthMiddleware } from "../../middleware";
 import { getContainer } from "../../services";
@@ -25,6 +26,81 @@ export class AdResolver {
     
     this.adService = container.resolve('adService');
     this.adAnalyticsService = container.resolve('adAnalyticsService');
+  }
+
+  @Query(() => PaginatedAdResponse)
+  @UseMiddleware(AuthMiddleware)
+  async getAds(
+    @Arg("filter", () => GetAdsFilter, { nullable: true }) filter: GetAdsFilter | null,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedAdResponse> {
+    try {
+      console.log('getAds called with filter:', JSON.stringify(filter, null, 2));
+      console.log('User context:', { userId: ctx.user?.id });
+      
+      const result = await this.adService.getAds(filter || undefined);
+      console.log('Service result:', { 
+        success: result.success, 
+        hasData: !!result.data,
+        dataLength: result.data?.data?.length,
+        message: result.message 
+      });
+      
+      if (!result.success || !result.data) {
+        console.error('Failed to get ads:', result.message);
+        return {
+          data: [],
+          pagination: new PaginationInfo(1, 10, 0)
+        };
+      }
+      
+      const response = {
+        data: result.data.data || [],
+        pagination: new PaginationInfo(
+          result.data.page || 1,
+          result.data.limit || 10,
+          result.data.totalItems || 0
+        )
+      };
+      
+      console.log('Returning response with', response.data.length, 'ads');
+      return response;
+      
+    } catch (error) {
+      console.error('Error in getAds:', error);
+      // Log the full error for debugging
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+      }
+      return {
+        data: [],
+        pagination: new PaginationInfo(1, 10, 0)
+      };
+    }
+  }
+
+  @Query(() => Ad, { nullable: true })
+  @UseMiddleware(AuthMiddleware)
+  async getAd(
+    @Arg("id", () => String) id: string,
+    @Ctx() ctx: Context
+  ): Promise<Ad | null> {
+    try {
+      const result = await this.adService.getAdById(id);
+      
+      if (!result.success || !result.data) {
+        console.error(`[getAd] Failed to fetch ad: ${result.message}`);
+        return null;
+      }
+      
+      return result.data;
+    } catch (error) {
+      return null;
+    }
   }
 
   @Query(() => [Ad])

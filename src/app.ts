@@ -30,18 +30,18 @@ export async function createApp() {
 
     // Initialize container with prisma and redis
     const container = Container.getInstance(prisma, redis);
-    
+
     // Set the container instance for services to use
     setContainer(container);
-    
+
     // Register all services with the container
     registerServices(container);
-    
+
     // For backward compatibility
     const services = createServices(prisma, redis);
 
     // Initialize background workers
-    if (process.env.NODE_ENV !== 'test') {
+    if (process.env.NODE_ENV !== "test") {
       initializeWorkers(prisma);
     }
 
@@ -60,55 +60,77 @@ export async function createApp() {
     // Set up WebSocket server for subscriptions
     const wsCleanup = await createWebSocketServer(wsServer, schema, services);
 
-  // Skip helmet for GraphQL to allow embedded Apollo landing page
-app.use((req, res, next) => {
-  if (req.path === '/graphql') {
-    return next();
-  }
-  
-  helmet({
-    contentSecurityPolicy: appConfig.env === 'production' ? undefined : false,
-    crossOriginEmbedderPolicy: false,
-  } as HelmetOptions)(req, res, next);
-});
-    
+    // Skip helmet for GraphQL to allow embedded Apollo landing page
+    app.use((req, res, next) => {
+      if (req.path === "/graphql") {
+        return next();
+      }
+
+      helmet({
+        contentSecurityPolicy:
+          appConfig.env === "production" ? undefined : false,
+        crossOriginEmbedderPolicy: false,
+      } as HelmetOptions)(req, res, next);
+    });
+
     // CORS
     app.use(cors(corsConfig));
 
     // Body parsing - Configure before GraphQL upload middleware
-    app.use(express.json({ limit: '50mb' }));
-    app.use(express.urlencoded({ limit: '50mb', extended: true }));
-    
+    app.use(express.json({ limit: "50mb" }));
+    app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
     // OAuth REST endpoints
     app.use("/api/oauth", oauthRestRouter);
 
     // Paystack webhook endpoint
     app.use("/api/webhook", createWebhookRouter(prisma, redis));
-    app.get('/payment-callback', (req, res) => {
+    app.get("/payment-callback", async (req, res) => {
       const { reference, status } = req.query;
-      
-      if (status === 'success') {
-        res.redirect('glubon://payment/successful?reference=' + reference);
-      } else {
-        res.redirect('glubon://payment/failed?reference=' + reference);
+
+      try {
+        // Get booking ID from transaction reference for better UX
+        const transaction = await prisma.transaction.findUnique({
+          where: { reference: reference as string },
+          include: { booking: true },
+        });
+
+        const bookingId = transaction?.booking?.id;
+        const bookingParam = bookingId ? `&bookingId=${bookingId}` : "";
+
+        if (status === "success") {
+          res.redirect(
+            `glubon://payment/successful?reference=${reference}${bookingParam}`
+          );
+        } else {
+          res.redirect(
+            `glubon://payment/failed?reference=${reference}${bookingParam}`
+          );
+        }
+      } catch (error) {
+        console.error("Payment callback error:", error);
+        // Fallback to basic redirect
+        if (status === "success") {
+          res.redirect(`glubon://payment/successful?reference=${reference}`);
+        } else {
+          res.redirect(`glubon://payment/failed?reference=${reference}`);
+        }
       }
     });
-    
 
     // Root endpoint
-app.get("/", (req, res) => {
-  res.status(200).json({
-    message: "Glubon API Server",
-    version: "1.0.0",
-    endpoints: {
-      graphql: "/graphql",
-      health: "/health",
-      webhook: "/api/webhook",
-      oauth: "/api/oauth"
-    }
-  });
-});
-
+    app.get("/", (req, res) => {
+      res.status(200).json({
+        message: "Glubon API Server",
+        version: "1.0.0",
+        endpoints: {
+          graphql: "/graphql",
+          health: "/health",
+          webhook: "/api/webhook",
+          oauth: "/api/oauth",
+        },
+      });
+    });
 
     // Health check endpoint
     app.get("/health", (req, res) => {

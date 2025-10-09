@@ -10,6 +10,7 @@ import { BaseService } from "./base";
 import { emailServiceSingleton } from "./email";
 import { NotificationService } from "./notification";
 import { IBaseResponse } from "../types";
+import { VerificationStatus } from "@prisma/client";
 import {
   AdminUserFilters,
   AdminListFilters,
@@ -29,6 +30,46 @@ export class AdminUsersService extends BaseService {
   private notificationService: NotificationService;
   private repository: AdminUsersRepository;
   private subaccountService: SubaccountService;
+
+  /**
+   * Get verifications with filtering and pagination
+   */
+  async getVerifications(
+    adminId: string,
+    status?: VerificationStatus,
+    page = 1,
+    limit = 20,
+    search?: string
+  ): Promise<IBaseResponse<{ verifications: any[]; totalCount: number; pagination: any }>> {
+    try {
+      await this.repository.logAdminAction(
+        adminId,
+        status ? `VIEW_${status.toUpperCase()}_VERIFICATIONS` : "VIEW_ALL_VERIFICATIONS"
+      );
+      
+      const { verifications, totalCount } = await this.repository.getVerifications(
+        page,
+        limit,
+        status,
+        search
+      );
+      
+      const pagination = this.repository.buildPagination(
+        page,
+        limit,
+        totalCount
+      );
+      
+      return this.success(
+        { verifications, totalCount, pagination },
+        status 
+          ? `${status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()} verifications retrieved successfully`
+          : "All verifications retrieved successfully"
+      );
+    } catch (error: unknown) {
+      return this.handleError(error, "getVerifications");
+    }
+  }
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
@@ -635,33 +676,6 @@ export class AdminUsersService extends BaseService {
     }
   }
 
-  async getPendingVerifications(
-    adminId: string,
-    page = 1,
-    limit = 20
-  ): Promise<
-    IBaseResponse<{ verifications: any[]; totalCount: number; pagination: any }>
-  > {
-    try {
-      await this.repository.logAdminAction(
-        adminId,
-        "VIEW_PENDING_VERIFICATIONS"
-      );
-      const { verifications, totalCount } =
-        await this.repository.getPendingVerifications(page, limit);
-      const pagination = this.repository.buildPagination(
-        page,
-        limit,
-        totalCount
-      );
-      return this.success(
-        { verifications, totalCount, pagination },
-        "Pending verifications retrieved successfully"
-      );
-    } catch (error: unknown) {
-      return this.handleError(error, "getPendingVerifications");
-    }
-  }
 
   // Private helper methods
 

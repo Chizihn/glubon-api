@@ -1,19 +1,7 @@
-import {
-  Field,
-  GraphQLISODateTime,
-  InputType,
-  Int,
-  ObjectType,
-  registerEnumType,
-} from "type-graphql";
-import {
-  PermissionEnum,
-  PropertyStatus,
-  PropertyType,
-  RoleEnum,
-  UserStatus,
-} from "@prisma/client";
+import { PermissionEnum, PropertyStatus, PropertyType, RoleEnum, UserStatus, VerificationStatus } from "@prisma/client";
+import { Field, GraphQLISODateTime, InputType, Int, ObjectType, registerEnumType } from "type-graphql";
 import { GraphQLJSONObject } from "graphql-type-json";
+import { AnalyticsDateRangeInput } from "../analytics/analytics.types";
 
 registerEnumType(PermissionEnum, {
   name: "PermissionEnum",
@@ -194,17 +182,17 @@ export class ReviewVerificationInput {
   reason?: string;
 }
 
-@InputType()
-export class AnalyticsDateRangeInput {
-  @Field(() => GraphQLISODateTime, { nullable: true })
-  startDate?: Date;
+// @InputType()
+// export class AnalyticsDateRangeInput {
+//   @Field(() => GraphQLISODateTime, { nullable: true })
+//   startDate?: Date;
 
-  @Field(() => GraphQLISODateTime, { nullable: true })
-  endDate?: Date;
+//   @Field(() => GraphQLISODateTime, { nullable: true })
+//   endDate?: Date;
 
-  @Field(() => String, { nullable: true })
-  period?: "day" | "week" | "month" | "year";
-}
+//   @Field(() => String, { nullable: true })
+//   period?: "day" | "week" | "month" | "year";
+// }
 
 @InputType()
 export class ExportRequestInput {
@@ -225,4 +213,19 @@ export class ExportRequestInput {
 
   @Field(() => GraphQLJSONObject, { nullable: true })
   filters?: Record<string, any>;
+}
+
+@InputType()
+export class VerificationFilters {
+  @Field(() => VerificationStatus, { nullable: true })
+  status?: VerificationStatus;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  createdAfter?: Date;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  createdBefore?: Date;
+
+  @Field(() => String, { nullable: true })
+  search?: string;
 }

@@ -23,6 +23,7 @@ import { AdAnalyticsResolver } from "../modules/ad-analytics";
 import { SettingsResolver } from "../modules/setting/setting.resolver";
 import { SubaccountResolver } from "../modules/subaccount/subaccount.resolver";
 import { UnitResolver } from "../modules/unit/unit.resolver";
+import { AnalyticsResolver } from "../modules/analytics/analytics.resolver";
 // Auth checking is handled by the AuthMiddleware
 
 export async function createGraphQLSchema() {
@@ -53,6 +54,8 @@ export async function createGraphQLSchema() {
       SettingsResolver,
       SubaccountResolver,
       UnitResolver,
+      AnalyticsResolver,
+      // TicketResolver,
     ],
     validate: false,
     pubSub,

@@ -50,8 +50,8 @@ export interface CreateBookingRequestInput {
 export interface CreateBookingInput {
   propertyId: string;
   startDate: Date;
-  duration: number; 
-  unitIds?: string[]; 
+  duration: number;
+  unitIds?: string[];
 }
 
 export interface UpdateBookingStatusInput {
@@ -81,7 +81,7 @@ export class BookingService extends BaseService {
   private notificationService: NotificationService;
   private userRepo: UserRepository;
   private propertyRepo: PropertyRepository;
-  
+
   // Logger is available from BaseService
 
   constructor(prisma: PrismaClient, redis: Redis) {
@@ -104,9 +104,9 @@ export class BookingService extends BaseService {
     try {
       const property = await this.prisma.property.findUnique({
         where: { id: input.propertyId },
-        include: { 
+        include: {
           owner: true,
-          units: true 
+          units: true,
         },
       });
 
@@ -124,10 +124,12 @@ export class BookingService extends BaseService {
         if (property.isStandalone) {
           // For standalone properties, units are optional
           // Use specified units if provided, but don't require them
-          selectedUnits = input.unitIds 
-            ? property.units.filter(unit => 
-                input.unitIds!.includes(unit.id) && 
-                (unit.status === UnitStatus.AVAILABLE || unit.status === UnitStatus.RENTED)
+          selectedUnits = input.unitIds
+            ? property.units.filter(
+                (unit) =>
+                  input.unitIds!.includes(unit.id) &&
+                  (unit.status === UnitStatus.AVAILABLE ||
+                    unit.status === UnitStatus.RENTED)
               )
             : [];
         } else {
@@ -136,9 +138,10 @@ export class BookingService extends BaseService {
             return this.failure("Please select at least one unit");
           }
 
-          selectedUnits = property.units.filter(unit => 
-            input.unitIds!.includes(unit.id) && 
-            unit.status === UnitStatus.AVAILABLE
+          selectedUnits = property.units.filter(
+            (unit) =>
+              input.unitIds!.includes(unit.id) &&
+              unit.status === UnitStatus.AVAILABLE
           );
 
           if (selectedUnits.length !== input.unitIds.length) {
@@ -151,8 +154,9 @@ export class BookingService extends BaseService {
       let totalAmount = new Decimal(0);
       if (selectedUnits.length > 0) {
         // Sum up unit amounts if units are selected
-        totalAmount = selectedUnits.reduce((sum, unit) => 
-          sum.plus(unit.amount || new Decimal(0)), new Decimal(0)
+        totalAmount = selectedUnits.reduce(
+          (sum, unit) => sum.plus(unit.amount || new Decimal(0)),
+          new Decimal(0)
         );
       } else {
         // For standalone properties with no units selected, use the property amount
@@ -163,7 +167,7 @@ export class BookingService extends BaseService {
       // when the booking is confirmed
       const defaultStartDate = new Date();
       defaultStartDate.setDate(defaultStartDate.getDate() + 1); // Default to tomorrow
-      
+
       const booking = await this.prisma.booking.create({
         data: {
           renter: { connect: { id: renterId } },
@@ -201,7 +205,8 @@ export class BookingService extends BaseService {
 
       return this.success({
         booking,
-        message: "Booking request created successfully. Waiting for host approval.",
+        message:
+          "Booking request created successfully. Waiting for host approval.",
       });
     } catch (error) {
       return this.handleError(error, "createBookingRequest");
@@ -239,11 +244,15 @@ export class BookingService extends BaseService {
       }
 
       if (updatedBooking.status !== BookingStatus.PENDING_APPROVAL) {
-        return this.failure("This booking request has already been responded to");
+        return this.failure(
+          "This booking request has already been responded to"
+        );
       }
 
-      const status = accept ? BookingStatus.PENDING_PAYMENT : BookingStatus.REJECTED;
-      
+      const status = accept
+        ? BookingStatus.PENDING_PAYMENT
+        : BookingStatus.REJECTED;
+
       // Update the booking status within the same transaction
       const [result] = await this.prisma.$transaction([
         this.prisma.booking.update({
@@ -259,14 +268,18 @@ export class BookingService extends BaseService {
             units: { include: { unit: true } },
           },
         }),
-        
+
         // Create notification in the same transaction
         this.prisma.notification.create({
           data: {
             userId: updatedBooking.renterId,
             title: `Booking Request ${accept ? "Approved" : "Declined"}`,
-            message: `Your booking request for ${updatedBooking.property.title} has been ${
-              accept ? "approved. You can now proceed with payment." : "declined"
+            message: `Your booking request for ${
+              updatedBooking.property.title
+            } has been ${
+              accept
+                ? "approved. You can now proceed with payment."
+                : "declined"
             }`,
             type: accept
               ? NotificationType.BOOKING_APPROVED
@@ -282,10 +295,12 @@ export class BookingService extends BaseService {
 
       // Invalidate any cached booking data
       await this.redis.del(`booking:${bookingId}`);
-      
+
       return this.success({
         booking: result,
-        message: `Booking request ${accept ? "approved" : "declined"} successfully`,
+        message: `Booking request ${
+          accept ? "approved" : "declined"
+        } successfully`,
       });
     } catch (error) {
       return this.handleError(error, "respondToBookingRequest");
@@ -320,21 +335,30 @@ export class BookingService extends BaseService {
       });
 
       if (!existingBooking) {
-        return this.failure("No approved booking request found. Please create a booking request first.");
+        return this.failure(
+          "No approved booking request found. Please create a booking request first."
+        );
       }
 
       const property = existingBooking.property;
 
       // Validate based on listing type
-      if (property.listingType === 'SALE') {
+      if (property.listingType === "SALE") {
         // For SALE, duration should be 1 and endDate should be same as startDate
         if (data.duration !== 1) {
-          return this.failure("For properties listed for sale, duration must be 1");
+          return this.failure(
+            "For properties listed for sale, duration must be 1"
+          );
         }
         if (existingBooking.units.length > 1) {
-          return this.failure("Cannot book multiple units for a property listed for sale");
+          return this.failure(
+            "Cannot book multiple units for a property listed for sale"
+          );
         }
-      } else if (property.listingType === 'LEASE' || property.listingType === 'RENT') {
+      } else if (
+        property.listingType === "LEASE" ||
+        property.listingType === "RENT"
+      ) {
         // For LEASE and RENT, validate duration and dates
         if (data.duration < 1) {
           return this.failure("Duration must be at least 1");
@@ -344,15 +368,19 @@ export class BookingService extends BaseService {
       // Calculate dates
       const startDate = new Date(data.startDate);
       let endDate: Date | null = null;
-      
+
       // Only calculate endDate for RENT and LEASE, not for SALE
-      if (property.listingType !== 'SALE') {
-        endDate = this.calculateEndDate(startDate, data.duration, property.rentalPeriod);
+      if (property.listingType !== "SALE") {
+        endDate = this.calculateEndDate(
+          startDate,
+          data.duration,
+          property.rentalPeriod
+        );
       }
 
       // Calculate total amount
       let totalAmount: Decimal;
-      if (property.listingType === 'SALE') {
+      if (property.listingType === "SALE") {
         // For SALE, use the full amount without duration multiplier
         totalAmount = existingBooking.amount;
       } else {
@@ -399,38 +427,41 @@ export class BookingService extends BaseService {
         // Determine transaction type based on property listing type
         let transactionType: string;
         switch (property.listingType) {
-          case 'RENT':
-            transactionType = 'RENT_PAYMENT';
+          case "RENT":
+            transactionType = "RENT_PAYMENT";
             break;
-          case 'LEASE':
-            transactionType = 'LEASE_PAYMENT';
+          case "LEASE":
+            transactionType = "LEASE_PAYMENT";
             break;
-          case 'SALE':
-            transactionType = 'SALE_PAYMENT';
+          case "SALE":
+            transactionType = "SALE_PAYMENT";
             break;
           default:
-            transactionType = 'RENT_PAYMENT'; // Default fallback
+            transactionType = "RENT_PAYMENT"; // Default fallback
         }
 
         // Create transaction for payment
-        const transactionResult = await this.transactionService.createTransaction(
-          {
-            type: transactionType as any, // Type assertion needed due to Prisma client type issue
-            amount: totalAmount,
-            currency: "NGN",
-            description: `Payment for ${property.listingType.toLowerCase()} booking ${updatedBooking.id}`,
-            userId: renterId,
-            propertyId: property.id,
-            bookingId: updatedBooking.id,
-            metadata: {
-              amount: totalAmount.toNumber(),
-              subaccountCode: property.owner.subaccount!.subaccountCode,
-              splitType: "percentage",
-              listingType: property.listingType
+        const transactionResult =
+          await this.transactionService.createTransaction(
+            {
+              type: transactionType as any, // Type assertion needed due to Prisma client type issue
+              amount: totalAmount,
+              currency: "NGN",
+              description: `Payment for ${property.listingType.toLowerCase()} booking ${
+                updatedBooking.id
+              }`,
+              userId: renterId,
+              propertyId: property.id,
+              bookingId: updatedBooking.id,
+              metadata: {
+                amount: totalAmount.toNumber(),
+                subaccountCode: property.owner.subaccount!.subaccountCode,
+                splitType: "percentage",
+                listingType: property.listingType,
+              },
             },
-          },
-          renterId
-        );
+            renterId
+          );
 
         if (!transactionResult.success || !transactionResult.data) {
           throw new Error(transactionResult.message);
@@ -439,21 +470,28 @@ export class BookingService extends BaseService {
         // Create payment with Paystack
         let paymentUrl;
         try {
-          const paystackResponse = await this.paystackService.createSplitPayment(
-            existingBooking.renter.email!,
-            totalAmount,
-            transactionResult.data.reference,
-            property.owner.subaccount!.subaccountCode!,
-            property.owner.subaccount!.percentageCharge,
-        
-          );
+          // Generate callback URL for payment completion
+          const callbackUrl = `${
+            process.env.BACKEND_URL || "http://localhost:4000"
+          }/payment-callback`;
+
+          const paystackResponse =
+            await this.paystackService.createSplitPayment(
+              existingBooking.renter.email!,
+              totalAmount,
+              transactionResult.data.reference,
+              property.owner.subaccount!.subaccountCode!,
+              property.owner.subaccount!.percentageCharge,
+              callbackUrl
+            );
 
           if (!paystackResponse?.data?.status) {
-            const errorMessage = paystackResponse?.message || "Failed to process payment";
-            logger.error("Error creating split payment", { 
+            const errorMessage =
+              paystackResponse?.message || "Failed to process payment";
+            logger.error("Error creating split payment", {
               message: errorMessage,
               status: paystackResponse?.data?.status,
-              reference: transactionResult.data.reference
+              reference: transactionResult.data.reference,
             });
             throw new Error(errorMessage);
           }
@@ -484,14 +522,14 @@ export class BookingService extends BaseService {
             message: "Booking created successfully. Please complete payment.",
             data: {
               booking: updatedBooking,
-              paymentUrl
-            }
+              paymentUrl,
+            },
           };
         } catch (error) {
           logger.error("Error in createBooking payment process", {
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: error instanceof Error ? error.message : "Unknown error",
             bookingId: existingBooking.id,
-            reference: transactionResult.data.reference
+            reference: transactionResult.data.reference,
           });
           throw error; // Re-throw to trigger transaction rollback
         }
@@ -512,7 +550,7 @@ export class BookingService extends BaseService {
       // Use confirmBookingPayment to handle the payment verification
       const result = await this.confirmBookingPayment({
         reference,
-        userId
+        userId,
       });
 
       if (!result.success) {
@@ -522,11 +560,13 @@ export class BookingService extends BaseService {
       // Get the updated booking
       const transaction = await this.prisma.transaction.findUnique({
         where: { reference },
-        include: { booking: true }
+        include: { booking: true },
       });
 
       if (!transaction?.booking) {
-        return this.failure("Failed to retrieve booking after payment verification");
+        return this.failure(
+          "Failed to retrieve booking after payment verification"
+        );
       }
 
       return this.success({ booking: transaction.booking });
@@ -549,12 +589,12 @@ export class BookingService extends BaseService {
         include: {
           units: {
             include: {
-              unit: true
-            }
-          }
-        }
+              unit: true,
+            },
+          },
+        },
       });
-      
+
       if (!booking) {
         return this.failure("Booking not found");
       }
@@ -573,28 +613,28 @@ export class BookingService extends BaseService {
       // Determine the appropriate status based on listing type
       let propertyStatus: PropertyStatus;
       switch (property.listingType) {
-        case 'SALE':
-          propertyStatus = 'SOLD' as PropertyStatus;
+        case "SALE":
+          propertyStatus = "SOLD" as PropertyStatus;
           break;
-        case 'LEASE':
-          propertyStatus = 'LEASED' as PropertyStatus;
+        case "LEASE":
+          propertyStatus = "LEASED" as PropertyStatus;
           break;
-        case 'RENT':
+        case "RENT":
         default:
-          propertyStatus = 'RENTED' as PropertyStatus;
+          propertyStatus = "RENTED" as PropertyStatus;
       }
 
       // Update booking status to CONFIRMED and property status based on listing type
       const [updatedBooking] = await Promise.all([
         this.bookingRepo.update(bookingId, {
           status: BookingStatus.CONFIRMED,
-          confirmedAt: new Date()
+          confirmedAt: new Date(),
         }),
         // Update property status based on listing type
         this.prisma.property.update({
           where: { id: booking.propertyId },
           data: { status: propertyStatus },
-        })
+        }),
       ]);
 
       // Send notifications
@@ -608,12 +648,16 @@ export class BookingService extends BaseService {
       const bookingWithUnits = booking as Booking & {
         units: Array<{ unit: { id: string } }>;
       };
-      
+
       if (bookingWithUnits.units && bookingWithUnits.units.length > 0) {
         await this.prisma.unit.updateMany({
-          where: { 
-            id: { in: bookingWithUnits.units.map((u: { unit: { id: string } }) => u.unit.id) },
-            status: UnitStatus.PENDING_BOOKING
+          where: {
+            id: {
+              in: bookingWithUnits.units.map(
+                (u: { unit: { id: string } }) => u.unit.id
+              ),
+            },
+            status: UnitStatus.PENDING_BOOKING,
           },
           data: { status: UnitStatus.RENTED },
         });
@@ -639,7 +683,9 @@ export class BookingService extends BaseService {
         include: {
           booking: {
             include: {
-              property: { include: { owner: { include: { subaccount: true } } } },
+              property: {
+                include: { owner: { include: { subaccount: true } } },
+              },
               renter: true,
               units: { include: { unit: true } },
             },
@@ -657,17 +703,23 @@ export class BookingService extends BaseService {
       }
 
       // Verify payment with Paystack
-      const paystackResponse = await this.paystackService.verifyPayment(reference);
+      const paystackResponse = await this.paystackService.verifyPayment(
+        reference
+      );
 
       if (
         !paystackResponse.data ||
         !paystackResponse.data.data ||
         paystackResponse.data.data.status !== "success"
       ) {
-        return this.failure(`Payment verification failed: ${paystackResponse.message}`);
+        return this.failure(
+          `Payment verification failed: ${paystackResponse.message}`
+        );
       }
 
-      const paidAmount = new Decimal(paystackResponse.data.data.amount).div(100);
+      const paidAmount = new Decimal(paystackResponse.data.data.amount).div(
+        100
+      );
       const expectedAmount = new Decimal(transaction.amount);
 
       if (!paidAmount.equals(expectedAmount)) {
@@ -691,7 +743,7 @@ export class BookingService extends BaseService {
         // Update booking status to PAID after successful payment
         await tx.booking.update({
           where: { id: transaction.bookingId! },
-          data: { 
+          data: {
             status: BookingStatus.PAID,
             // paidAt: new Date()
           },
@@ -730,12 +782,13 @@ export class BookingService extends BaseService {
     status?: BookingStatus
   ): Promise<ServiceResponse<PaginatedBookingResponse>> {
     try {
-      const { bookings, totalCount } = await this.bookingRepo.getHostBookingRequests(
-        hostId,
-        page,
-        limit,
-        status
-      );
+      const { bookings, totalCount } =
+        await this.bookingRepo.getHostBookingRequests(
+          hostId,
+          page,
+          limit,
+          status
+        );
 
       const totalPages = Math.ceil(totalCount / limit);
 
@@ -765,12 +818,13 @@ export class BookingService extends BaseService {
     status?: BookingStatus
   ): Promise<ServiceResponse<PaginatedBookingResponse>> {
     try {
-      const { bookings, totalCount } = await this.bookingRepo.getRenterBookingRequests(
-        renterId,
-        page,
-        limit,
-        status
-      );
+      const { bookings, totalCount } =
+        await this.bookingRepo.getRenterBookingRequests(
+          renterId,
+          page,
+          limit,
+          status
+        );
 
       const totalPages = Math.ceil(totalCount / limit);
 
@@ -845,7 +899,10 @@ export class BookingService extends BaseService {
       }
 
       // Validate permissions
-      if (status === BookingStatus.CONFIRMED && booking.property.ownerId !== userId) {
+      if (
+        status === BookingStatus.CONFIRMED &&
+        booking.property.ownerId !== userId
+      ) {
         return this.failure("Only the property owner can confirm bookings");
       }
 
@@ -854,10 +911,15 @@ export class BookingService extends BaseService {
         booking.property.ownerId !== userId &&
         booking.renterId !== userId
       ) {
-        return this.failure("Only the property owner or renter can cancel bookings");
+        return this.failure(
+          "Only the property owner or renter can cancel bookings"
+        );
       }
 
-      const updatedBooking = await this.bookingRepo.updateStatus(bookingId, status);
+      const updatedBooking = await this.bookingRepo.updateStatus(
+        bookingId,
+        status
+      );
 
       // Send appropriate notifications based on status change
       await this.sendStatusUpdateNotifications(booking, status, userId);
@@ -878,13 +940,13 @@ export class BookingService extends BaseService {
 
     switch (rentalPeriod) {
       case RentalPeriod.WEEKLY:
-        endDate.setDate(endDate.getDate() + (duration * 7));
+        endDate.setDate(endDate.getDate() + duration * 7);
         break;
       case RentalPeriod.MONTHLY:
         endDate.setMonth(endDate.getMonth() + duration);
         break;
       case RentalPeriod.QUARTERLY:
-        endDate.setMonth(endDate.getMonth() + (duration * 3));
+        endDate.setMonth(endDate.getMonth() + duration * 3);
         break;
       case RentalPeriod.YEARLY:
         endDate.setFullYear(endDate.getFullYear() + duration);
@@ -909,7 +971,9 @@ export class BookingService extends BaseService {
       this.notificationService.createNotification({
         userId: renter.id,
         title: "Complete Your Payment",
-        message: `Your booking for ${property.title} is ready. Complete payment: ₦${totalAmount.toLocaleString()}`,
+        message: `Your booking for ${
+          property.title
+        } is ready. Complete payment: ₦${totalAmount.toLocaleString()}`,
         type: NotificationType.PAYMENT_REQUIRED,
         data: {
           bookingId: booking.id,
@@ -931,7 +995,7 @@ export class BookingService extends BaseService {
     if (!transaction.booking) return;
 
     const booking = transaction.booking;
-    
+
     await Promise.all([
       this.notificationService.createNotification({
         userId: transaction.userId!,
@@ -969,7 +1033,9 @@ export class BookingService extends BaseService {
       case BookingStatus.CANCELLED:
         await this.notificationService.createNotification({
           userId: isHostAction ? booking.renterId : booking.property.ownerId,
-          title: isHostAction ? "Booking Cancelled" : "Booking Cancelled by Guest",
+          title: isHostAction
+            ? "Booking Cancelled"
+            : "Booking Cancelled by Guest",
           message: isHostAction
             ? `Your booking for ${booking.property.title} has been cancelled by the host.`
             : `Booking for ${booking.property.title} has been cancelled by the guest.`,

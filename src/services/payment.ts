@@ -119,9 +119,9 @@ export class PaystackService extends BaseService {
   // Helper method to safely extract error information
   private extractErrorInfo(error: any): any {
     const errorInfo: any = {
-      message: error.message || 'Unknown error',
-      name: error.name || 'Error',
-      stack: error.stack
+      message: error.message || "Unknown error",
+      name: error.name || "Error",
+      stack: error.stack,
     };
 
     // Safely extract Axios response data if available
@@ -130,7 +130,7 @@ export class PaystackService extends BaseService {
         status: error.response.status,
         statusText: error.response.statusText,
         data: error.response.data,
-        headers: error.response.headers
+        headers: error.response.headers,
       };
     }
 
@@ -140,7 +140,7 @@ export class PaystackService extends BaseService {
         url: error.config.url,
         method: error.config.method,
         headers: error.config.headers,
-        data: error.config.data
+        data: error.config.data,
       };
     }
 
@@ -151,8 +151,15 @@ export class PaystackService extends BaseService {
     email: string,
     amount: Decimal | number,
     reference: string,
-    channels: string[] = ["card", "bank_transfer", "ussd", "qr", "mobile_money"],
-    subaccountCode?: string
+    channels: string[] = [
+      "card",
+      "bank_transfer",
+      "ussd",
+      "qr",
+      "mobile_money",
+    ],
+    subaccountCode?: string,
+    callbackUrl?: string
   ): Promise<ServiceResponse<PaystackInitializeResponse>> {
     try {
       const payload: any = {
@@ -161,6 +168,11 @@ export class PaystackService extends BaseService {
         reference,
         channels,
       };
+
+      // Add callback URL if provided
+      if (callbackUrl) {
+        payload.callback_url = callbackUrl;
+      }
 
       // Add subaccount if provided
       if (subaccountCode) {
@@ -228,10 +240,10 @@ export class PaystackService extends BaseService {
         return this.failure("Account number and bank code are required");
       }
 
-      const response = await axios.get<{ 
+      const response = await axios.get<{
         status: boolean;
         message: string;
-        data: AccountResolveResponse 
+        data: AccountResolveResponse;
       }>(
         `${this.baseUrl}/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
         {
@@ -239,16 +251,18 @@ export class PaystackService extends BaseService {
             Authorization: `Bearer ${this.apiKey}`,
             "Content-Type": "application/json",
           },
-          validateStatus: () => true // This ensures we get the response even for error status codes
+          validateStatus: () => true, // This ensures we get the response even for error status codes
         }
       );
 
-      if (!response.data || typeof response.data !== 'object') {
+      if (!response.data || typeof response.data !== "object") {
         return this.failure("Invalid response from Paystack service");
       }
 
       if (!response.data.status) {
-        return this.failure(response.data.message || "Account resolution failed");
+        return this.failure(
+          response.data.message || "Account resolution failed"
+        );
       }
 
       if (!response.data.data) {
@@ -262,14 +276,16 @@ export class PaystackService extends BaseService {
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       console.error("Error resolving account number:", safeError);
-      
+
       // Handle specific error cases
       if (error.response?.status === 400) {
         return this.failure("Invalid account number or bank code");
       }
-      
+
       // Return a generic error message without exposing internal details
-      return this.failure("Failed to resolve account number. Please try again later.");
+      return this.failure(
+        "Failed to resolve account number. Please try again later."
+      );
     }
   }
 
@@ -280,14 +296,17 @@ export class PaystackService extends BaseService {
   ): Promise<ServiceResponse<SubaccountValidationResult>> {
     try {
       // First, resolve the account number
-      const resolveResult = await this.resolveAccountNumber(accountNumber, bankCode);
-      
+      const resolveResult = await this.resolveAccountNumber(
+        accountNumber,
+        bankCode
+      );
+
       if (!resolveResult.success) {
         return this.failure(resolveResult.message);
       }
 
       const accountData = resolveResult.data!;
-      
+
       // Basic validation
       if (!accountData.account_name) {
         return this.failure("Could not retrieve account name");
@@ -295,18 +314,21 @@ export class PaystackService extends BaseService {
 
       // You can add more validation logic here
       // For example, checking if account name matches business name partially
-      
-      return this.success({
-        isValid: true,
-        accountName: accountData.account_name
-      }, "Account details validated successfully");
 
+      return this.success(
+        {
+          isValid: true,
+          accountName: accountData.account_name,
+        },
+        "Account details validated successfully"
+      );
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       logger.error("Error validating subaccount details:", safeError);
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to validate subaccount details";
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to validate subaccount details";
       return this.failure(errorMessage);
     }
   }
@@ -345,19 +367,19 @@ export class PaystackService extends BaseService {
       );
 
       if (!response.data.status) {
-        return this.failure(response.data.message || "Failed to create subaccount");
+        return this.failure(
+          response.data.message || "Failed to create subaccount"
+        );
       }
 
-      return this.success(
-        response.data,
-        "Subaccount created successfully"
-      );
+      return this.success(response.data, "Subaccount created successfully");
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       logger.error("Error creating Paystack subaccount:", safeError);
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to create Paystack subaccount";
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to create Paystack subaccount";
       return this.failure(errorMessage);
     }
   }
@@ -379,29 +401,30 @@ export class PaystackService extends BaseService {
       );
 
       if (!response.data.status) {
-        return this.failure(response.data.message || "Failed to update subaccount");
+        return this.failure(
+          response.data.message || "Failed to update subaccount"
+        );
       }
 
-      return this.success(
-        response.data,
-        "Subaccount updated successfully"
-      );
+      return this.success(response.data, "Subaccount updated successfully");
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       logger.error("Error updating subaccount:", safeError);
-      
+
       if (error.response?.status === 404) {
         return this.failure("Subaccount not found");
       }
-      
+
       if (error.response?.status === 400) {
-        const errorMessage = error.response.data?.message || "Invalid update data";
+        const errorMessage =
+          error.response.data?.message || "Invalid update data";
         return this.failure(errorMessage);
       }
-      
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to update subaccount";
+
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update subaccount";
       return this.failure(errorMessage);
     }
   }
@@ -421,24 +444,24 @@ export class PaystackService extends BaseService {
       );
 
       if (!response.data.status) {
-        return this.failure(response.data.message || "Failed to fetch subaccount");
+        return this.failure(
+          response.data.message || "Failed to fetch subaccount"
+        );
       }
 
-      return this.success(
-        response.data,
-        "Subaccount fetched successfully"
-      );
+      return this.success(response.data, "Subaccount fetched successfully");
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       logger.error("Error fetching subaccount:", safeError);
-      
+
       if (error.response?.status === 404) {
         return this.failure("Subaccount not found");
       }
-      
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to fetch subaccount";
+
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to fetch subaccount";
       return this.failure(errorMessage);
     }
   }
@@ -468,14 +491,15 @@ export class PaystackService extends BaseService {
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       logger.error("Error fetching subaccount balance:", safeError);
-      
+
       if (error.response?.status === 404) {
         return this.failure("Subaccount not found");
       }
-      
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to fetch subaccount balance";
+
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to fetch subaccount balance";
       return this.failure(errorMessage);
     }
   }
@@ -484,20 +508,17 @@ export class PaystackService extends BaseService {
     try {
       const cacheKey = "paystack:banks";
       const cached = await this.getCache<any>(cacheKey);
-      
+
       if (cached) {
         return this.success(cached, "Banks fetched from cache");
       }
 
-      const response = await axios.get(
-        `${this.baseUrl}/bank`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.apiKey}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const response = await axios.get(`${this.baseUrl}/bank`, {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+      });
 
       if (!response.data.status) {
         return this.failure(response.data.message || "Failed to fetch banks");
@@ -506,16 +527,14 @@ export class PaystackService extends BaseService {
       // Cache for 24 hours (banks don't change frequently)
       await this.setCache(cacheKey, response.data, CACHE_TTL.VERY_LONG as any);
 
-      return this.success(
-        response.data,
-        "Banks fetched successfully"
-      );
+      return this.success(response.data, "Banks fetched successfully");
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       logger.error("Error fetching banks:", safeError);
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to fetch banks";
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to fetch banks";
       return this.failure(errorMessage);
     }
   }
@@ -537,19 +556,19 @@ export class PaystackService extends BaseService {
       );
 
       if (!response.data.status) {
-        return this.failure(response.data.message || "Failed to fetch transactions");
+        return this.failure(
+          response.data.message || "Failed to fetch transactions"
+        );
       }
 
-      return this.success(
-        response.data,
-        "Transactions fetched successfully"
-      );
+      return this.success(response.data, "Transactions fetched successfully");
     } catch (error: any) {
       const safeError = this.extractErrorInfo(error);
       logger.error("Error fetching transactions:", safeError);
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to fetch transactions";
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to fetch transactions";
       return this.failure(errorMessage);
     }
   }
@@ -589,7 +608,9 @@ export class PaystackService extends BaseService {
       );
 
       if (!response.data.status) {
-        return this.failure(response.data.message || "Failed to initialize split payment");
+        return this.failure(
+          response.data.message || "Failed to initialize split payment"
+        );
       }
 
       return this.success(
@@ -611,7 +632,9 @@ export class PaystackService extends BaseService {
   async retryPayment(
     bookingId: string,
     userId: string
-  ): Promise<ServiceResponse<{ paymentUrl: string; reference: string; expiresAt: Date }>> {
+  ): Promise<
+    ServiceResponse<{ paymentUrl: string; reference: string; expiresAt: Date }>
+  > {
     try {
       // 1. Verify the booking exists and belongs to the user
       const booking = await this.prisma.booking.findUnique({
@@ -621,59 +644,55 @@ export class PaystackService extends BaseService {
           property: {
             include: {
               owner: {
-                include: { subaccount: true }
-              }
-            }
+                include: { subaccount: true },
+              },
+            },
           },
           transactions: {
             where: {
-              status: 'PENDING',
+              status: "PENDING",
               type: {
-                in: [
-                  'RENT_PAYMENT',
-                  'LEASE_PAYMENT',
-                  'SALE_PAYMENT'
-                ] as any[] // Temporary workaround for Prisma client type issue
-              }
+                in: ["RENT_PAYMENT", "LEASE_PAYMENT", "SALE_PAYMENT"] as any[], // Temporary workaround for Prisma client type issue
+              },
             },
-            orderBy: { createdAt: 'desc' },
-            take: 1
-          }
-        }
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
       });
 
       if (!booking) {
-        return this.failure('Booking not found');
+        return this.failure("Booking not found");
       }
 
       if (booking.renterId !== userId) {
-        return this.failure('Unauthorized');
+        return this.failure("Unauthorized");
       }
 
       // 2. Check if booking is in a state that allows payment
-      if (!['PENDING_PAYMENT', 'PENDING_APPROVAL'].includes(booking.status)) {
-        return this.failure('This booking is not eligible for payment');
+      if (!["PENDING_PAYMENT", "PENDING_APPROVAL"].includes(booking.status)) {
+        return this.failure("This booking is not eligible for payment");
       }
 
       // 3. Create a new transaction record or reuse existing pending one
       let transaction = booking.transactions[0];
-      
+
       if (!transaction) {
         // Determine transaction type based on property listing type
         let transactionType: string;
         switch (booking.property.listingType) {
-          case 'RENT':
-            transactionType = 'RENT_PAYMENT';
+          case "RENT":
+            transactionType = "RENT_PAYMENT";
             break;
-          case 'LEASE':
-            transactionType = 'LEASE_PAYMENT';
+          case "LEASE":
+            transactionType = "LEASE_PAYMENT";
             break;
-          case 'SALE':
-            transactionType = 'SALE_PAYMENT';
+          case "SALE":
+            transactionType = "SALE_PAYMENT";
             break;
           default:
             // Fallback to RENT_PAYMENT for backward compatibility
-            transactionType = 'RENT_PAYMENT';
+            transactionType = "RENT_PAYMENT";
         }
 
         // Create a new transaction if none exists
@@ -681,14 +700,18 @@ export class PaystackService extends BaseService {
           data: {
             type: transactionType as any, // Type assertion needed due to Prisma client type issue
             amount: booking.amount,
-            currency: 'NGN',
-            status: 'PENDING' as const,
-            reference: `PSTK-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`,
+            currency: "NGN",
+            status: "PENDING" as const,
+            reference: `PSTK-${Date.now()}-${Math.random()
+              .toString(36)
+              .substring(2, 10)}`,
             userId,
             propertyId: booking.propertyId,
             bookingId: booking.id,
-            description: `Payment for ${booking.property.listingType.toLowerCase()} booking ${booking.id}`
-          }
+            description: `Payment for ${booking.property.listingType.toLowerCase()} booking ${
+              booking.id
+            }`,
+          },
         });
         transaction = newTransaction;
       }
@@ -698,34 +721,37 @@ export class PaystackService extends BaseService {
         booking.renter.email!,
         booking.amount,
         transaction.reference,
-        booking.property.owner.subaccount?.subaccountCode || '',
+        booking.property.owner.subaccount?.subaccountCode || "",
         booking.property.owner.subaccount?.percentageCharge || 85
       );
 
-      if (!paymentResult.success || !paymentResult.data?.data?.authorization_url) {
-        return this.failure('Failed to generate payment URL');
+      if (
+        !paymentResult.success ||
+        !paymentResult.data?.data?.authorization_url
+      ) {
+        return this.failure("Failed to generate payment URL");
       }
 
       // 5. Update booking with new payment URL
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
-      
+
       await this.prisma.booking.update({
         where: { id: bookingId },
         data: {
-          status: 'PENDING_PAYMENT',
-          updatedAt: new Date()
-        }
+          status: "PENDING_PAYMENT",
+          updatedAt: new Date(),
+        },
       });
 
       return this.success({
         paymentUrl: paymentResult.data.data.authorization_url,
         reference: transaction.reference,
-        expiresAt
+        expiresAt,
       });
     } catch (error) {
       const safeError = this.extractErrorInfo(error);
-      logger.error('Error retrying payment:', safeError);
-      return this.handleError(error, 'retryPayment');
+      logger.error("Error retrying payment:", safeError);
+      return this.handleError(error, "retryPayment");
     }
   }
 
@@ -738,6 +764,7 @@ export class PaystackService extends BaseService {
     reference: string,
     subaccountCode: string,
     subaccountPercentage: number,
+    callbackUrl?: string
   ): Promise<ServiceResponse<PaystackInitializeResponse>> {
     try {
       const splitConfig = {
@@ -746,23 +773,56 @@ export class PaystackService extends BaseService {
         subaccounts: [
           {
             subaccount: subaccountCode,
-            share: subaccountPercentage
-          }
+            share: subaccountPercentage,
+          },
         ],
         bearer_type: "subaccount",
         bearer_subaccount: subaccountCode,
       };
 
-      return await this.splitPayment(email, amount, reference, splitConfig);
+      // Create payload with callback URL if provided
+      const payload: any = {
+        email,
+        amount: new Decimal(amount).mul(100).toNumber(), // Convert to kobo
+        reference,
+        split: splitConfig,
+      };
+
+      if (callbackUrl) {
+        payload.callback_url = callbackUrl;
+      }
+
+      const response = await axios.post(
+        `${this.baseUrl}/transaction/initialize`,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.data.status) {
+        return this.failure(
+          response.data.message || "Failed to initialize split payment"
+        );
+      }
+
+      return this.success(
+        response.data,
+        "Split payment initialized successfully"
+      );
     } catch (error: any) {
       // Create a safe error object without circular references
       const safeError = this.extractErrorInfo(error);
       logger.error("Error creating split payment:", safeError);
-      
+
       // Throw a clean error message
-      const errorMessage = error.response?.data?.message || 
-                         error.message || 
-                         "Failed to create split payment";
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to create split payment";
       throw new Error(`Payment failed: ${errorMessage}`);
     }
   }

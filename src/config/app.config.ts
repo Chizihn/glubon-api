@@ -11,7 +11,7 @@ const envSchema = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
   PORT: z.coerce.number().default(4000),
-  API_URL: z.string(),
+  API_URL: z.string().default("http://localhost:4000"),
 
   // Database
   DATABASE_URL: z.string().min(1, "Database URL is required"),

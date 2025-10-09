@@ -11,23 +11,23 @@ import {
   PerformanceMetrics,
   RevenueData,
   ExportRequest,
-  ExportResponse
+  ExportResponse,
 } from "../types/services/admin";
-import { 
+import {
   RecentDataResponse,
   RecentActivity,
   RecentTransaction as ApiRecentTransaction,
-  RecentActivity as ApiRecentActivity
+  RecentActivity as ApiRecentActivity,
 } from "../modules/admin/admin.types";
-import { 
-  DashboardAnalyticsCharts, 
+import {
+  DashboardAnalyticsCharts,
   DashboardAnalyticsResponse,
-  GqlActivityData
-} from '../modules/admin/admin-stats.types';
+  GqlActivityData,
+} from "../modules/admin/admin-stats.types";
 
 // Extend the ApiRecentTransaction type to include the date field
 type RecentTransaction = ApiRecentTransaction & {
-  date: Date;  // Add date field to match the expected type
+  date: Date; // Add date field to match the expected type
 };
 import { ValidationError } from "../utils";
 import * as fs from "fs";
@@ -72,37 +72,104 @@ export class AdminStatsService extends BaseService {
       });
 
       // Ensure we have a valid date range with a period
-      const defaultDateRange: AnalyticsDateRange = { 
-        period: 'month',
-        startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // Last 30 days
-        endDate: new Date()
+      const defaultStartDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // Last 30 days
+      const defaultEndDate = new Date();
+      const defaultDateRange: AnalyticsDateRange = {
+        period: "month",
+        startDate: defaultStartDate,
+        endDate: defaultEndDate,
       };
-      
-      const effectiveDateRange = dateRange || defaultDateRange;
-      
+
+      const effectiveDateRange: AnalyticsDateRange = dateRange
+        ? { ...dateRange }
+        : { ...defaultDateRange };
+
+      // Helper function to safely parse dates
+      const parseDate = (
+        dateInput: Date | string | undefined
+      ): Date | undefined => {
+        if (!dateInput) return undefined;
+        if (dateInput instanceof Date) {
+          // Check if it's a valid date
+          return !isNaN(dateInput.getTime()) ? dateInput : undefined;
+        }
+
+        // Handle string dates
+        if (typeof dateInput === "string") {
+          // Handle empty strings
+          if (!dateInput.trim()) return undefined;
+
+          // Try parsing the date string
+          const parsed = new Date(dateInput);
+          if (!isNaN(parsed.getTime())) return parsed;
+        }
+
+        // If parsing fails, return undefined to use defaults
+        return undefined;
+      };
+
+      // Ensure dates are properly converted to Date objects
+      const startDate = parseDate(effectiveDateRange.startDate);
+      const endDate = parseDate(effectiveDateRange.endDate);
+
+      // Only assign if we have valid dates
+      if (startDate) {
+        effectiveDateRange.startDate = startDate;
+      }
+      if (endDate) {
+        effectiveDateRange.endDate = endDate;
+      }
+
+      // Ensure we have valid dates, fall back to defaults if needed
+      if (
+        !effectiveDateRange.startDate ||
+        (effectiveDateRange.startDate instanceof Date &&
+          isNaN(effectiveDateRange.startDate.getTime()))
+      ) {
+        effectiveDateRange.startDate = defaultStartDate;
+      }
+      if (
+        !effectiveDateRange.endDate ||
+        (effectiveDateRange.endDate instanceof Date &&
+          isNaN(effectiveDateRange.endDate.getTime()))
+      ) {
+        effectiveDateRange.endDate = defaultEndDate;
+      }
+
       // If only period is provided, set appropriate date range
-      if (effectiveDateRange.period && !effectiveDateRange.startDate) {
-        const endDate = new Date();
-        const startDate = new Date();
-        
+      if (
+        effectiveDateRange.period &&
+        (!effectiveDateRange.startDate ||
+          (effectiveDateRange.startDate instanceof Date &&
+            isNaN(effectiveDateRange.startDate.getTime())))
+      ) {
+        const endDate =
+          effectiveDateRange.endDate &&
+          (effectiveDateRange.endDate instanceof Date
+            ? !isNaN(effectiveDateRange.endDate.getTime())
+            : true)
+            ? new Date(effectiveDateRange.endDate)
+            : new Date();
+        const startDate = new Date(endDate);
+
         switch (effectiveDateRange.period) {
-          case 'week':
+          case "week":
             startDate.setDate(endDate.getDate() - 7);
             break;
-          case 'month':
+          case "month":
             startDate.setMonth(endDate.getMonth() - 1);
             break;
-          case 'year':
+          case "year":
             startDate.setFullYear(endDate.getFullYear() - 1);
             break;
           default: // 'day' or custom
             startDate.setDate(endDate.getDate() - 1);
         }
-        
+
         effectiveDateRange.startDate = startDate;
         effectiveDateRange.endDate = endDate;
       }
-      
+
       // Get all data in parallel
       // Get all data in parallel
       const [
@@ -112,7 +179,7 @@ export class AdminStatsService extends BaseService {
         activity,
         geographic,
         performance,
-        recentDataResponse
+        recentDataResponse,
       ] = await Promise.all([
         this.repository.getDashboardStats(),
         this.repository.getUserGrowthAnalytics(effectiveDateRange),
@@ -121,24 +188,28 @@ export class AdminStatsService extends BaseService {
         this.repository.getGeographicAnalytics(),
         this.repository.getPerformanceMetrics(),
         this.getRecentData(10).catch((error) => {
-          console.error('Error in getRecentData:', error);
+          console.error("Error in getRecentData:", error);
           return {
             recentActivity: [],
-            recentTransactions: []
+            recentTransactions: [],
           };
-        })
+        }),
       ]);
-      
+
       // Cast the response to the correct type to satisfy TypeScript
       const recentData = (recentDataResponse || {
         recentActivity: [],
-        recentTransactions: []
+        recentTransactions: [],
       }) as RecentDataResponse;
-      
+
       // Transform recent activity data to match GqlActivityData type
-      const recentActivity: GqlActivityData[] = (recentData.recentActivity || []).map((act: ApiRecentActivity) => {
+      const recentActivity: GqlActivityData[] = (
+        recentData.recentActivity || []
+      ).map((act: ApiRecentActivity) => {
         // Ensure we have a valid date string
-        const dateStr = act.timestamp ? new Date(act.timestamp).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+        const dateStr = act.timestamp
+          ? new Date(act.timestamp).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0];
         return {
           date: dateStr,
           views: 0,
@@ -147,27 +218,32 @@ export class AdminStatsService extends BaseService {
           conversations: 0,
         } as GqlActivityData;
       });
-      
+
       // Transform recent transactions to match RecentTransaction type
-      const recentTransactions: RecentTransaction[] = (recentData.recentTransactions || []).map(tx => ({
-        ...tx,
-        date: tx.timestamp,  // Use timestamp as date
-        amount: Number(tx.amount) || 0,
-        currency: tx.currency || 'USD',
-        description: tx.description || '',
-        status: tx.status || 'COMPLETED',
-        reference: tx.reference || '',
-        userId: tx.userId || null,
-        userName: tx.userName || null,
-        userAvatar: tx.userAvatar || null
-      } as RecentTransaction));
-      
+      const recentTransactions: RecentTransaction[] = (
+        recentData.recentTransactions || []
+      ).map(
+        (tx) =>
+          ({
+            ...tx,
+            date: tx.timestamp, // Use timestamp as date
+            amount: Number(tx.amount) || 0,
+            currency: tx.currency || "NGN",
+            description: tx.description || "",
+            status: tx.status || "COMPLETED",
+            reference: tx.reference || "",
+            userId: tx.userId || null,
+            userName: tx.userName || null,
+            userAvatar: tx.userAvatar || null,
+          } as RecentTransaction)
+      );
+
       // Create charts data structure
       const charts: DashboardAnalyticsCharts = {
         userGrowth: userGrowth || [],
         propertyGrowth: propertyGrowth || [],
         activity: activity || [],
-        geographic: geographic || []
+        geographic: geographic || [],
       };
 
       // Create the response object with proper typing
@@ -199,7 +275,8 @@ export class AdminStatsService extends BaseService {
           },
           activity: {
             totalConversations: stats.activity?.totalConversations || 0,
-            activeConversationsToday: stats.activity?.activeConversationsToday || 0,
+            activeConversationsToday:
+              stats.activity?.activeConversationsToday || 0,
             totalMessages: stats.activity?.totalMessages || 0,
             messagesToday: stats.activity?.messagesToday || 0,
             totalPropertyViews: stats.activity?.totalPropertyViews || 0,
@@ -246,7 +323,7 @@ export class AdminStatsService extends BaseService {
         "Dashboard analytics retrieved successfully"
       );
     } catch (error: unknown) {
-      console.error('Error in getDashboardAnalytics:', error);
+      console.error("Error in getDashboardAnalytics:", error);
       return this.handleError(error, "getDashboardAnalytics");
     }
   }
@@ -491,23 +568,25 @@ export class AdminStatsService extends BaseService {
 
       // Get recent data
       const recentData = await this.getRecentData();
-      
+
       // Transform transactions to match the RecentTransaction type
-      const formattedRecentTransactions: RecentTransaction[] = (recentData.recentTransactions || []).map(tx => {
+      const formattedRecentTransactions: RecentTransaction[] = (
+        recentData.recentTransactions || []
+      ).map((tx) => {
         const timestamp = tx.timestamp || new Date();
         return {
-          id: tx.id || '',
-          type: tx.type || 'SUBSCRIPTION',
+          id: tx.id || "",
+          type: tx.type || "SUBSCRIPTION",
           amount: Number(tx.amount) || 0,
           date: timestamp,
-          description: tx.description || '',
-          status: tx.status || 'COMPLETED',
-          currency: 'USD',
-          reference: tx.reference || '',
+          description: tx.description || "",
+          status: tx.status || "COMPLETED",
+          currency: "USD",
+          reference: tx.reference || "",
           userId: tx.userId || null,
           userName: tx.userName || null,
           userAvatar: tx.userAvatar || null,
-          timestamp  // Keep original timestamp for reference
+          timestamp, // Keep original timestamp for reference
         };
       });
 
@@ -583,12 +662,16 @@ export class AdminStatsService extends BaseService {
           activeUsersLast30Days: 0,
           topPerformingProperties: [],
         },
-        recentActivity: recentData.recentActivity as unknown as GqlActivityData[],
+        recentActivity:
+          recentData.recentActivity as unknown as GqlActivityData[],
         recentTransactions: formattedRecentTransactions,
       };
 
       await this.setCache(cacheKey, responseWithRecentData, 3600);
-      return this.success(responseWithRecentData, "Real-time statistics retrieved successfully");
+      return this.success(
+        responseWithRecentData,
+        "Real-time statistics retrieved successfully"
+      );
     } catch (error: unknown) {
       return this.handleError(error, "getRealTimeStats");
     }
@@ -644,13 +727,25 @@ export class AdminStatsService extends BaseService {
   private validateDateRange(dateRange?: AnalyticsDateRange): void {
     if (!dateRange) return;
 
+    // Helper function to safely parse dates
+    const parseDate = (
+      dateInput: Date | string | undefined
+    ): Date | undefined => {
+      if (!dateInput) return undefined;
+      if (dateInput instanceof Date) {
+        return !isNaN(dateInput.getTime()) ? dateInput : undefined;
+      }
+      if (typeof dateInput === "string") {
+        if (!dateInput.trim()) return undefined;
+        const parsed = new Date(dateInput);
+        return !isNaN(parsed.getTime()) ? parsed : undefined;
+      }
+      return undefined;
+    };
+
     // Convert string dates to Date objects if needed
-    const startDate = dateRange.startDate 
-      ? new Date(dateRange.startDate) 
-      : undefined;
-    const endDate = dateRange.endDate 
-      ? new Date(dateRange.endDate) 
-      : undefined;
+    const startDate = parseDate(dateRange.startDate);
+    const endDate = parseDate(dateRange.endDate);
 
     if (startDate && endDate) {
       if (startDate > endDate) {
@@ -735,38 +830,40 @@ export class AdminStatsService extends BaseService {
     try {
       // Get the raw data from the repository
       const data = await this.repository.getRecentData(limit);
-      
+
       // Transform the data to match the RecentDataResponse type
-      const recentActivity: any[] = (data.recentActivity || []).map(act => ({
-        id: act.id || '',
-        type: act.type || 'OTHER',
-        description: act.description || '',
+      const recentActivity: any[] = (data.recentActivity || []).map((act) => ({
+        id: act.id || "",
+        type: act.type || "OTHER",
+        description: act.description || "",
         timestamp: act.timestamp || new Date(),
         userId: act.userId || undefined,
         userName: act.userName || undefined,
         userAvatar: act.userAvatar || undefined,
-        metadata: {}
+        metadata: {},
       }));
 
       // Transform transactions to match RecentTransaction type
-      const recentTransactions: any[] = (data.recentTransactions || []).map(tx => ({
-        id: tx.id || '',
-        type: tx.type || 'OTHER',
-        amount: Number(tx.amount) || 0,
-        currency: tx.currency || 'USD',
-        status: tx.status || 'COMPLETED',
-        reference: tx.reference || '',
-        userId: tx.userId || undefined,
-        userName: tx.userName || undefined,
-        userAvatar: tx.userAvatar || undefined,
-        date: tx.timestamp || new Date(),
-        timestamp: tx.timestamp || new Date(),
-        description: tx.description || ''
-      }));
+      const recentTransactions: any[] = (data.recentTransactions || []).map(
+        (tx) => ({
+          id: tx.id || "",
+          type: tx.type || "OTHER",
+          amount: Number(tx.amount) || 0,
+          currency: tx.currency || "USD",
+          status: tx.status || "COMPLETED",
+          reference: tx.reference || "",
+          userId: tx.userId || undefined,
+          userName: tx.userName || undefined,
+          userAvatar: tx.userAvatar || undefined,
+          date: tx.timestamp || new Date(),
+          timestamp: tx.timestamp || new Date(),
+          description: tx.description || "",
+        })
+      );
 
       return { recentActivity, recentTransactions };
     } catch (error) {
-      console.error('Error in getRecentData:', error);
+      console.error("Error in getRecentData:", error);
       // Return empty arrays in case of error to maintain type safety
       return {
         recentActivity: [],

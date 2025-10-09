@@ -8,10 +8,10 @@ import {
   Int,
 } from "type-graphql";
 import type { Context } from "../../types/context";
-import { RoleEnum, UserStatus } from "@prisma/client";
+import { PermissionEnum, RoleEnum, UserStatus, VerificationStatus } from "@prisma/client";
 import { BaseResponse } from "../../types/responses";
 import { getContainer } from "../../services";
-import { AuthMiddleware, RequireRole } from "../../middleware";
+import { AuthMiddleware, RequirePermission, RequireRole } from "../../middleware";
 import {
   PaginatedLogsResponse,
   PaginatedOwnershipVerificationsResponse,
@@ -27,12 +27,12 @@ import {
   AdminUserFilters,
   ReviewVerificationInput,
   UpdateUserStatusInput,
-  AnalyticsDateRangeInput,
   UpdatePropertyStatusInput,
   CreateAdminUserInput,
   ExportRequestInput,
   UpdateAdminUserInput,
   AdminListFilters,
+  VerificationFilters,
 } from "./admin-user.inputs";
 import { AppError } from "../../utils";
 import { HttpStatusCode } from "axios";
@@ -54,6 +54,7 @@ import {
 } from "./admin-stats.types";
 import { AdminPropertyService } from "../../services/admin-property";
 import { RecentDataResponse } from "./admin.types"; // Import from GraphQL types
+import { AnalyticsDateRangeInput } from "../analytics/analytics.types";
 
 @Resolver()
 @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
@@ -355,19 +356,37 @@ export class AdminResolver {
     return new PaginatedPropertiesResponse(items, page, limit, totalCount);
   }
 
-  @Query(() => PaginatedVerificationsResponse)
+  @Query(() => PaginatedVerificationsResponse, {
+    deprecationReason: 'Use getVerifications with status parameter instead',
+    description: 'Get pending verifications (deprecated - use getVerifications with status parameter instead)'
+  })
   async getPendingVerifications(
     @Arg("page", () => Int, { defaultValue: 1 }) page: number,
     @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Arg("search", { nullable: true }) search: string,
     @Ctx() ctx: Context
   ): Promise<PaginatedVerificationsResponse> {
-    const result = await this.adminUsersService.getPendingVerifications(
+    return this.getVerifications('PENDING', page, limit, search, ctx);
+  }
+
+  @Query(() => PaginatedVerificationsResponse)
+  async getVerifications(
+    @Arg("status", () => VerificationStatus, { nullable: true }) status: VerificationStatus | undefined,
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
+    @Arg("search", { nullable: true }) search: string,
+    @Ctx() ctx: Context
+  ): Promise<PaginatedVerificationsResponse> {
+    const result = await this.adminUsersService.getVerifications(
       ctx.user!.id,
+      status,
       page,
-      limit
+      limit,
+      search
     );
-    if (!result.success)
+    if (!result.success) {
       throw new AppError(result.message, HttpStatusCode.InternalServerError);
+    }
 
     const { verifications, totalCount } = result.data!;
     return new PaginatedVerificationsResponse(
@@ -427,6 +446,8 @@ export class AdminResolver {
   // ==================== USER MANAGEMENT MUTATIONS ====================
 
   @Mutation(() => AdminUserResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN), 
+  RequirePermission(PermissionEnum.SUPER_ADMIN))
   async createAdminUser(
     @Arg("input") input: CreateAdminUserInput,
     @Ctx() ctx: Context
@@ -441,6 +462,7 @@ export class AdminResolver {
   }
 
   @Mutation(() => AdminUserResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
   async updateAdminUser(
     @Arg("adminId") adminId: string,
     @Arg("input") input: UpdateAdminUserInput,
@@ -457,6 +479,8 @@ export class AdminResolver {
   }
 
   @Mutation(() => BaseResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
+
   async updateUserStatus(
     @Arg("input") input: UpdateUserStatusInput,
     @Ctx() ctx: Context
@@ -471,6 +495,7 @@ export class AdminResolver {
   }
 
   @Mutation(() => BaseResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
   async deactivateAdminUser(
     @Arg("adminId") adminId: string,
     @Ctx() ctx: Context
@@ -549,6 +574,7 @@ export class AdminResolver {
   }
 
   @Mutation(() => BaseResponse)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
   async reviewOwnershipVerification(
     @Arg("verificationId") verificationId: string,
     @Arg("approved") approved: boolean,

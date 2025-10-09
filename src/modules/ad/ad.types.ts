@@ -1,5 +1,15 @@
 import { Field, ObjectType, registerEnumType } from 'type-graphql';
 import { Ad as PrismaAd, AdPosition, AdStatus, AdType as PrismaAdType } from '@prisma/client';
+import { PaginationInfo } from '../../types/responses';
+
+@ObjectType()
+export class PaginatedAdResponse {
+  @Field(() => [Ad])
+  data: Ad[];
+
+  @Field(() => PaginationInfo)
+  pagination: PaginationInfo;
+}
 
 export { AdType } from '@prisma/client';
 
