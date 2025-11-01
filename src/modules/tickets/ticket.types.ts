@@ -1,123 +1,100 @@
-// import { Field, ObjectType, registerEnumType } from 'type-graphql';
-// import { Ticket as PrismaTicket, TicketMessage as PrismaTicketMessage, TicketStatus, TicketPriority, TicketCategory, User } from '@prisma/client';
-// import { PaginationInfo } from '../../types/responses';
+// modules/tickets/ticket.types.ts
+import { Field, GraphQLISODateTime, ID, ObjectType, registerEnumType } from 'type-graphql';
+import { Ticket as PrismaTicket, TicketStatus, TicketPriority, TicketCategory } from '@prisma/client';
+import { PaginationInfo } from '../../types';
+import { User } from '../user/user.types';
 
-// registerEnumType(TicketStatus, {
-//   name: 'TicketStatus',
-//   description: 'The current status of a support ticket',
-// });
+registerEnumType(TicketStatus, { name: 'TicketStatus' });
+registerEnumType(TicketPriority, { name: 'TicketPriority' });
+registerEnumType(TicketCategory, { name: 'TicketCategory' });
 
-// registerEnumType(TicketPriority, {
-//   name: 'TicketPriority',
-//   description: 'The priority level of a support ticket',
-// });
+@ObjectType()
+export class Ticket implements PrismaTicket {
+  @Field(() => ID)
+  id: string;
 
-// registerEnumType(TicketCategory, {
-//   name: 'TicketCategory',
-//   description: 'The category of a support ticket',
-// });
+  @Field(() => String)
+  subject: string;
 
-// @ObjectType()
-// export class Ticket implements PrismaTicket {
-//   @Field(() => String)
-//   id: string;
+  @Field(() => String)
+  description: string;
 
-//   @Field(() => String)
-//   subject: string;
+  @Field(() => TicketStatus)
+  status: TicketStatus;
 
-//   @Field(() => String)
-//   description: string;
+  @Field(() => TicketPriority)
+  priority: TicketPriority;
 
-//   @Field(() => TicketStatus)
-//   status: TicketStatus;
+  @Field(() => TicketCategory)
+  category: TicketCategory;
 
-//   @Field(() => TicketPriority)
-//   priority: TicketPriority;
+  @Field(() => GraphQLISODateTime,)
+  createdAt: Date;
 
-//   @Field(() => TicketCategory)
-//   category: TicketCategory;
+  @Field(() => GraphQLISODateTime,)
+  updatedAt: Date;
 
-//   @Field(() => Date)
-//   createdAt: Date;
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  resolvedAt: Date | null;
 
-//   @Field(() => Date)
-//   updatedAt: Date;
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  closedAt: Date | null;
 
-//   @Field(() => Date, { nullable: true })
-//   resolvedAt?: Date;
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  assignedAt: Date | null;
 
-//   @Field(() => Date, { nullable: true })
-//   closedAt?: Date;
+  @Field(() => User)
+  createdBy: User;
 
-//   @Field(() => Date, { nullable: true })
-//   assignedAt?: Date;
+  @Field(() => User, { nullable: true })
+  assignedTo?: User;
 
-//   @Field(() => User)
-//   createdBy: User;
+  @Field(() => ID)
+  createdById: string;
 
-//   @Field(() => User, { nullable: true })
-//   assignedTo?: User;
+  @Field(() => ID, { nullable: true })
+  assignedToId: string | null;
+}
 
-//   @Field(() => [TicketMessage])
-//   messages: TicketMessage[];
+@ObjectType()
+export class PaginatedTickets {
+  @Field(() => [Ticket])
+  data: Ticket[];
 
-//   @Field(() => [String])
-//   attachments: string[];
-// }
+  @Field(() => PaginationInfo)
+  pagination: PaginationInfo;
+}
 
-// @ObjectType()
-// export class TicketMessage implements PrismaTicketMessage {
-//   @Field(() => String)
-//   id: string;
+@ObjectType()
+export class PriorityStats {
+  @Field() LOW: number;
+  @Field() MEDIUM: number;
+  @Field() HIGH: number;
+  @Field() URGENT: number;
+}
 
-//   @Field(() => String)
-//   content: string;
+@ObjectType()
+export class CategoryStats {
+  @Field() ACCOUNT: number;
+  @Field() PAYMENT: number;
+  @Field() TECHNICAL: number;
+  @Field() GENERAL: number;
+  @Field() FEEDBACK: number;
+  @Field() OTHER: number;
+}
 
-//   @Field(() => Boolean)
-//   isInternal: boolean;
+@ObjectType()
+export class TicketStats {
+  @Field() open: number;
+  @Field() inProgress: number;
+  @Field() resolved: number;
+  @Field() closed: number;
+  @Field() reopened: number;
+  @Field() total: number;
 
-//   @Field(() => [String])
-//   attachments: string[];
+  @Field(() => PriorityStats)
+  byPriority: PriorityStats;
 
-//   @Field(() => Date)
-//   createdAt: Date;
-
-//   @Field(() => Date)
-//   updatedAt: Date;
-
-//   @Field(() => User)
-//   sender: User;
-// }
-
-// @ObjectType()
-// export class PaginatedTicketsResponse {
-//   @Field(() => [Ticket])
-//   data: Ticket[];
-
-//   @Field(() => PaginationInfo)
-//   pagination: PaginationInfo;
-// }
-
-// @ObjectType()
-// export class TicketStats {
-//   @Field(() => Number)
-//   open: number;
-
-//   @Field(() => Number)
-//   inProgress: number;
-
-//   @Field(() => Number)
-//   resolved: number;
-
-//   @Field(() => Number)
-//   closed: number;
-
-//   @Field(() => Number)
-//   total: number;
-
-//   @Field(() => Object)
-//   byPriority: { [key in TicketPriority]: number };
-
-//   @Field(() => Object)
-//   byCategory: { [key in TicketCategory]: number };
-// }
+  @Field(() => CategoryStats)
+  byCategory: CategoryStats;
+}

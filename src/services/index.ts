@@ -11,7 +11,7 @@ export * from "./property";
 export * from "./unit";
 export * from "./admin-user";
 export * from "./admin-stats";
-export * from "./conversation";
+export * from "./chat";
 export * from "./transaction";
 export * from "./admin-property";
 export * from "./booking";
@@ -21,6 +21,7 @@ export * from "./presence";
 export * from "./ad";
 export * from "./ad-analytics";
 export * from "./payment";
+export * from "../modules/chat";
 
 // Import service implementations for internal use
 import { AuthService } from "./auth";
@@ -31,7 +32,6 @@ import { PropertyService } from "./property";
 import { UnitService } from "./unit";
 import { AdminUsersService } from "./admin-user";
 import { AdminStatsService } from "./admin-stats";
-import { ConversationService } from "./conversation";
 import { TransactionService } from "./transaction";
 import { AdminPropertyService } from "./admin-property";
 import { BookingService } from "./booking";
@@ -43,6 +43,7 @@ import { AdAnalyticsService } from "./ad-analytics";
 import { PaystackService } from "./payment";
 import { SettingsService } from "./setting";
 import { ListerAnalyticsService } from "./lister-analytics";
+import { ChatService } from "./chat";
 
 // Export the Container class for type information
 export { Container } from "../container";
@@ -131,11 +132,6 @@ export function registerServices(container: Container): void {
       new AdminStatsService(container.getPrisma(), container.getRedis())
   );
 
-  container.register(
-    "conversationService",
-    (container) =>
-      new ConversationService(container.getPrisma(), container.getRedis())
-  );
 
   container.register(
     "transactionService",
@@ -184,6 +180,11 @@ export function registerServices(container: Container): void {
       new ListerAnalyticsService(container.getPrisma(), container.getRedis())
   );
 
+  container.register(
+    "chatService",
+    (container) => new ChatService(container.getPrisma(), container.getRedis())
+  );
+
   // container.register(
   //   "ticketService",
   //   (container) => new TicketService(container.getPrisma(), container.getRedis())
@@ -200,7 +201,6 @@ export interface Services {
   adminPropertyService: AdminPropertyService;
   bookingService: BookingService;
   platformService: PlatformService;
-  conversationService: ConversationService;
   propertyService: PropertyService;
   unitService: UnitService;
   emailService: typeof emailServiceSingleton;
@@ -213,6 +213,7 @@ export interface Services {
   paystackService: PaystackService;
   settingsService: SettingsService;
   listerAnalyticsService: ListerAnalyticsService;
+  chatService: ChatService;
   // ticketService: TicketService
 }
 
@@ -228,7 +229,6 @@ export function createServices(prisma: any, redis: any): Services {
     adminPropertyService: container.resolve("adminPropertyService"),
     bookingService: container.resolve("bookingService"),
     platformService: container.resolve("platformService"),
-    conversationService: container.resolve("conversationService"),
     propertyService: container.resolve("propertyService"),
     unitService: container.resolve("unitService"),
     emailService: container.resolve("emailService"),
@@ -241,8 +241,7 @@ export function createServices(prisma: any, redis: any): Services {
     paystackService: container.resolve("paystackService"),
     settingsService: container.resolve("settingsService"),
     listerAnalyticsService: container.resolve("listerAnalyticsService"),
+    chatService: container.resolve("chatService"),
     // ticketService: container.resolve("ticketService"),
-
-
   };
 }

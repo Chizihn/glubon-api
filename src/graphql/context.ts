@@ -11,7 +11,6 @@ import {
   AdminPropertyService, 
   BookingService, 
   PlatformService, 
-  ConversationService, 
   PropertyService, 
   UnitService, 
   NotificationService, 
@@ -19,7 +18,8 @@ import {
   SubaccountService, 
   PresenceService, 
   AdService, 
-  AdAnalyticsService 
+  AdAnalyticsService ,
+  ChatService
 } from "../services";
 import { emailServiceSingleton } from "../services/email";
 
@@ -40,7 +40,7 @@ type ServiceMap = {
   adminPropertyService: AdminPropertyService;
   bookingService: BookingService;
   platformService: PlatformService;
-  conversationService: ConversationService;
+  chatService: ChatService;
   propertyService: PropertyService;
   unitService: UnitService;
   emailService: typeof emailServiceSingleton;
@@ -86,7 +86,7 @@ export function createGraphQLContext(
       get adminPropertyService() { return getService('adminPropertyService'); },
       get bookingService() { return getService('bookingService'); },
       get platformService() { return getService('platformService'); },
-      get conversationService() { return getService('conversationService'); },
+      get chatService() { return getService('chatService'); },
       get propertyService() { return getService('propertyService'); },
       get unitService() { return getService('unitService'); },
       get emailService() { return getService('emailService'); },

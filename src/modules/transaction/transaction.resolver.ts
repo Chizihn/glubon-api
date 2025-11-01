@@ -8,7 +8,6 @@ import {
   TransactionStats,
   TransactionFilterInput,
   TransactionSortInput,
-  PaginationInput,
   VerifyTransactionResponse
 } from './transaction.types';
 import { 
@@ -18,6 +17,7 @@ import {
 } from './transaction.inputs';
 import { RoleEnum, TransactionStatus, TransactionType } from '@prisma/client';
 import { prisma, redis } from '../../config';
+import { PaginationInput } from '../../types';
 
 @Resolver(() => Transaction)
 export class TransactionResolver {

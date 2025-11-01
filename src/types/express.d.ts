@@ -7,3 +7,14 @@ declare global {
     }
   }
 }
+
+declare module "express-serve-static-core" {
+  interface ParamsDictionary {
+    provider?: string;
+  }
+  interface Query {
+    code?: string | string[];
+    state?: string | string[];
+    redirectUri?: string | string[];
+  }
+}

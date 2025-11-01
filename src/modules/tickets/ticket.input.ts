@@ -1,93 +1,72 @@
-// import { Field, InputType } from 'type-graphql';
-// import { TicketStatus, TicketPriority, TicketCategory } from '@prisma/client';
-// import { PaginationInput } from '../transaction/transaction.types';
+// modules/tickets/ticket.inputs.ts
+import { Field, InputType } from 'type-graphql';
+import { TicketStatus, TicketPriority, TicketCategory } from '@prisma/client';
+import { PaginationInput, SortInput } from '../../types';
 
-// @InputType()
-// export class CreateTicketInput {
-//   @Field(() => String)
-//   subject: string;
+@InputType()
+export class CreateTicketInput {
+  @Field()
+  subject: string;
 
-//   @Field(() => String)
-//   description: string;
+  @Field()
+  description: string;
 
-//   @Field(() => TicketPriority, { nullable: true })
-//   priority?: TicketPriority;
+  @Field(() => TicketPriority, { nullable: true })
+  priority?: TicketPriority;
 
-//   @Field(() => TicketCategory, { nullable: true })
-//   category?: TicketCategory;
+  @Field(() => TicketCategory, { nullable: true })
+  category?: TicketCategory;
+}
 
-//   @Field(() => [String], { nullable: true })
-//   attachments?: string[];
-// }
+@InputType()
+export class UpdateTicketInput {
+  @Field()
+  id: string;
 
-// @InputType()
-// export class UpdateTicketInput {
-//   @Field(() => TicketStatus, { nullable: true })
-//   status?: TicketStatus;
+  @Field(() => TicketStatus, { nullable: true })
+  status?: TicketStatus;
 
-//   @Field(() => TicketPriority, { nullable: true })
-//   priority?: TicketPriority;
+  @Field(() => TicketPriority, { nullable: true })
+  priority?: TicketPriority;
 
-//   @Field(() => TicketCategory, { nullable: true })
-//   category?: TicketCategory;
+  @Field(() => TicketCategory, { nullable: true })
+  category?: TicketCategory;
 
-//   @Field(() => String, { nullable: true })
-//   assignedTo?: string;
-// }
+  @Field({ nullable: true })
+  assignedTo?: string;
+}
 
-// @InputType()
-// export class AddMessageInput {
-//   @Field(() => String)
-//   ticketId: string;
+@InputType()
+export class TicketFilterInput {
+  @Field(() => [TicketStatus], { nullable: true })
+  status?: TicketStatus[];
 
-//   @Field(() => String)
-//   content: string;
+  @Field(() => [TicketPriority], { nullable: true })
+  priority?: TicketPriority[];
 
-//   @Field(() => Boolean, { nullable: true })
-//   isInternal?: boolean;
+  @Field(() => [TicketCategory], { nullable: true })
+  category?: TicketCategory[];
 
-//   @Field(() => [String], { nullable: true })
-//   attachments?: string[];
-// }
+  @Field({ nullable: true })
+  assignedTo?: string;
 
-// @InputType()
-// export class TicketFilterInput {
-//   @Field(() => [TicketStatus], { nullable: true })
-//   status?: TicketStatus[];
+  @Field({ nullable: true })
+  createdBy?: string;
 
-//   @Field(() => [TicketPriority], { nullable: true })
-//   priority?: TicketPriority[];
+  @Field(() => Date, { nullable: true })
+  dateFrom?: Date;
 
-//   @Field(() => [TicketCategory], { nullable: true })
-//   category?: TicketCategory[];
+  @Field(() => Date, { nullable: true })
+  dateTo?: Date;
 
-//   @Field(() => String, { nullable: true })
-//   assignedTo?: string;
+  @Field({ nullable: true })
+  search?: string;
 
-//   @Field(() => String, { nullable: true })
-//   createdBy?: string;
+  @Field(() => PaginationInput, { nullable: true })
+  pagination?: PaginationInput;
 
-//   @Field(() => Date, { nullable: true })
-//   dateFrom?: Date;
+  @Field(() => SortInput, { nullable: true })
+  sort?: SortInput;
+}
 
-//   @Field(() => Date, { nullable: true })
-//   dateTo?: Date;
 
-//   @Field(() => String, { nullable: true })
-//   search?: string;
-
-//   @Field(() => PaginationInput, { nullable: true })
-//   pagination?: PaginationInput;
-
-//   @Field(() => SortInput, { nullable: true })
-//   sort?: SortInput;
-// }
-
-// @InputType()
-// export class SortInput {
-//   @Field(() => String, { nullable: true })
-//   field?: string;
-
-//   @Field(() => String, { nullable: true })
-//   order?: 'asc' | 'desc';
-// }

@@ -1,4 +1,4 @@
-import { Field, ObjectType, Int } from "type-graphql";
+import { Field, ObjectType, Int, InputType } from "type-graphql";
 
 export interface IBaseResponse<T = any> {
   success: boolean;
@@ -85,6 +85,25 @@ export class PaginationMeta {
 
   @Field(() => Int)
   totalPages!: number;
+}
+
+
+@InputType()
+export class SortInput {
+  @Field({ defaultValue: 'createdAt' })
+  field?: string;
+
+  @Field(() => String, { defaultValue: 'desc' })
+  order?: 'asc' | 'desc';
+}
+
+@InputType()
+export class PaginationInput {
+  @Field(() => Int,{ defaultValue: 1 })
+  page!: number;
+
+  @Field(() => Int,{ defaultValue: 10 })
+  limit!: number;
 }
 
 export interface ServiceResponse<T = any> {

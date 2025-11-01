@@ -7,6 +7,19 @@ import { ServiceResponse } from "../types";
 import { logger } from "../utils";
 import { OAuthTokenData, OAuthUserData } from "../types/services/auth";
 import { v4 as uuidv4 } from "uuid";
+import crypto from "crypto";
+
+function base64URLEncode(buffer: Buffer): string {
+  return buffer
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=/g, "");
+}
+
+function sha256(buffer: Buffer): Buffer {
+  return crypto.createHash("sha256").update(buffer).digest();
+}
 
 export class OAuthService extends BaseService {
   constructor(prisma: PrismaClient, redis: Redis) {
@@ -19,6 +32,14 @@ export class OAuthService extends BaseService {
     redirectUri: string,
     state: string
   ): Promise<ServiceResponse<OAuthUserData & { token: string }>> {
+
+//     const allowedRedirects = [
+//   'https://yourapp.com/callback',
+//   'glubon://oauth'
+// ];
+// if (!allowedRedirects.includes(redirectUri)) {
+//   return this.failure("Invalid redirect URI");
+// }
     try {
       // Verify state to prevent CSRF
       const storedState = await this.redis.get(`oauth_state:${state}`);
@@ -35,7 +56,8 @@ export class OAuthService extends BaseService {
       const tokenResult = await this.exchangeCodeForToken(
         provider,
         code,
-        redirectUri
+        redirectUri,
+        state
       );
       if (!tokenResult.success || !tokenResult.data) {
         return this.failure<OAuthUserData & { token: string }>(
@@ -106,6 +128,9 @@ export class OAuthService extends BaseService {
       );
     } catch (error) {
       logger.error(`${provider} OAuth flow failed:`, error);
+      if (state) {
+  await this.redis.del(`oauth_verifier:${state}`);
+}
       return this.failure<OAuthUserData & { token: string }>(
         `Failed to complete ${provider} OAuth flow`,
         null,
@@ -114,71 +139,84 @@ export class OAuthService extends BaseService {
     }
   }
 
-  async generateAuthUrl(
-    provider: ProviderEnum,
-    redirectUri: string
-  ): Promise<ServiceResponse<{ authUrl: string; state: string }>> {
-    try {
-      const state = uuidv4();
-      let authUrl: string;
+async generateAuthUrl(
+  provider: ProviderEnum,
+  redirectUri: string
+): Promise<ServiceResponse<{ authUrl: string; state: string }>> {
+  try {
+    const state = uuidv4();
 
-      switch (provider) {
-        case ProviderEnum.GOOGLE:
-          authUrl =
-            `https://accounts.google.com/o/oauth2/v2/auth?` +
-            `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
-            `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-            `scope=${encodeURIComponent("openid email profile")}&` +
-            `response_type=code&` +
-            `access_type=offline&` +
-            `prompt=consent&` +
-            `state=${encodeURIComponent(state)}`;
-          break;
+    // ---- PKCE: generate verifier & challenge ----
+    const codeVerifier = base64URLEncode(crypto.randomBytes(32));
+    const codeChallenge = base64URLEncode(sha256(Buffer.from(codeVerifier)));
 
-        case ProviderEnum.FACEBOOK:
-          authUrl =
-            `https://www.facebook.com/v18.0/dialog/oauth?` +
-            `client_id=${process.env.FACEBOOK_CLIENT_ID}&` +
-            `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-            `scope=${encodeURIComponent("email,public_profile")}&` +
-            `response_type=code&` +
-            `state=${encodeURIComponent(state)}`;
-          break;
+    // Store verifier for 10 minutes
+    await this.redis.set(`oauth_verifier:${state}`, codeVerifier, "EX", 600);
 
-        case ProviderEnum.LINKEDIN:
-          authUrl =
-            `https://www.linkedin.com/oauth/v2/authorization?` +
-            `client_id=${process.env.LINKEDIN_CLIENT_ID}&` +
-            `redirect_uri=${encodeURIComponent(redirectUri)}&` +
-            `scope=${encodeURIComponent("r_liteprofile r_emailaddress")}&` +
-            `response_type=code&` +
-            `state=${encodeURIComponent(state)}`;
-          break;
+    let authUrl: string;
 
-        default:
-          return this.failure<{ authUrl: string; state: string }>(
-            `Unsupported OAuth provider: ${provider}`,
-            null,
-            [StatusCodes.BAD_REQUEST]
-          );
-      }
+    switch (provider) {
+      case ProviderEnum.GOOGLE:
+        authUrl =
+          `https://accounts.google.com/o/oauth2/v2/auth?` +
+          `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
+          `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+          `scope=${encodeURIComponent("openid email profile")}&` +
+          `response_type=code&` +
+          `access_type=offline&` +
+          `prompt=consent&` +
+          `state=${encodeURIComponent(state)}&` +
+          `code_challenge=${codeChallenge}&` +
+          `code_challenge_method=S256`;
+        break;
 
-      // Store state in Redis with 10-minute expiry
-      await this.redis.set(`oauth_state:${state}`, provider, "EX", 600);
+      case ProviderEnum.FACEBOOK:
+        // Facebook does NOT support PKCE → skip
+        authUrl =
+          `https://www.facebook.com/v18.0/dialog/oauth?` +
+          `client_id=${process.env.FACEBOOK_CLIENT_ID}&` +
+          `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+          `scope=${encodeURIComponent("email,public_profile")}&` +
+          `response_type=code&` +
+          `state=${encodeURIComponent(state)}`;
+        break;
 
-      return this.success(
-        { authUrl, state },
-        "Auth URL generated successfully"
-      );
-    } catch (error) {
-      logger.error(`Failed to generate ${provider} auth URL:`, error);
-      return this.failure<{ authUrl: string; state: string }>(
-        `Failed to generate ${provider} auth URL`,
-        null,
-        [StatusCodes.INTERNAL_SERVER_ERROR]
-      );
+      case ProviderEnum.LINKEDIN:
+        authUrl =
+          `https://www.linkedin.com/oauth/v2/authorization?` +
+          `client_id=${process.env.LINKEDIN_CLIENT_ID}&` +
+          `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+          `scope=${encodeURIComponent("r_liteprofile r_emailaddress")}&` +
+          `response_type=code&` +
+          `state=${encodeURIComponent(state)}&` +
+          `code_challenge=${codeChallenge}&` +
+          `code_challenge_method=S256`;
+        break;
+
+      default:
+        return this.failure<{ authUrl: string; state: string }>(
+          `Unsupported OAuth provider: ${provider}`,
+          null,
+          [StatusCodes.BAD_REQUEST]
+        );
     }
+
+    // Store state in Redis with 10-minute expiry
+    await this.redis.set(`oauth_state:${state}`, provider, "EX", 600);
+
+    return this.success(
+      { authUrl, state },
+      "Auth URL generated successfully"
+    );
+  } catch (error) {
+    logger.error(`Failed to generate ${provider} auth URL:`, error);
+    return this.failure<{ authUrl: string; state: string }>(
+      `Failed to generate ${provider} auth URL`,
+      null,
+      [StatusCodes.INTERNAL_SERVER_ERROR]
+    );
   }
+}
 
   private async generateSessionToken(userId: string): Promise<string> {
     // Implement JWT or session token generation logic here
@@ -346,81 +384,105 @@ export class OAuthService extends BaseService {
     }
   }
 
-  async exchangeCodeForToken(
-    provider: ProviderEnum,
-    code: string,
-    redirectUri: string
-  ): Promise<ServiceResponse<OAuthTokenData>> {
-    try {
-      let tokenResponse: any;
+async exchangeCodeForToken(
+  provider: ProviderEnum,
+  code: string,
+  redirectUri: string,
+  state?: string
+): Promise<ServiceResponse<OAuthTokenData>> {
+  try {
+    let tokenResponse: any;
+    let codeVerifier: string | null = null;
 
-      switch (provider) {
-        case ProviderEnum.GOOGLE:
-          tokenResponse = await axios.post(
-            "https://oauth2.googleapis.com/token",
-            {
-              client_id: process.env.GOOGLE_CLIENT_ID,
-              client_secret: process.env.GOOGLE_CLIENT_SECRET,
-              code,
-              grant_type: "authorization_code",
-              redirect_uri: redirectUri,
-            }
-          );
-          break;
+    // Fetch code_verifier from Redis if state exists and provider supports PKCE
+    if (state && provider !== ProviderEnum.FACEBOOK) {
+      codeVerifier = await this.redis.get(`oauth_verifier:${state}`);
+      await this.redis.del(`oauth_verifier:${state}`);
+    }
 
-        case ProviderEnum.FACEBOOK:
-          tokenResponse = await axios.get(
-            "https://graph.facebook.com/v18.0/oauth/access_token",
-            {
-              params: {
-                client_id: process.env.FACEBOOK_CLIENT_ID,
-                client_secret: process.env.FACEBOOK_CLIENT_SECRET,
-                code,
-                redirect_uri: redirectUri,
-              },
-            }
-          );
-          break;
+    const clientId = process.env[`${provider}_CLIENT_ID`];
+    const clientSecret = process.env[`${provider}_CLIENT_SECRET`];
 
-        case ProviderEnum.LINKEDIN:
-          tokenResponse = await axios.post(
-            "https://www.linkedin.com/oauth/v2/accessToken",
-            {
-              grant_type: "authorization_code",
-              code,
-              client_id: process.env.LINKEDIN_CLIENT_ID,
-              client_secret: process.env.LINKEDIN_CLIENT_SECRET,
-              redirect_uri: redirectUri,
-            },
-            {
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            }
-          );
-          break;
-
-        default:
-          return this.failure<OAuthTokenData>(
-            `Unsupported OAuth provider: ${provider}`,
-            null,
-            [StatusCodes.BAD_REQUEST]
-          );
-      }
-
-      const tokenData: OAuthTokenData = {
-        accessToken: tokenResponse.data.access_token,
-        refreshToken: tokenResponse.data.refresh_token,
-        expiresIn: tokenResponse.data.expires_in,
-        tokenType: tokenResponse.data.token_type || "Bearer",
-      };
-
-      return this.success(tokenData, "Token exchange successful");
-    } catch (error) {
-      logger.error(`${provider} token exchange failed:`, error);
+    if (!clientId || !clientSecret) {
       return this.failure<OAuthTokenData>(
-        `Failed to exchange ${provider} authorization code`,
+        `Missing ${provider} credentials`,
         null,
         [StatusCodes.INTERNAL_SERVER_ERROR]
       );
     }
+
+    switch (provider) {
+      case ProviderEnum.GOOGLE: {
+        const body = {
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+          grant_type: "authorization_code",
+          redirect_uri: redirectUri,
+          ...(codeVerifier && { code_verifier: codeVerifier }),
+        };
+
+        tokenResponse = await axios.post("https://oauth2.googleapis.com/token", body, {
+          headers: { "Content-Type": "application/json" },
+        });
+        break;
+      }
+
+      case ProviderEnum.FACEBOOK: {
+        tokenResponse = await axios.get("https://graph.facebook.com/v18.0/oauth/access_token", {
+          params: {
+            client_id: clientId,
+            client_secret: clientSecret,
+            code,
+            redirect_uri: redirectUri,
+          },
+        });
+        break;
+      }
+
+      case ProviderEnum.LINKEDIN: {
+        const params = new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          ...(codeVerifier && { code_verifier: codeVerifier }),
+        });
+
+        tokenResponse = await axios.post(
+          "https://www.linkedin.com/oauth/v2/accessToken",
+          params, // <-- URLSearchParams, not object
+          {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          }
+        );
+        break;
+      }
+
+      default:
+        return this.failure<OAuthTokenData>(
+          `Unsupported OAuth provider: ${provider}`,
+          null,
+          [StatusCodes.BAD_REQUEST]
+        );
+    }
+
+    const tokenData: OAuthTokenData = {
+      accessToken: tokenResponse.data.access_token,
+      refreshToken: tokenResponse.data.refresh_token,
+      expiresIn: tokenResponse.data.expires_in,
+      tokenType: tokenResponse.data.token_type || "Bearer",
+    };
+
+    return this.success(tokenData, "Token exchange successful");
+  } catch (error: any) {
+    logger.error(`${provider} token exchange failed:`, error?.response?.data || error);
+    return this.failure<OAuthTokenData>(
+      `Failed to exchange ${provider} authorization code`,
+      null,
+      [StatusCodes.INTERNAL_SERVER_ERROR]
+    );
   }
+}
 }

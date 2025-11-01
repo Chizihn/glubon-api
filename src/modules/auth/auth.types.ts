@@ -36,6 +36,9 @@ export class TokenResponse {
 export class OAuthUrlResponse {
   @Field(() => String)
   authUrl: string;
+  
+  @Field(() => String)
+  state: string;
 }
 
 @ObjectType()

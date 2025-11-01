@@ -1,6 +1,7 @@
 import { Field, InputType, Int } from 'type-graphql';
 import { AdPosition, AdType, AdStatus } from '@prisma/client';
-import { PaginationInput } from '../transaction/transaction.types';
+import { PaginationInput } from '../../types';
+import { SortInput } from '../../types';
 
 @InputType()
 export class CreateAdInput {
@@ -45,15 +46,6 @@ export class UpdateAdStatusInput {
 }
 
 
-
-@InputType()
-class SortInput {
-  @Field(() => String, { nullable: true })
-  field?: string;
-
-  @Field(() => String, { nullable: true })
-  order?: 'asc' | 'desc';
-}
 
 @InputType()
 export class GetAdsFilter {

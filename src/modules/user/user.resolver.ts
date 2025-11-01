@@ -18,32 +18,22 @@ import {
   UsersSearchResponse,
 } from "./user.inputs";
 import { getContainer } from "../../services";
-import { UserService } from "../../services/user";
-import { AuthService } from "../../services/auth";
-import { OAuthService } from "../../services/oauth";
+import { UserService } from "../../services/user"
 import { NotificationService } from "../../services/notification";
-import { prisma, redis } from "../../config";
-import { AuthMiddleware, RequireRole } from "../../middleware";
+import { AuthMiddleware, } from "../../middleware";
 import { BaseResponse, Context } from "../../types";
-import { AccountDetails, User, UserStatsResponse } from "./user.types";
-import { RoleEnum } from "@prisma/client";
-import { PaystackService } from "../../services/payment";
+import {  User, UserStatsResponse } from "./user.types";
 
 @Resolver()
 export class UserResolver {
   private userService: UserService;
-  private paystackService: PaystackService;
-  private authService: AuthService;
-  private oAuthService: OAuthService;
   private notificationService: NotificationService;
 
   constructor() {
     const container = getContainer();
     this.userService = container.resolve('userService');
-    this.authService = container.resolve('authService');
-    this.oAuthService = container.resolve('oAuthService');
     this.notificationService = container.resolve('notificationService');
-    this.paystackService = container.resolve('paystackService');
+
   }
 
   @Query(() => User)

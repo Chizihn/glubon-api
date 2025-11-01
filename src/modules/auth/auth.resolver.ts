@@ -135,18 +135,36 @@ export class AuthResolver {
     return new BaseResponse(true, result.message);
   }
 
-  @Query(() => OAuthUrlResponse)
-  async getOAuthAuthUrl(
-    @Arg("input") input: GetOAuthUrlInput
-  ): Promise<OAuthUrlResponse> {
-    const result = await this.authService.getOAuthAuthUrl(
-      input.provider,
-      input.redirectUri,
-      input.state
-    );
-    if (!result.success) throw new Error(result.message);
-    return { authUrl: result.data!.authUrl };
+@Query(() => OAuthUrlResponse)
+async getOAuthAuthUrl(
+  @Arg("input") input: GetOAuthUrlInput
+): Promise<OAuthUrlResponse> {
+  const { provider, redirectUri, state } = input;
+
+  // Validate redirectUri (whitelist)
+  const allowed = [
+    `${process.env.API_BASE_URL}/api/oauth/callback`,
+    "glubon://oauth",
+  ];
+  if (!allowed.includes(redirectUri)) {
+    throw new Error("Invalid redirect URI");
   }
+
+  const result = await this.authService.getOAuthAuthUrl(
+    provider,
+    redirectUri,
+    state
+  );
+
+  if (!result.success || !result.data) {
+    throw new Error(result.message);
+  }
+
+  return {
+    authUrl: result.data.authUrl,
+    state: result.data.state, // ← return state too
+  };
+}
 
   @Mutation(() => OAuthTokenResponse)
   async exchangeOAuthCode(

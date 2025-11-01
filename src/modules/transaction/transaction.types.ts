@@ -175,15 +175,6 @@ export class TransactionSortInput {
   order!: "ASC" | "DESC";
 }
 
-// Pagination input
-@InputType()
-export class PaginationInput {
-  @Field(() => Int,{ defaultValue: 1 })
-  page!: number;
-
-  @Field(() => Int,{ defaultValue: 10 })
-  limit!: number;
-}
 
 // Verify transaction response
 @ObjectType()

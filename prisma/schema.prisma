@@ -67,6 +67,8 @@ model User {
   reviewedTokens           VerificationToken[]      @relation("TokenReviewer")
   verificationTokens       VerificationToken[]
   receivedBroadcasts       BroadcastMessage[]       @relation("BroadcastRecipients")
+  createdTickets   Ticket[]         @relation("TicketCreator")
+  assignedTickets  Ticket[]         @relation("TicketAssignee")
 
   @@index([email])
   @@map("users")
@@ -95,6 +97,33 @@ model Subaccount {
   @@index([subaccountCode])
   @@index([status])
   @@map("subaccounts")
+}
+
+model Ticket {
+  id           String          @id @default(uuid())
+  subject      String
+  description  String
+  status       TicketStatus    @default(OPEN)
+  priority     TicketPriority  @default(MEDIUM)
+  category     TicketCategory  @default(GENERAL)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  assignedAt   DateTime?
+
+  createdById  String
+  assignedToId String?
+
+  createdBy    User            @relation("TicketCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  assignedTo   User?           @relation("TicketAssignee", fields: [assignedToId], references: [id])
+
+  @@index([status])
+  @@index([priority])
+  @@index([category])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@map("tickets")
 }
 
 model UserSetting {
@@ -774,6 +803,7 @@ enum PermissionEnum {
   VIEW_ANALYTICS
   MANAGE_SETTINGS
   SUPER_ADMIN
+  SUPPORT
 }
 
 enum ProviderEnum {
@@ -795,6 +825,30 @@ enum SubaccountStatus {
   ACTIVE
   FAILED
   SUSPENDED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  ACCOUNT
+  PAYMENT
+  TECHNICAL
+  GENERAL
+  FEEDBACK
+  OTHER
 }
 
 enum PropertyStatus {

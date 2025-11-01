@@ -15,7 +15,7 @@ import { DisputeResolver } from "../modules/dispute/dispute.resolver";
 import { TransactionResolver } from "../modules/transaction/transaction.resolver";
 import { PresenceResolver } from "../modules/presence/presence.resolver";
 import { ContentResolver } from "../modules/content/content.resolver";
-import { ConversationResolver } from "../modules/conversation/conversation.resolver";
+import { ChatResolver } from "../modules/chat/chat.resolver";
 import { FAQResolver } from "../modules/faq";
 import { AuditLogResolver } from "../modules/audit-log";
 import { AdResolver } from "../modules/ad";
@@ -24,6 +24,8 @@ import { SettingsResolver } from "../modules/setting/setting.resolver";
 import { SubaccountResolver } from "../modules/subaccount/subaccount.resolver";
 import { UnitResolver } from "../modules/unit/unit.resolver";
 import { AnalyticsResolver } from "../modules/analytics/analytics.resolver";
+import { AIResolver } from "../modules/ai/ai.resolver";
+import { TicketResolver } from "../modules/tickets/ticket.resolver";
 // Auth checking is handled by the AuthMiddleware
 
 export async function createGraphQLSchema() {
@@ -40,7 +42,7 @@ export async function createGraphQLSchema() {
       PropertyResolver,
       AdminResolver,
       NotificationResolver,
-      ConversationResolver,
+      ChatResolver,
       BookingResolver,
       DisputeResolver,
       TransactionResolver,
@@ -55,7 +57,8 @@ export async function createGraphQLSchema() {
       SubaccountResolver,
       UnitResolver,
       AnalyticsResolver,
-      // TicketResolver,
+      AIResolver,
+      TicketResolver,
     ],
     validate: false,
     pubSub,

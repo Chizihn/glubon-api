@@ -691,7 +691,7 @@ export class AuthService extends BaseService {
     provider: ProviderEnum,
     redirectUri: string,
     state?: string
-  ): Promise<ServiceResponse<{ authUrl: string }>> {
+  ): Promise<ServiceResponse<{ authUrl: string, state: string }>> {
     return this.oauthService.generateAuthUrl(provider, redirectUri);
   }
 

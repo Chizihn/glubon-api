@@ -9,65 +9,79 @@ import {
   Root,
   Int,
   ID,
-  ArgsType,
-  Field,
 } from "type-graphql";
-import type { Context } from "../../types/context";
-import { getContainer } from "../../services";
+import { Context } from "../../types/context";
+import { ChatService, getContainer } from "../../services";
 import { AuthMiddleware } from "../../middleware";
 import { SUBSCRIPTION_EVENTS } from "../../utils/pubsub";
 import {
-  ConversationResponse,
+  Conversation,
+  Message,
+  PaginatedConversations,
+  PaginatedMessages,
+  SendMessageResponse,
+  CreateConversationResponse,
   MarkAsReadResponse,
-  MessageResponse,
-  PaginatedConversationsResponse,
-  PaginatedMessagesResponse,
   UnreadCountResponse,
+  TypingStatus,
   MessageSentPayload,
+  ConversationUpdatedPayload,
+  TypingStatusPayload,
+  PresenceUpdatePayload,
   PaginatedBroadcastMessagesResponse,
   BroadcastMessageResponse,
-} from "./conversation.types";
-import { MessageType, RoleEnum, Prisma, PrismaClient } from "@prisma/client";
-import { ConversationService } from "../../services/conversation";
-import { BroadcastMessageInput, BroadcastMessageFilter } from "./broadcast.inputs";
-import { PubSub } from "graphql-subscriptions";
+} from "./chat.types";
 import {
+  CreateConversationInput,
+  SendMessageInput,
   ConversationFilters,
   MessageFilters,
-  SendMessageInput,
-} from "./conversation.inputs";
+  TypingStatusInput,
+  MessageSearchInput,
+  MarkMessagesAsReadInput,
+  UpdateMessageInput,
+  DeleteMessageInput,
+} from "./chat.inputs";
+import {
+  BroadcastMessageInput,
+  BroadcastMessageFilter,
+} from "./broadcast.inputs";
+import { Prisma, PrismaClient, RoleEnum } from "@prisma/client";
+import { PubSub } from "graphql-subscriptions";
+import { UserPresence } from "../presence/presence.types";
 
 @Resolver()
-export class ConversationResolver {
-  private conversationService: ConversationService;
+export class ChatResolver {
+  private chatService: ChatService;
   private prisma: PrismaClient;
 
   constructor() {
-        const container = getContainer();
-    
-    this.conversationService = container.resolve('conversationService');
+    const container = getContainer();
+    this.chatService = container.resolve("chatService");
     this.prisma = container.getPrisma() as unknown as PrismaClient;
   }
 
-
-
-  @Query(() => PaginatedConversationsResponse)
+  // Queries
+  @Query(() => PaginatedConversations)
   @UseMiddleware(AuthMiddleware)
   async getConversations(
-    @Arg("filters") filters: ConversationFilters,
-    @Arg("page", { defaultValue: 1 }) page: number,
-    @Arg("limit", { defaultValue: 20 }) limit: number,
+    @Arg("filters", { nullable: true }) filters: ConversationFilters = {},
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
     @Ctx() ctx: Context
-  ): Promise<PaginatedConversationsResponse> {
-    const result = await this.conversationService.getConversations(
-      { ...filters, userId: ctx.user!.id },
+  ): Promise<PaginatedConversations> {
+    const result = await this.chatService.getConversations(
+      ctx.user!.id,
+      filters,
       page,
       limit
     );
+
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
-    return new PaginatedConversationsResponse(
+
+    return new PaginatedConversations(
       result.data.conversations,
       page,
       limit,
@@ -75,115 +89,51 @@ export class ConversationResolver {
     );
   }
 
-  @Query(() => ConversationResponse)
+  @Query(() => Conversation)
   @UseMiddleware(AuthMiddleware)
   async getConversation(
-    @Arg("conversationId") conversationId: string,
+    @Arg("conversationId", () => ID) conversationId: string,
     @Ctx() ctx: Context
-  ): Promise<ConversationResponse> {
-    const result = await this.conversationService.getConversationById(
+  ): Promise<Conversation> {
+    const result = await this.chatService.getConversationById(
       conversationId,
       ctx.user!.id
     );
+
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
+
     return result.data;
   }
 
-  @Query(() => PaginatedMessagesResponse)
+  @Query(() => PaginatedMessages)
   @UseMiddleware(AuthMiddleware)
   async getMessages(
     @Arg("conversationId", () => ID) conversationId: string,
-    @Arg("filters", () => MessageFilters, {nullable: true}) filters: MessageFilters,
+    @Arg("filters", { nullable: true }) filters: MessageFilters = {},
     @Arg("page", () => Int, { defaultValue: 1 }) page: number,
     @Arg("limit", () => Int, { defaultValue: 50 }) limit: number,
     @Ctx() ctx: Context
-  ): Promise<PaginatedMessagesResponse> {
-    const result = await this.conversationService.getMessages(
-      { ...filters, conversationId },
+  ): Promise<PaginatedMessages> {
+    const result = await this.chatService.getMessages(
+      ctx.user!.id,
+      conversationId,
+      filters,
       page,
       limit
     );
+
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
-    return new PaginatedMessagesResponse(
-      result.data.messages as MessageResponse[],
+
+    return new PaginatedMessages(
+      result.data.messages,
       page,
       limit,
       result.data.totalCount
     );
-  }
-
-  @Mutation(() => MessageResponse)
-  @UseMiddleware(AuthMiddleware)
-  async sendMessage(
-    @Arg("input") input: SendMessageInput,
-    @Ctx() ctx: Context
-  ): Promise<MessageResponse> {
-    // Ensure either conversationId or recipientIds is provided
-    if (!input.conversationId && (!input.recipientIds || input.recipientIds.length === 0)) {
-      throw new Error("Either conversationId or recipientIds must be provided");
-    }
-
-    const result = await this.conversationService.sendMessage(
-      ctx.user!.id,
-      input
-    );
-    
-    if (!result.success || !result.data) {
-      throw new Error(result.message);
-    }
-    return result.data;
-  }
-
-  @Mutation(() => MarkAsReadResponse)
-  @UseMiddleware(AuthMiddleware)
-  async markMessagesAsRead(
-    @Arg("conversationId") conversationId: string,
-    @Ctx() ctx: Context
-  ): Promise<MarkAsReadResponse> {
-    const result = await this.conversationService.markMessagesAsRead(
-      conversationId,
-      ctx.user!.id
-    );
-    if (!result.success || !result.data) {
-      throw new Error(result.message);
-    }
-    return result.data;
-  }
-
-  @Mutation(() => Boolean)
-  @UseMiddleware(AuthMiddleware)
-  async deleteMessage(
-    @Arg("messageId") messageId: string,
-    @Ctx() ctx: Context
-  ): Promise<boolean> {
-    const result = await this.conversationService.deleteMessage(
-      messageId,
-      ctx.user!.id
-    );
-    if (!result.success) {
-      throw new Error(result.message);
-    }
-    return true;
-  }
-
-  @Mutation(() => Boolean)
-  @UseMiddleware(AuthMiddleware)
-  async archiveConversation(
-    @Arg("conversationId") conversationId: string,
-    @Ctx() ctx: Context
-  ): Promise<boolean> {
-    const result = await this.conversationService.archiveConversation(
-      conversationId,
-      ctx.user!.id
-    );
-    if (!result.success) {
-      throw new Error(result.message);
-    }
-    return true;
   }
 
   @Query(() => UnreadCountResponse)
@@ -191,43 +141,173 @@ export class ConversationResolver {
   async getUnreadMessageCount(
     @Ctx() ctx: Context
   ): Promise<UnreadCountResponse> {
-    const result = await this.conversationService.getUnreadMessageCount(
-      ctx.user!.id
-    );
+    const result = await this.chatService.getUnreadCount(ctx.user!.id);
+
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
-    return result.data;
+
+    return {
+      totalUnread: result.data.totalUnread,
+      conversationCounts: [], // TODO: Implement per-conversation counts if needed
+    };
   }
 
-  @Query(() => PaginatedMessagesResponse)
+  @Query(() => PaginatedMessages)
   @UseMiddleware(AuthMiddleware)
   async searchMessages(
-    @Arg("conversationId") conversationId: string,
-    @Arg("query") query: string,
-    @Arg("page", { defaultValue: 1 }) page: number,
-    @Arg("limit", { defaultValue: 20 }) limit: number,
+    @Arg("input") input: MessageSearchInput,
+    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
+    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
     @Ctx() ctx: Context
-  ): Promise<PaginatedMessagesResponse> {
-    const result = await this.conversationService.searchMessages(
-      conversationId,
+  ): Promise<PaginatedMessages> {
+    const result = await this.chatService.searchMessages(
       ctx.user!.id,
-      query,
+      input,
       page,
       limit
     );
+
     if (!result.success || !result.data) {
       throw new Error(result.message);
     }
-    return new PaginatedMessagesResponse(
-      result.data.messages as MessageResponse[],
+
+    return new PaginatedMessages(
+      result.data.messages,
       page,
       limit,
       result.data.totalCount
     );
   }
 
-  @Subscription(() => MessageResponse, {
+  // Mutations
+  @Mutation(() => CreateConversationResponse)
+  @UseMiddleware(AuthMiddleware)
+  async createConversation(
+    @Arg("input") input: CreateConversationInput,
+    @Ctx() ctx: Context
+  ): Promise<CreateConversationResponse> {
+    const result = await this.chatService.createConversation(
+      ctx.user!.id,
+      input
+    );
+
+    if (!result.success || !result.data) {
+      throw new Error(result.message);
+    }
+
+    return {
+      conversation: result.data.conversation,
+      success: true,
+      isNew: result.data.isNew,
+    };
+  }
+
+  @Mutation(() => SendMessageResponse)
+  @UseMiddleware(AuthMiddleware)
+  async sendMessage(
+    @Arg("input") input: SendMessageInput,
+    @Ctx() ctx: Context
+  ): Promise<SendMessageResponse> {
+    const result = await this.chatService.sendMessage(ctx.user!.id, input);
+
+    if (!result.success || !result.data) {
+      throw new Error(result.message);
+    }
+
+    return {
+      message: result.data.message,
+      success: true,
+      conversationId: result.data.conversationId,
+    };
+  }
+
+  @Mutation(() => MarkAsReadResponse)
+  @UseMiddleware(AuthMiddleware)
+  async markMessagesAsRead(
+    @Arg("input") input: MarkMessagesAsReadInput,
+    @Ctx() ctx: Context
+  ): Promise<MarkAsReadResponse> {
+    const result = await this.chatService.markMessagesAsRead(
+      ctx.user!.id,
+      input
+    );
+
+    if (!result.success || !result.data) {
+      throw new Error(result.message);
+    }
+
+    return {
+      updatedCount: result.data.updatedCount,
+      success: true,
+    };
+  }
+
+  @Mutation(() => Boolean)
+  @UseMiddleware(AuthMiddleware)
+  async sendTypingStatus(
+    @Arg("input") input: TypingStatusInput,
+    @Ctx() ctx: Context
+  ): Promise<boolean> {
+    const result = await this.chatService.sendTypingStatus(ctx.user!.id, input);
+
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+
+    return true;
+  }
+
+  @Mutation(() => Boolean)
+  @UseMiddleware(AuthMiddleware)
+  async deleteMessage(
+    @Arg("input") input: DeleteMessageInput,
+    @Ctx() ctx: Context
+  ): Promise<boolean> {
+    const result = await this.chatService.deleteMessage(ctx.user!.id, input);
+
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+
+    return true;
+  }
+
+  @Mutation(() => Message)
+  @UseMiddleware(AuthMiddleware)
+  async updateMessage(
+    @Arg("input") input: UpdateMessageInput,
+    @Ctx() ctx: Context
+  ): Promise<Message> {
+    const result = await this.chatService.updateMessage(ctx.user!.id, input);
+
+    if (!result.success || !result.data) {
+      throw new Error(result.message);
+    }
+
+    return result.data;
+  }
+
+  @Mutation(() => Boolean)
+  @UseMiddleware(AuthMiddleware)
+  async archiveConversation(
+    @Arg("conversationId", () => ID) conversationId: string,
+    @Ctx() ctx: Context
+  ): Promise<boolean> {
+    const result = await this.chatService.archiveConversation(
+      conversationId,
+      ctx.user!.id
+    );
+
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+
+    return true;
+  }
+
+  // Subscriptions
+  @Subscription(() => Message, {
     topics: SUBSCRIPTION_EVENTS.MESSAGE_SENT,
     filter: ({
       payload,
@@ -242,11 +322,11 @@ export class ConversationResolver {
   async messageSent(
     @Root() payload: MessageSentPayload,
     @Ctx() ctx: Context
-  ): Promise<MessageResponse> {
+  ): Promise<Message> {
     return payload.message;
   }
 
-  @Subscription(() => MessageResponse, {
+  @Subscription(() => Message, {
     topics: SUBSCRIPTION_EVENTS.MESSAGE_SENT,
     filter: ({
       payload,
@@ -255,14 +335,76 @@ export class ConversationResolver {
       payload: MessageSentPayload;
       args: { conversationId: string };
     }) => {
+      // Only filter by conversation ID for now to ensure messages are delivered
       return payload.conversationId === args.conversationId;
     },
   })
   async conversationMessages(
-    @Arg("conversationId") conversationId: string,
-    @Root() payload: MessageSentPayload
-  ): Promise<MessageResponse> {
+    @Arg("conversationId", () => ID) conversationId: string,
+    @Root() payload: MessageSentPayload,
+    @Ctx() ctx: Context
+  ): Promise<Message> {
     return payload.message;
+  }
+
+  @Subscription(() => Conversation, {
+    topics: SUBSCRIPTION_EVENTS.CONVERSATION_CREATED,
+    filter: ({
+      payload,
+      context,
+    }: {
+      payload: ConversationUpdatedPayload;
+      context: Context;
+    }) => {
+      return payload.conversation.participants.some(
+        (p) => p.id === context.user?.id
+      );
+    },
+  })
+  async conversationUpdated(
+    @Root() payload: ConversationUpdatedPayload,
+    @Ctx() ctx: Context
+  ): Promise<Conversation> {
+    return payload.conversation;
+  }
+
+  @Subscription(() => TypingStatus, {
+    topics: SUBSCRIPTION_EVENTS.TYPING_STATUS,
+    filter: ({
+      payload,
+      args,
+    }: {
+      payload: TypingStatusPayload;
+      args: { conversationId: string };
+    }) => {
+      return payload.typingStatus.conversationId === args.conversationId;
+    },
+  })
+  async typingStatus(
+    @Arg("conversationId", () => ID) conversationId: string,
+    @Root() payload: TypingStatusPayload
+  ): Promise<TypingStatus> {
+    return payload.typingStatus;
+  }
+
+  @Subscription(() => UserPresence, {
+    topics: SUBSCRIPTION_EVENTS.PRESENCE_CHANGED,
+    filter: ({
+      payload,
+      context,
+    }: {
+      payload: PresenceUpdatePayload;
+      context: Context;
+    }) => {
+      // Only send presence updates for users in the same conversations
+      return true; // TODO: Implement proper filtering based on shared conversations
+    },
+  })
+  async presenceChanged(
+    @Root() payload: PresenceUpdatePayload,
+    @Ctx() ctx: Context
+  ): Promise<UserPresence> {
+    return payload.presence;
   }
 
   // Broadcast endpoints
@@ -274,7 +416,10 @@ export class ConversationResolver {
     @Arg("limit", { defaultValue: 20 }) limit: number,
     @Ctx() ctx: Context
   ): Promise<PaginatedBroadcastMessagesResponse> {
-    if (!ctx.user?.permissions.includes("SUPER_ADMIN") && ctx.user?.role !== RoleEnum.ADMIN) {
+    if (
+      !ctx.user?.permissions.includes("SUPER_ADMIN") &&
+      ctx.user?.role !== RoleEnum.ADMIN
+    ) {
       throw new Error("Unauthorized: Only admins can view broadcast messages");
     }
 
@@ -317,7 +462,12 @@ export class ConversationResolver {
         })
     );
 
-    return new PaginatedBroadcastMessagesResponse(response, page, limit, totalCount);
+    return new PaginatedBroadcastMessagesResponse(
+      response,
+      page,
+      limit,
+      totalCount
+    );
   }
 
   @Query(() => BroadcastMessageResponse)
@@ -339,8 +489,12 @@ export class ConversationResolver {
       throw new Error("Broadcast message not found");
     }
 
-    const isRecipient = broadcast.recipients.some((r: { id: string }) => r.id === ctx.user!.id);
-    const isAdmin = ctx.user?.permissions.includes("SUPER_ADMIN") || ctx.user?.role === RoleEnum.ADMIN;
+    const isRecipient = broadcast.recipients.some(
+      (r: { id: string }) => r.id === ctx.user!.id
+    );
+    const isAdmin =
+      ctx.user?.permissions.includes("SUPER_ADMIN") ||
+      ctx.user?.role === RoleEnum.ADMIN;
 
     if (!isRecipient && !isAdmin) {
       throw new Error("Unauthorized: You are not a recipient or admin");
@@ -359,7 +513,10 @@ export class ConversationResolver {
     @Ctx() ctx: Context
   ): Promise<BroadcastMessageResponse> {
     // Ensure user has appropriate permissions
-    if (!ctx.user?.permissions.includes("SUPER_ADMIN") && ctx.user?.role !== RoleEnum.ADMIN) {
+    if (
+      !ctx.user?.permissions.includes("SUPER_ADMIN") &&
+      ctx.user?.role !== RoleEnum.ADMIN
+    ) {
       throw new Error("Unauthorized: Only admins can send broadcast messages");
     }
 
@@ -408,8 +565,13 @@ export class ConversationResolver {
     @Ctx() ctx: Context
   ): Promise<boolean> {
     // Ensure user has appropriate permissions
-    if (!ctx.user?.permissions.includes("SUPER_ADMIN") && ctx.user?.role !== RoleEnum.ADMIN) {
-      throw new Error("Unauthorized: Only admins can delete broadcast messages");
+    if (
+      !ctx.user?.permissions.includes("SUPER_ADMIN") &&
+      ctx.user?.role !== RoleEnum.ADMIN
+    ) {
+      throw new Error(
+        "Unauthorized: Only admins can delete broadcast messages"
+      );
     }
 
     const broadcast = await this.prisma.broadcastMessage.findUnique({
@@ -436,7 +598,9 @@ export class ConversationResolver {
       payload: { broadcastMessage: BroadcastMessageResponse };
       context: Context;
     }) => {
-      return payload.broadcastMessage.sentToUserIds.includes(context.user?.id ?? "");
+      return payload.broadcastMessage.sentToUserIds.includes(
+        context.user?.id ?? ""
+      );
     },
   })
   async broadcastMessageSent(
@@ -446,6 +610,3 @@ export class ConversationResolver {
     return payload.broadcastMessage;
   }
 }
-
-
-
