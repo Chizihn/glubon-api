@@ -10,7 +10,7 @@ export class AIQueryInputType {
   query: string;
 
   @Field({ nullable: true })
-  context?: string; // JSON string for location, budget, etc.
+  context?: string; 
 }
 
 @ObjectType()

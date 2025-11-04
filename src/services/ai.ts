@@ -1,4 +1,10 @@
+// src/services/AIService.ts
 import { PrismaClient } from "@prisma/client";
+import { Redis } from "ioredis";
+import { BaseService, CACHE_TTL } from "./base";
+import { extractPriceRange } from "../utils/parsePrice";
+import { containsLocationKeyword, extractCanonicalLocation } from "../constants/locationKeywords";
+
 
 export interface AIQueryInput {
   query: string;
@@ -16,184 +22,118 @@ export interface AIResponse {
   followUpQuestions?: string[];
 }
 
-export class AIService {
-  constructor(private prisma: PrismaClient) {}
+interface Analysis {
+  intent: "budget" | "location" | "bedrooms" | "search" | "general";
+  criteria: {
+    minPrice?: number;
+    maxPrice?: number;
+    bedrooms?: number;
+    location?: string;
+  };
+  followUpQuestions: string[];
+}
+
+export class AIService extends BaseService {
+  constructor(prisma: PrismaClient, redis: Redis) {
+    super(prisma, redis);
+  }
 
   async processQuery(input: AIQueryInput): Promise<AIResponse> {
     const { query, context } = input;
 
     try {
-      // Parse user intent and extract search criteria
       const analysis = await this.analyzeQuery(query, context);
-
-      // Get relevant properties based on analysis
-      const properties = await this.getRelevantProperties(analysis);
-
-      // Generate response
-      const response = await this.generateResponse(query, properties, analysis);
-
-      return response;
+      const properties = await this.getRelevantProperties(analysis.criteria);
+      return this.generateResponse(query, properties, analysis);
     } catch (error) {
       console.error("AI processing error:", error);
-      // Fallback to simple response
-      return {
-        answer:
-          "I'm having trouble processing your request right now. Please try a simpler query like 'Show me 2-bedroom apartments under ₦500k'.",
-        suggestedProperties: [],
-        followUpQuestions: [
-          "What's your budget range?",
-          "How many bedrooms do you need?",
-          "Which area are you interested in?",
-        ],
-      };
+      return this.fallbackResponse();
     }
   }
 
-  private async analyzeQuery(query: string, context?: any) {
-    // Simple intent parsing for now - you can enhance with Vercel AI SDK later
-    const lowerQuery = query.toLowerCase();
+  // ── ANALYSIS ─────────────────────────────────────────────────────
+  private async analyzeQuery(query: string, context?: any): Promise<Analysis> {
+    const cacheKey = `ai:analysis:${query.toLowerCase()}`;
+    const cached = await this.getCache<Analysis>(cacheKey);
+    if (cached) return cached;
 
-    // Extract basic criteria from query
-    const searchCriteria: any = {};
+    const lower = query.toLowerCase();
+    const criteria: Analysis["criteria"] = {};
 
-    // Extract price/budget
-    const priceMatch = query.match(/₦?(\d+(?:,\d+)*(?:k|m)?)/gi);
-    if (priceMatch) {
-      const prices = priceMatch.map((p) => {
-        let num = parseFloat(p.replace(/[₦,]/g, ""));
-        if (p.toLowerCase().includes("k")) num *= 1000;
-        if (p.toLowerCase().includes("m")) num *= 1000000;
-        return num;
-      });
-      if (prices.length === 1) {
-        searchCriteria.maxPrice = prices[0];
-      } else if (prices.length >= 2) {
-        searchCriteria.minPrice = Math.min(...prices);
-        searchCriteria.maxPrice = Math.max(...prices);
+    // 1. Price
+    const priceRange = extractPriceRange(query);
+    if (priceRange.min !== undefined) criteria.minPrice = priceRange.min;
+    if (priceRange.max !== undefined) criteria.maxPrice = priceRange.max;
+
+    // 2. Bedrooms
+    const bedMatch = query.match(/(\d+)\s*(bed|bedroom|br)/i);
+    if (bedMatch && bedMatch[1]) {
+      criteria.bedrooms = parseInt(bedMatch[1], 10);
+    }
+
+    // 3. Location
+    if (containsLocationKeyword(lower)) {
+      const location = extractCanonicalLocation(lower);
+      if (location) {
+        criteria.location = location;
       }
     }
 
-    // Extract bedrooms
-    const bedroomMatch = query.match(/(\d+)[\s-]*(bed|bedroom|br)/i);
-    if (bedroomMatch) {
-      searchCriteria.bedrooms = parseInt(String(bedroomMatch[1]));
-    }
-
-    // Extract location keywords
-    const locationKeywords = [
-      "abia",
-      "adamawa",
-      "akwa ibom",
-      "anambra",
-      "bauchi",
-      "bayelsa",
-      "benue",
-      "borno",
-      "cross river",
-      "delta",
-      "ebonyi",
-      "edo",
-      "ekiti",
-      "enugu",
-      "gombe",
-      "imo",
-      "jigawa",
-      "kaduna",
-      "kano",
-      "katsina",
-      "kebbi",
-      "kogi",
-      "kwara",
-      "lagos",
-      "nasarawa",
-      "niger",
-      "ogun",
-      "ondo",
-      "osun",
-      "oyo",
-      "plateau",
-      "rivers",
-      "sokoto",
-      "taraba",
-      "yobe",
-      "zamfara",
-      "fct",
-    ];
-
-    const foundLocation = locationKeywords.find((loc) =>
-      lowerQuery.includes(loc)
-    );
-    if (foundLocation) {
-      searchCriteria.location = foundLocation;
-    }
-
-    // Determine intent
-    let intent = "general";
-    if (
-      lowerQuery.includes("budget") ||
-      lowerQuery.includes("price") ||
-      lowerQuery.includes("₦") ||
-      lowerQuery.includes("NGN")
-    ) {
+    // 4. Intent
+    let intent: Analysis["intent"] = "general";
+    if ((criteria.minPrice !== undefined || criteria.maxPrice !== undefined) || lower.includes("budget")) {
       intent = "budget";
-    } else if (
-      lowerQuery.includes("location") ||
-      lowerQuery.includes("area") ||
-      foundLocation
-    ) {
+    } else if (criteria.location || lower.includes("area")) {
       intent = "location";
-    } else if (lowerQuery.includes("bedroom") || lowerQuery.includes("bed")) {
+    } else if (criteria.bedrooms !== undefined) {
+      intent = "bedrooms";
+    } else if (lower.includes("show") || lower.includes("find")) {
       intent = "search";
     }
 
-    return {
-      intent,
-      searchCriteria,
-      followUpQuestions: this.generateFollowUpQuestions(intent, searchCriteria),
+    const followUp = this.generateFollowUpQuestions(criteria);
+
+    const result: Analysis = { 
+      intent, 
+      criteria, 
+      followUpQuestions: followUp 
     };
+    await this.setCache(cacheKey, result, CACHE_TTL.LONG);
+    return result;
   }
 
-  private generateFollowUpQuestions(intent: string, criteria: any): string[] {
-    const questions = [];
+  // ── FOLLOW-UP QUESTIONS ──────────────────────────────────────────
+  private generateFollowUpQuestions(criteria: Analysis["criteria"]): string[] {
+    const questions: string[] = [];
 
-    if (!criteria.maxPrice) {
-      questions.push("What's your budget range?");
-    }
-    if (!criteria.bedrooms) {
-      questions.push("How many bedrooms do you need?");
-    }
-    if (!criteria.location) {
-      questions.push("Which area are you interested in?");
-    }
+    if (!criteria.maxPrice) questions.push("What's your budget range?");
+    if (!criteria.bedrooms) questions.push("How many bedrooms do you need?");
+    if (!criteria.location) questions.push("Which area are you interested in?");
 
-    // Add intent-specific questions
-    if (intent === "budget") {
-      questions.push("Would you like to see properties in a specific area?");
-    } else if (intent === "location") {
-      questions.push("Do you have a preferred property type?");
-    }
-
-    return questions.slice(0, 3); // Limit to 3 questions
+    return questions.slice(0, 3);
   }
 
-  private async getRelevantProperties(analysis: any) {
-    const criteria = analysis.searchCriteria || {};
+  // ── PROPERTY FETCH ───────────────────────────────────────────────
+  private async getRelevantProperties(criteria: Analysis["criteria"]) {
+    const cacheKey = `ai:props:${JSON.stringify(criteria)}`;
+    const cached = await this.getCache<any[]>(cacheKey);
+    if (cached) return cached;
 
-    return await this.prisma.property.findMany({
-      where: {
-        ...(criteria.minPrice && { amount: { gte: criteria.minPrice } }),
-        ...(criteria.maxPrice && { amount: { lte: criteria.maxPrice } }),
-        ...(criteria.bedrooms && { bedrooms: criteria.bedrooms }),
-        ...(criteria.location && {
-          OR: [
-            { city: { contains: criteria.location, mode: "insensitive" } },
-            { state: { contains: criteria.location, mode: "insensitive" } },
-            { address: { contains: criteria.location, mode: "insensitive" } },
-          ],
-        }),
-        // Only show available properties
-        isActive: true,
-      },
+    const where: any = { isActive: true };
+
+    if (criteria.minPrice !== undefined) where.amount = { ...where.amount, gte: criteria.minPrice };
+    if (criteria.maxPrice !== undefined) where.amount = { ...where.amount, lte: criteria.maxPrice };
+    if (criteria.bedrooms !== undefined) where.bedrooms = criteria.bedrooms;
+    if (criteria.location) {
+      where.OR = [
+        { city: { contains: criteria.location, mode: "insensitive" } },
+        { state: { contains: criteria.location, mode: "insensitive" } },
+        { address: { contains: criteria.location, mode: "insensitive" } },
+      ];
+    }
+
+    const properties = await this.prisma.property.findMany({
+      where,
       take: 5,
       select: {
         id: true,
@@ -210,58 +150,59 @@ export class AIService {
         propertyType: true,
         rentalPeriod: true,
       },
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy: { createdAt: "desc" },
     });
+
+    if (properties.length > 0) {
+      await this.setCache(cacheKey, properties, CACHE_TTL.LONG);
+    }
+
+    return properties;
   }
 
-  private async generateResponse(
+  // ── RESPONSE GENERATION ──────────────────────────────────────────
+  private generateResponse(
     query: string,
     properties: any[],
-    analysis: any
-  ): Promise<AIResponse> {
-    const criteria = analysis.searchCriteria;
-    let answer = "";
+    analysis: Analysis
+  ): AIResponse {
+    const { criteria } = analysis;
 
     if (properties.length === 0) {
-      answer = `I couldn't find any properties matching "${query}". `;
-      if (criteria.maxPrice) {
-        answer += `Try increasing your budget above ₦${criteria.maxPrice.toLocaleString()}, `;
-      }
-      if (criteria.location) {
-        answer += `or consider nearby areas to ${criteria.location}. `;
-      }
-      answer += "Would you like me to suggest some alternatives?";
-    } else {
-      answer = `Great! I found ${properties.length} propert${
-        properties.length === 1 ? "y" : "ies"
-      } matching your search. `;
+      let msg = `I couldn't find any properties matching "${query}". `;
+      if (criteria.maxPrice) msg += `Try increasing your budget above ₦${criteria.maxPrice.toLocaleString()}. `;
+      if (criteria.location) msg += `Consider nearby areas to ${criteria.location}. `;
+      return { answer: msg, suggestedProperties: [], followUpQuestions: analysis.followUpQuestions };
+    }
 
-      if (properties.length > 0) {
-        const firstProperty = properties[0];
-        answer += `The top result is "${firstProperty.title}" in ${
-          firstProperty.city
-        } for ₦${firstProperty.amount?.toLocaleString()}`;
-        if (firstProperty.bedrooms) {
-          answer += ` with ${firstProperty.bedrooms} bedroom${
-            firstProperty.bedrooms > 1 ? "s" : ""
-          }`;
-        }
-        answer += ". ";
-      }
+    const first = properties[0];
+    let answer = `Found ${properties.length} propert${properties.length === 1 ? "y" : "ies"}. `;
 
-      if (properties.length > 1) {
-        answer += `I have ${properties.length - 1} more option${
-          properties.length > 2 ? "s" : ""
-        } that might interest you.`;
-      }
+    answer += `Top match: "${first.title}" in ${first.city || first.state} `;
+    answer += `for ₦${first.amount?.toLocaleString()}`;
+    if (first.bedrooms) answer += ` • ${first.bedrooms} bed${first.bedrooms > 1 ? "s" : ""}`;
+    answer += ".";
+
+    if (properties.length > 1) {
+      answer += ` I have ${properties.length - 1} more option${properties.length > 2 ? "s" : ""}.`;
     }
 
     return {
       answer,
       suggestedProperties: properties,
       followUpQuestions: analysis.followUpQuestions,
+    };
+  }
+
+  private fallbackResponse(): AIResponse {
+    return {
+      answer: "I'm having trouble right now. Try: '2-bedroom in Lekki under ₦500k'",
+      suggestedProperties: [],
+      followUpQuestions: [
+        "What's your budget range?",
+        "How many bedrooms do you need?",
+        "Which area are you interested in?",
+      ],
     };
   }
 }

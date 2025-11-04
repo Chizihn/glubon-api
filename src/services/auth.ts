@@ -690,9 +690,9 @@ export class AuthService extends BaseService {
   async getOAuthAuthUrl(
     provider: ProviderEnum,
     redirectUri: string,
-    state?: string
+    role?: string
   ): Promise<ServiceResponse<{ authUrl: string, state: string }>> {
-    return this.oauthService.generateAuthUrl(provider, redirectUri);
+    return this.oauthService.generateAuthUrl(provider, redirectUri, role as RoleEnum);
   }
 
   async exchangeOAuthCode(

@@ -139,21 +139,36 @@ export class AuthResolver {
 async getOAuthAuthUrl(
   @Arg("input") input: GetOAuthUrlInput
 ): Promise<OAuthUrlResponse> {
-  const { provider, redirectUri, state } = input;
+  const { provider, redirectUri, role } = input;
 
-  // Validate redirectUri (whitelist)
-  const allowed = [
-    `${process.env.API_BASE_URL}/api/oauth/callback`,
-    "glubon://oauth",
+  // Validate redirectUri (whitelist with regex patterns)
+  const allowedPatterns = [
+    // Match any ngrok URL with /api/oauth/[provider]/callback
+    /^https?:\/\/[a-z0-9-]+\.ngrok(-free)?\.app\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
+    // Match localhost with any port and /api/oauth/[provider]/callback
+    /^https?:\/\/localhost(:\d+)?\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
+    // Match the deep link scheme
+    /^glubon:\/\/oauth(\?.*)?$/,
+    // Match your production domain (replace example.com with your actual domain)
+    /^https?:\/\/(www\.)?example\.com\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
+    // Match the specific ngrok URL with provider
+    /^https?:\/\/subtle-cuddly-colt\.ngrok-free\.app\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
+    // Match the root callback that will be redirected to provider-specific callback
+    /^https?:\/\/subtle-cuddly-colt\.ngrok-free\.app\/api\/oauth\/callback(\?.*)?$/i
   ];
-  if (!allowed.includes(redirectUri)) {
-    throw new Error("Invalid redirect URI");
+
+  const isValid = allowedPatterns.some(pattern => pattern.test(redirectUri));
+  
+  if (!isValid) {
+    console.warn('Invalid redirect URI:', redirectUri);
+    console.warn('Allowed patterns:', allowedPatterns.map(p => p.toString()));
+    throw new Error("Invalid redirect URI. Please use a valid callback URL.");
   }
 
   const result = await this.authService.getOAuthAuthUrl(
     provider,
     redirectUri,
-    state
+    role
   );
 
   if (!result.success || !result.data) {

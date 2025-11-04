@@ -54,8 +54,8 @@ export class GetOAuthUrlInput {
   @Field(() => String)
   redirectUri: string;
 
-  @Field(() => String, { nullable: true })
-  state?: string;
+  @Field(() => RoleEnum, { nullable: true })
+  role?: RoleEnum;
 }
 
 @InputType()
