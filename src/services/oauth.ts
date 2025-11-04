@@ -1,7 +1,6 @@
 import { PrismaClient, ProviderEnum, RoleEnum, User } from "@prisma/client";
 import type { Redis } from "ioredis";
 import jwt from "jsonwebtoken";
-
 import { BaseService } from "./base";
 import axios from "axios";
 import { StatusCodes } from "http-status-codes";
@@ -41,12 +40,12 @@ async startOAuthFlow(
   let role: string | undefined;
 
   try {
-    console.log('startOAuthFlow called with state:', state);
+    console.log('startOAuthFlow called with:', { provider, state, redirectUri });
 
-    // === 1. Retrieve stored state data from Redis using the state ===
+    // === 1. Retrieve stored state data from Redis ===
     const redisKey = `oauth_state:${state}`;
     const storedStateValue = await this.redis.get(redisKey);
-    console.log('Retrieved state from Redis:', { key: redisKey, value: storedStateValue });
+    console.log('Retrieved state from Redis:', { key: redisKey, found: !!storedStateValue });
 
     if (!storedStateValue) {
       console.error('State not found or expired in Redis for key:', redisKey);
@@ -57,7 +56,7 @@ async startOAuthFlow(
       );
     }
 
-    // === 2. Parse the stored state data ===
+    // === 2. Parse and validate the stored state data ===
     let stateData;
     try {
       stateData = JSON.parse(storedStateValue);
@@ -66,6 +65,7 @@ async startOAuthFlow(
       // Verify the state in the stored data matches the one we received
       if (stateData.state !== state) {
         console.error('State mismatch:', { received: state, stored: stateData.state });
+        await this.redis.del(redisKey); // Clean up invalid state
         return this.failure<OAuthUserData & { accessToken: string; refreshToken: string }>(
           "Invalid state parameter",
           null,
@@ -77,9 +77,10 @@ async startOAuthFlow(
       role = stateData.role;
       const stateProvider = stateData.provider;
       
-      // Verify the provider matches if provided in the state
+      // Verify the provider matches
       if (stateProvider && stateProvider !== provider) {
         console.error('Provider mismatch:', { expected: provider, actual: stateProvider });
+        await this.redis.del(redisKey);
         return this.failure<OAuthUserData & { accessToken: string; refreshToken: string }>(
           "Invalid OAuth provider. Please try again with the correct provider.",
           null,
@@ -89,11 +90,10 @@ async startOAuthFlow(
       
       // Verify the state hasn't expired (10 minutes)
       const stateAge = Date.now() - (stateData.timestamp || 0);
-      const STATE_EXPIRY = 10 * 60 * 1000; // 10 minutes in milliseconds
+      const STATE_EXPIRY = 10 * 60 * 1000; // 10 minutes
       
       if (stateAge > STATE_EXPIRY) {
         console.error('State has expired:', { stateAge, state });
-        // Clean up expired state
         await this.redis.del(redisKey);
         return this.failure<OAuthUserData & { accessToken: string; refreshToken: string }>(
           "Your session has expired. Please try signing in again.",
@@ -103,6 +103,7 @@ async startOAuthFlow(
       }
     } catch (e) {
       console.error('Error parsing state data:', e);
+      await this.redis.del(redisKey);
       return this.failure<OAuthUserData & { accessToken: string; refreshToken: string }>(
         "Invalid state data format",
         null,
@@ -110,11 +111,11 @@ async startOAuthFlow(
       );
     }
 
-    // === 3. IMMEDIATELY delete state from Redis to prevent replay ===
-    await this.redis.del(`oauth_state:${state}`);
-    console.log('Deleted state from Redis after successful retrieval');
+    // === 3. CRITICAL FIX: Delete state ONLY after successful validation ===
+    // DON'T delete it yet - wait until token exchange succeeds
+    console.log('State validated successfully, proceeding with token exchange');
 
-    // === 5. Normalize redirect URI ===
+    // === 4. Normalize redirect URI ===
     let finalRedirectUri = redirectUri;
 
     // Force HTTPS for ngrok
@@ -129,15 +130,17 @@ async startOAuthFlow(
 
     console.log('Final redirect URI:', finalRedirectUri);
 
-    // === 6. Exchange code for token (with PKCE if applicable) ===
+    // === 5. Exchange code for token (with PKCE if applicable) ===
     const tokenResult = await this.exchangeCodeForToken(
       provider,
       code,
       finalRedirectUri,
-      state  // Pass state for verifier lookup
+      state
     );
 
     if (!tokenResult.success || !tokenResult.data) {
+      // IMPORTANT: Don't delete state here - user might retry
+      console.error('Token exchange failed:', tokenResult.message);
       return this.failure<OAuthUserData & { accessToken: string; refreshToken: string }>(
         tokenResult.message || "Failed to exchange authorization code",
         null,
@@ -146,6 +149,11 @@ async startOAuthFlow(
     }
 
     const { accessToken } = tokenResult.data;
+
+    // === 6. NOW delete state after successful token exchange ===
+    await this.redis.del(redisKey);
+    await this.redis.del(`oauth_verifier:${state}`);
+    console.log('Deleted state and verifier after successful token exchange');
 
     // === 7. Verify provider token and get user data ===
     const userResult = await this.verifyProviderToken(provider, accessToken);
@@ -177,7 +185,7 @@ async startOAuthFlow(
           profilePic: userData.profilePic || "",
           isVerified: userData.isEmailVerified,
           provider,
-          role: role as RoleEnum ,
+          role: role as RoleEnum,
           providerAccounts: {
             create: {
               provider,
@@ -239,10 +247,7 @@ async startOAuthFlow(
       permissions: user.permissions,
     });
 
-    // === 10. Clean up PKCE verifier ===
-    await this.redis.del(`oauth_verifier:${state}`);
-
-    // === 11. Determine success message ===
+    // === 10. Determine success message ===
     const wasAccountLinked =
       user.providerAccounts.length > 1 ||
       (user.provider === ProviderEnum.EMAIL && user.providerAccounts.length === 1);
@@ -253,7 +258,7 @@ async startOAuthFlow(
       ? 'Welcome! Your account has been created successfully'
       : 'Login successful';
 
-    // === 12. Return success ===
+    // === 11. Return success ===
     return this.success(
       {
         ...userData,
@@ -269,7 +274,6 @@ async startOAuthFlow(
 
     // === Safe cleanup on error ===
     try {
-      // Clean up both state and verifier using the provided state
       await this.redis.del(`oauth_state:${state}`);
       await this.redis.del(`oauth_verifier:${state}`);
     } catch (cleanupError) {
@@ -285,6 +289,66 @@ async startOAuthFlow(
 }
 
 // In OAuthService
+// async generateAuthUrl(
+//   provider: ProviderEnum,
+//   redirectUri: string,
+//   role: RoleEnum
+// ): Promise<ServiceResponse<{ authUrl: string; state: string }>> {
+//   try {
+//     // Generate a new state UUID
+//     const state = uuidv4();
+    
+//     // Create state data with additional metadata
+//     // Store the state directly as the key, and the metadata as the value
+//     const stateData = {
+//       role,
+//       timestamp: Date.now(),
+//       provider,
+//       state // Include the state in the stored data for verification
+//     };
+    
+//     // Store the state with role in Redis
+//     await this.redis.set(
+//       `oauth_state:${state}`,
+//       JSON.stringify(stateData),
+//       "EX", 
+//       600 // 10 minutes expiration
+//     );
+
+//     console.log('Stored state in Redis:', { key: `oauth_state:${state}`, value: stateData });
+    
+//     // Return the raw state (not the full object) to the client
+//     // The client will send this back and we'll use it to look up the full state data
+
+//     // Generate PKCE verifier and challenge
+//     const codeVerifier = base64URLEncode(crypto.randomBytes(32));
+//     const codeChallenge = base64URLEncode(
+//       crypto.createHash('sha256').update(codeVerifier).digest()
+//     );
+    
+//     // Store code verifier for later verification
+//     await this.redis.set(
+//       `oauth_verifier:${state}`,
+//       codeVerifier,
+//       "EX",
+//       600 // 10 minutes expiration
+//     );
+
+//     // Build the OAuth URL with the raw state (not the JSON)
+//     const authUrl = this.buildOAuthUrl(provider, redirectUri, state, codeChallenge);
+    
+//     console.log('Generated OAuth URL with state:', { state, authUrl });
+    
+//     return this.success({
+//       authUrl,
+//       state // Return the raw state (not the full state object)
+//     });
+//   } catch (error) {
+//     console.error('Error generating OAuth URL:', error);
+//     return this.failure('Failed to generate OAuth URL');
+//   }
+// }
+
 async generateAuthUrl(
   provider: ProviderEnum,
   redirectUri: string,
@@ -295,27 +359,29 @@ async generateAuthUrl(
     const state = uuidv4();
     
     // Create state data with additional metadata
-    // Store the state directly as the key, and the metadata as the value
     const stateData = {
       role,
       timestamp: Date.now(),
       provider,
-      state // Include the state in the stored data for verification
+      state // Include the state itself for verification
     };
     
-    // Store the state with role in Redis
+    // Store the state with metadata in Redis
+    const redisKey = `oauth_state:${state}`;
     await this.redis.set(
-      `oauth_state:${state}`,
+      redisKey,
       JSON.stringify(stateData),
       "EX", 
       600 // 10 minutes expiration
     );
 
-    console.log('Stored state in Redis:', { key: `oauth_state:${state}`, value: stateData });
+    console.log('Generated and stored OAuth state:', { 
+      key: redisKey, 
+      state, 
+      provider, 
+      role 
+    });
     
-    // Return the raw state (not the full object) to the client
-    // The client will send this back and we'll use it to look up the full state data
-
     // Generate PKCE verifier and challenge
     const codeVerifier = base64URLEncode(crypto.randomBytes(32));
     const codeChallenge = base64URLEncode(
@@ -330,29 +396,20 @@ async generateAuthUrl(
       600 // 10 minutes expiration
     );
 
-    // Build the OAuth URL with the raw state (not the JSON)
+    // Build the OAuth URL
     const authUrl = this.buildOAuthUrl(provider, redirectUri, state, codeChallenge);
     
-    console.log('Generated OAuth URL with state:', { state, authUrl });
+    console.log('Generated OAuth URL:', { state, provider, authUrl });
     
     return this.success({
       authUrl,
-      state // Return the raw state (not the full state object)
+      state // Return the raw state UUID
     });
   } catch (error) {
     console.error('Error generating OAuth URL:', error);
     return this.failure('Failed to generate OAuth URL');
   }
 }
-
-
-  private async generateSessionToken(userId: string): Promise<string> {
-    // Implement JWT or session token generation logic here
-    // This is a placeholder; replace with your actual token generation
-    const token = `jwt_${userId}_${Date.now()}`;
-    await this.redis.set(`session:${userId}`, token, "EX", 3600); // 1-hour expiry
-    return token;
-  }
 
   async verifyGoogleToken(
     accessToken: string
