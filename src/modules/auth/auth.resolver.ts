@@ -29,6 +29,7 @@ import { EmailService } from "../../services/email";
 import { BaseResponse, Context } from "../../types";
 import { AuthMiddleware } from "../../middleware";
 import { registerSchema } from "../../validators";
+import { config } from "../../config";
 
 // const AuthRateLimiter = wrapExpressMiddleware(authRateLimiterMiddleware);
 
@@ -141,16 +142,22 @@ async getOAuthAuthUrl(
 ): Promise<OAuthUrlResponse> {
   const { provider, redirectUri, role } = input;
 
+  // Get base URL from config and escape special regex characters
+  const baseUrl = config.API_BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  
   // Validate redirectUri (whitelist with regex patterns)
   const allowedPatterns = [
+    // Match the configured API URL with /api/oauth/[provider]/callback
+    new RegExp(`^${baseUrl}\/api\/oauth\/[a-z]+\/callback(\\?.*)?$`, 'i'),
+    // Match the root callback that will be redirected to provider-specific callback
+    new RegExp(`^${baseUrl}\/api\/oauth\/callback(\\?.*)?$`, 'i'),
+    // Keep all existing patterns for backward compatibility
     // Match any ngrok URL with /api/oauth/[provider]/callback
     /^https?:\/\/[a-z0-9-]+\.ngrok(-free)?\.app\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
     // Match localhost with any port and /api/oauth/[provider]/callback
     /^https?:\/\/localhost(:\d+)?\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
     // Match the deep link scheme
     /^glubon:\/\/oauth(\?.*)?$/,
-    // Match your production domain (replace example.com with your actual domain)
-    /^https?:\/\/(www\.)?example\.com\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
     // Match the specific ngrok URL with provider
     /^https?:\/\/subtle-cuddly-colt\.ngrok-free\.app\/api\/oauth\/[a-z]+\/callback(\?.*)?$/i,
     // Match the root callback that will be redirected to provider-specific callback

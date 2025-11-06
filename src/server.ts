@@ -27,12 +27,12 @@ async function bootstrap() {
       logger.info(`
 🚀 Glubon API Server is running!
 📍 Environment: ${appConfig.env}
-🌐 GraphQL: ${config.API_URL}/graphql
-📊 Health Check: ${config.API_URL}/health
-🔌 WebSocket: ws://${config.API_URL}/graphql
+🌐 GraphQL: ${config.API_BASE_URL}/graphql
+📊 Health Check: ${config.API_BASE_URL}/health
+🔌 WebSocket: ws://${config.API_BASE_URL}/graphql
 ${
   appConfig.isDevelopment
-    ? `🎮 GraphQL Playground: http://${config.API_URL}/graphql`
+    ? `🎮 GraphQL Playground: http://${config.API_BASE_URL}/graphql`
     : ""
 }
       `);
