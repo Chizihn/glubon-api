@@ -4,7 +4,7 @@ import { NotFoundError } from "../utils";
 import { BaseService } from "./base";
 import { DisputeRepository } from "../repository/dispute";
 import { RefundService } from "./refund";
-import { NotificationService } from "./notification";
+import { Container } from "../container";
 import {
   CreateDisputeInput,
   ResolveDisputeInput,
@@ -33,7 +33,7 @@ export interface DisputeWithRelations {
 export class DisputeService extends BaseService {
   private disputeRepo: DisputeRepository;
   private refundService: RefundService;
-  private notificationService: NotificationService;
+  private notificationService: any; // Using any to avoid circular dependency
   
   private logger: Console;
 
@@ -63,7 +63,8 @@ export class DisputeService extends BaseService {
     this.logger = console;
     this.disputeRepo = new DisputeRepository(prisma, redis);
     this.refundService = new RefundService(prisma, redis);
-    this.notificationService = new NotificationService(prisma, redis);
+    const container = Container.getInstance(prisma, redis);
+    this.notificationService = container.resolve('notificationService');
   }
 
   async createDispute(data: CreateDisputeInput, initiatorId: string) {

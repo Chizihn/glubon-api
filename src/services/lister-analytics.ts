@@ -452,76 +452,170 @@ export class ListerAnalyticsService extends BaseService {
     start: Date,
     end: Date
   ): Promise<BookingAnalyticsResponse> {
-    const [stats, trends, seasonal] = await Promise.all([
-      this.prisma.booking.groupBy({
-        by: ["status"],
-        where: { property: { ownerId: userId }, createdAt: { gte: start, lte: end } },
-        _count: { _all: true },
-        _avg: { amount: true },
-      }),
+    // Input validation
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+    
+    if (!(start instanceof Date) || isNaN(start.getTime()) || 
+        !(end instanceof Date) || isNaN(end.getTime())) {
+      throw new Error('Invalid date range provided');
+    }
 
-      this.prisma.$queryRaw<any[]>`
-        SELECT
-          DATE(b."createdAt") AS date,
-          COUNT(*) AS bookings,
-          COUNT(CASE WHEN b.status='CANCELLED' THEN 1 END) AS cancellations,
-          COALESCE(SUM(b.amount),0)::numeric AS revenue
-        FROM "Booking" b
-        JOIN "Property" p ON b."propertyId" = p.id
-        WHERE p."ownerId" = ${userId}::uuid
-          AND b."createdAt" BETWEEN ${start} AND ${end}
-        GROUP BY DATE(b."createdAt")
-        ORDER BY date
-      `,
+    try {
+      const [stats, trends, seasonal] = await Promise.all([
+        // First query: Booking statistics by status
+        this.prisma.booking.groupBy({
+          by: ['status'],
+          where: { 
+            property: { 
+              ownerId: userId,
+              deletedAt: null 
+            }, 
+            createdAt: { 
+              gte: start, 
+              lte: end 
+            },
+            deletedAt: null
+          },
+          _count: { _all: true },
+          _avg: { amount: true },
+        }),
 
-      this.prisma.$queryRaw<any[]>`
-        SELECT
-          EXTRACT(MONTH FROM b."createdAt")::int AS month,
-          COUNT(*) AS bookings,
-          COALESCE(AVG(b.amount),0)::numeric AS avg_rate
-        FROM "Booking" b
-        JOIN "Property" p ON b."propertyId" = p.id
-        WHERE p."ownerId" = ${userId}::uuid
-          AND b."createdAt" BETWEEN ${start} AND ${end}
-        GROUP BY EXTRACT(MONTH FROM b."createdAt")
-        ORDER BY month
-      `,
-    ]);
+        // Second query: Daily booking trends with type-safe result
+        this.prisma.$queryRaw<Array<{
+          date: Date;
+          bookings: string;
+          cancellations: string;
+          revenue: string;
+        }>>`
+          SELECT
+            DATE(b."createdAt") AS date,
+            COUNT(*)::text AS bookings,
+            COUNT(CASE WHEN b.status = 'CANCELLED' THEN 1 END)::text AS cancellations,
+            COALESCE(SUM(t.amount), 0)::numeric::text AS revenue
+          FROM "Booking" b
+          JOIN "Property" p ON b."propertyId" = p.id
+          LEFT JOIN "Transaction" t ON 
+            t."bookingId" = b.id 
+            AND t.status = 'COMPLETED'
+            AND t."deletedAt" IS NULL
+          WHERE 
+            p."ownerId" = ${userId}::uuid
+            AND b."createdAt" >= ${start}
+            AND b."createdAt" <= ${end}
+            AND b."deletedAt" IS NULL
+            AND p."deletedAt" IS NULL
+          GROUP BY DATE(b."createdAt")
+          ORDER BY date
+        `,
 
-    const total = stats.reduce((s, st) => s + st._count._all, 0);
-    const confirmed = stats.find((s) => s.status === BookingStatus.CONFIRMED)?._count._all ?? 0;
-    const cancelled = stats.find((s) => s.status === BookingStatus.CANCELLED)?._count._all ?? 0;
-    const pending = stats.find((s) => s.status === BookingStatus.PENDING_PAYMENT)?._count._all ?? 0;
-    const avgValue = stats.reduce((s, st) => s + this.toNum(st._avg.amount), 0) / stats.length || 0;
+        // Third query: Seasonal patterns with type-safe result
+        this.prisma.$queryRaw<Array<{
+          month: number;
+          bookings: string;
+          avg_rate: string;
+        }>>`
+          SELECT
+            EXTRACT(MONTH FROM b."createdAt")::int AS month,
+            COUNT(*)::text AS bookings,
+            COALESCE(AVG(t.amount), 0)::numeric::text AS avg_rate
+          FROM "Booking" b
+          JOIN "Property" p ON b."propertyId" = p.id
+          LEFT JOIN "Transaction" t ON 
+            t."bookingId" = b.id 
+            AND t.status = 'COMPLETED'
+            AND t."deletedAt" IS NULL
+          WHERE 
+            p."ownerId" = ${userId}::uuid
+            AND b."createdAt" >= ${start}
+            AND b."createdAt" <= ${end}
+            AND b."deletedAt" IS NULL
+            AND p."deletedAt" IS NULL
+          GROUP BY EXTRACT(MONTH FROM b."createdAt")
+          ORDER BY month
+        `,
+      ]);
 
-    return {
-      overview: {
-        totalBookings: total,
-        confirmedBookings: confirmed,
-        cancelledBookings: cancelled,
-        pendingBookings: pending,
-        averageBookingValue: avgValue,
-        occupancyRate: total > 0 ? (confirmed / total) * 100 : 0,
-      },
-      bookingTrends: trends.map((t) => ({
-        date: t.date,
-        bookings: Number(t.bookings),
-        cancellations: Number(t.cancellations),
-        revenue: Number(t.revenue),
-      })),
-      seasonalPatterns: seasonal.map((s) => ({
-        month: Number(s.month),
-        bookings: Number(s.bookings),
-        averageRate: Number(s.avg_rate),
-        occupancy: 0,
-      })),
-      customerAnalytics: await this.getCustomerAnalytics(userId, start, end),
-      cancellationAnalytics: {
-        cancellationRate: total > 0 ? (cancelled / total) * 100 : 0,
-        reasonsForCancellation: [],
-        timeToCancel: 0,
-      },
-    };
+      // Process results with proper type safety and null checks
+      const total = stats.reduce((sum, stat) => sum + (stat._count?._all || 0), 0);
+      const confirmed = stats.find(s => s.status === BookingStatus.CONFIRMED)?._count?._all ?? 0;
+      const cancelled = stats.find(s => s.status === BookingStatus.CANCELLED)?._count?._all ?? 0;
+      const pending = stats.find(s => s.status === BookingStatus.PENDING_PAYMENT)?._count?._all ?? 0;
+      
+      const avgValue = stats.length > 0 
+        ? stats.reduce((sum, stat) => sum + this.toNum(stat._avg?.amount), 0) / stats.length 
+        : 0;
+
+      // Get customer analytics with error handling
+      let customerAnalytics: BookingAnalyticsResponse['customerAnalytics'];
+      try {
+        customerAnalytics = await this.getCustomerAnalytics(userId, start, end);
+      } catch (error) {
+        console.error('Error fetching customer analytics:', error);
+        customerAnalytics = {
+          repeatCustomers: 0,
+          newCustomers: 0,
+          averageBookingsPerCustomer: 0,
+          topCustomers: [],
+        };
+      }
+
+      return {
+        overview: {
+          totalBookings: total,
+          confirmedBookings: confirmed,
+          cancelledBookings: cancelled,
+          pendingBookings: pending,
+          averageBookingValue: avgValue,
+          occupancyRate: total > 0 ? (confirmed / total) * 100 : 0,
+        },
+        bookingTrends: trends.map(t => ({
+          date: new Date(t.date),
+          bookings: parseInt(t.bookings, 10) || 0,
+          cancellations: parseInt(t.cancellations, 10) || 0,
+          revenue: parseFloat(t.revenue) || 0,
+        })),
+        seasonalPatterns: seasonal.map(s => ({
+          month: s.month,
+          bookings: parseInt(s.bookings, 10) || 0,
+          averageRate: parseFloat(s.avg_rate) || 0,
+          occupancy: 0, // This would need to be calculated based on property availability
+        })),
+        customerAnalytics,
+        cancellationAnalytics: {
+          cancellationRate: total > 0 ? (cancelled / total) * 100 : 0,
+          reasonsForCancellation: [], // This would need to be populated from cancellation reasons if available
+          timeToCancel: 0, // This would need to be calculated from booking and cancellation timestamps
+        },
+      };
+    } catch (error) {
+      console.error('Error in getBookingAnalytics:', error);
+      // Return a default response structure with zero values in case of error
+      return {
+        overview: {
+          totalBookings: 0,
+          confirmedBookings: 0,
+          cancelledBookings: 0,
+          pendingBookings: 0,
+          averageBookingValue: 0,
+          occupancyRate: 0,
+        },
+        bookingTrends: [],
+        seasonalPatterns: [],
+        customerAnalytics: {
+          repeatCustomers: 0,
+          newCustomers: 0,
+          averageBookingsPerCustomer: 0,
+          topCustomers: [],
+        },
+        cancellationAnalytics: {
+          cancellationRate: 0,
+          reasonsForCancellation: [],
+          timeToCancel: 0,
+        },
+      };
+    }
   }
 
   /* --------------------------------------------------------------------- */

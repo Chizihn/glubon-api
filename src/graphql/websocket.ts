@@ -2,24 +2,25 @@ import { useServer } from "graphql-ws/use/ws";
 import type { Disposable } from "graphql-ws";
 import { WebSocketServer } from "ws";
 import { GraphQLSchema } from "graphql";
-import { Services } from "../services";
+import { getContainer, Services } from "../services";
 import { WebSocketContext } from "../types";
 import { prisma, redis } from "../config";
 import { logger } from "../utils";
-import { PresenceService } from "../services/presence";
+import type { PresenceService } from "../services/presence";
 
 export async function createWebSocketServer(
   wsServer: WebSocketServer,
   schema: GraphQLSchema,
   services: Services
 ): Promise<Disposable> {
-  const presenceService = new PresenceService(prisma, redis);
+  const container = getContainer();
+  const presenceService = container.resolve<PresenceService>('presenceService');
 
   // Clean up stale connections periodically
   const cleanupInterval = setInterval(
     () => presenceService.cleanupStaleConnections(),
     5 * 60 * 1000 // Every 5 minutes
-  );
+  );    
 
   const serverCleanup = useServer(
     {

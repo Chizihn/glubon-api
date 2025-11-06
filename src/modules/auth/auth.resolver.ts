@@ -28,7 +28,14 @@ import { AuthService } from "../../services/auth";
 import { EmailService } from "../../services/email";
 import { BaseResponse, Context } from "../../types";
 import { AuthMiddleware } from "../../middleware";
-import { registerSchema } from "../../validators";
+import {
+  registerSchema,
+  loginSchema,
+  refreshTokenSchema,
+  verifyEmailSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema
+} from "../../validators";
 import { config } from "../../config";
 
 // const AuthRateLimiter = wrapExpressMiddleware(authRateLimiterMiddleware);
@@ -39,7 +46,7 @@ export class AuthResolver {
   private emailService: EmailService;
 
   constructor() {
-        const container = getContainer();
+    const container = getContainer();
     
     this.authService = container.resolve('authService');
     this.emailService = container.resolve('emailService');
@@ -62,7 +69,8 @@ export class AuthResolver {
     @Arg("password") password: string,
     @Ctx() ctx: Context
   ): Promise<AuthResponse> {
-    const result = await this.authService.login({ email, password });
+    const validatedInput = loginSchema.parse({ email, password });
+    const result = await this.authService.login(validatedInput);
     if (!result.success) throw new Error(result.message);
     return result.data!;
   }
@@ -72,7 +80,8 @@ export class AuthResolver {
     @Arg("refreshToken") refreshToken: string,
     @Ctx() ctx: Context
   ): Promise<TokenResponse> {
-    const result = await this.authService.refreshToken({ refreshToken });
+    const validatedInput = refreshTokenSchema.parse({ refreshToken });
+    const result = await this.authService.refreshToken(validatedInput);
     if (!result.success) throw new Error(result.message);
     return result.data!;
   }
@@ -90,7 +99,8 @@ export class AuthResolver {
     @Arg("token") token: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.authService.verifyEmail({ token });
+    const validatedInput = verifyEmailSchema.parse({ token });
+    const result = await this.authService.verifyEmail(validatedInput);
     if (!result.success) throw new Error(result.message);
     return new BaseResponse(true, result.message);
   }
@@ -100,7 +110,8 @@ export class AuthResolver {
     @Arg("email") email: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.authService.forgotPassword({ email });
+    const validatedInput = forgotPasswordSchema.parse({ email });
+    const result = await this.authService.forgotPassword(validatedInput);
     if (!result.success) throw new Error(result.message);
     return new BaseResponse(true, result.message);
   }
@@ -111,7 +122,8 @@ export class AuthResolver {
     @Arg("newPassword") newPassword: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.authService.resetPassword({ token, newPassword });
+    const validatedInput = resetPasswordSchema.parse({ token, newPassword });
+    const result = await this.authService.resetPassword(validatedInput);
     if (!result.success) throw new Error(result.message);
     return new BaseResponse(true, result.message);
   }
@@ -131,7 +143,8 @@ export class AuthResolver {
     @Arg("email") email: string,
     @Ctx() ctx: Context
   ): Promise<BaseResponse> {
-    const result = await this.authService.resendPasswordReset(email);
+    const validatedInput = forgotPasswordSchema.parse({ email });
+    const result = await this.authService.resendPasswordReset(validatedInput.email);
     if (!result.success) throw new Error(result.message);
     return new BaseResponse(true, result.message);
   }

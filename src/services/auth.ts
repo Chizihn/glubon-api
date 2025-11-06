@@ -27,6 +27,7 @@ import {
 import { UserRepository } from "../repository/user";
 import Redis from "ioredis";
 import { validateRole } from "../middleware";
+import { getContainer } from "./container";
 
 export class AuthService extends BaseService {
   private emailService: EmailService;
@@ -35,9 +36,10 @@ export class AuthService extends BaseService {
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
-    this.oauthService = new OAuthService(prisma, redis);
-    this.userRepository = new UserRepository(prisma, redis);
-    this.emailService = new EmailService(prisma, redis);
+    const container = getContainer();
+    this.oauthService = container.resolve('oauthService');
+    this.userRepository = container.resolve('userRepository');
+    this.emailService = container.resolve('emailService');
   }
 
   async register(input: RegisterInput): Promise<ServiceResponse<AuthResult>> {

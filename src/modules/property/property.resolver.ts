@@ -30,14 +30,22 @@ import {
 import { getContainer } from "../../services";
 import { PropertyService } from "../../services/property";
 import { Context } from "../../types";
-import { AuthMiddleware, RequireRole } from "../../middleware";
 import { logger } from "../../utils";
 import {
-  PropertyFilters as ServicePropertyFilters,
-  PropertySearchOptions,
+  PropertySortByEnum, 
+  SortOrder, 
+  PropertyFilters as ServicePropertyFilters, 
+  PropertySearchOptions, 
   UpdatePropertyInput as UpdatePropertyInputType,
 } from "../../types/services/properties";
 import { FileUpload, GraphQLUpload } from "graphql-upload-ts";
+import { 
+  createPropertySchema, 
+  updatePropertySchema, 
+  propertyFiltersSchema,
+  propertySearchSchema 
+} from "../../validators/property";
+import { AuthMiddleware, RequireRole } from "../../middleware";
 
 @Resolver()
 export class PropertyResolver {
@@ -113,31 +121,38 @@ export class PropertyResolver {
     @Args() args: GetPropertiesArgs,
     @Ctx() ctx: Context
   ): Promise<PaginatedPropertiesResponse> {
-    const filters: ServicePropertyFilters = {
-      minAmount: args.filter?.minAmount,
-      maxAmount: args.filter?.maxAmount,
-      bedrooms: args.filter?.bedrooms,
-      bathrooms: args.filter?.bathrooms,
-      propertyType: args.filter?.propertyType,
-      roomType: args.filter?.roomType,
-      listingType: args.filter?.listingType,
-      isFurnished: args.filter?.isFurnished,
-      isForStudents: args.filter?.isForStudents,
-      city: args.filter?.city,
-      state: args.filter?.state,
-      amenities: args.filter?.amenities,
-      latitude: args.filter?.latitude,
-      longitude: args.filter?.longitude,
-      radiusKm: args.filter?.radiusKm,
-      status: args.filter?.status,
-    };
-
-    const options: PropertySearchOptions = {
+    // Validate filters
+    const validatedFilters = propertyFiltersSchema.parse(args.filter || {});
+    
+    // Validate search options
+    const searchOptions = propertySearchSchema.parse({
       page: args.page,
       limit: args.limit,
-      sortBy: args.sortBy as any,
-      sortOrder: args.sortOrder as any,
+      sortBy: args.sortBy,
+      sortOrder: args.sortOrder,
+      filters: {
+        status: args.filter?.status,
+        propertyType: args.filter?.propertyType,
+        listingType: args.filter?.listingType,
+        minAmount: args.filter?.minAmount,
+        maxAmount: args.filter?.maxAmount,
+        city: args.filter?.city,
+        state: args.filter?.state,
+      },
       search: args.filter?.search,
+    });
+
+    const filters = {
+      ...validatedFilters,
+      search: searchOptions.search,
+    } as ServicePropertyFilters;
+
+    const options: PropertySearchOptions = {
+      page: searchOptions.page,
+      limit: searchOptions.limit,
+sortBy: searchOptions.sortBy as PropertySortByEnum | undefined,
+      sortOrder: searchOptions.sortOrder as SortOrder | undefined,
+      search: searchOptions.search,
     };
 
     const result = await this.propertyService.getProperties(
@@ -333,16 +348,23 @@ export class PropertyResolver {
     files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<Property> {
-    // console.log('🚀 RESOLVER: createProperty called');
-    // console.log('Files received:', files?.length || 0);
-    
     try {
+      // Validate input against schema
+      const validatedInput = createPropertySchema.parse({
+        ...input,
+        amount: input.amount ? Number(input.amount) : undefined,
+        sqft: input.sqft ? Number(input.sqft) : undefined,
+        bedrooms: input.bedrooms,
+        bathrooms: input.bathrooms,
+      });
+
       // Transform simple input to internal format
       const internalInput: any = {
-        ...input,
+        ...validatedInput,
+        amount: input.amount, // Keep as Decimal for database
         isStandalone: !input.numberOfUnits || input.numberOfUnits === 1,
       };
-  
+
       if (input.numberOfUnits && input.numberOfUnits > 1) {
         internalInput.bulkUnits = {
           unitTitle: "Unit",
@@ -360,24 +382,34 @@ export class PropertyResolver {
           },
         };
       }
-  
-      // console.log('🔄 RESOLVER: Calling propertyService.createProperty');
+
       const result = await this.propertyService.createProperty(
         ctx.user!.id,
         internalInput,
         files
       );
-  
+
       if (!result.success) {
-        console.error('❌ RESOLVER: Property creation failed:', result.message);
+        logger.error('Property creation failed', { 
+          error: result.message,
+          userId: ctx.user!.id,
+          input: { ...input, password: undefined } // Don't log passwords
+        });
         throw new Error(result.message);
       }
-  
-      // console.log('✅ RESOLVER: Property created successfully');
+
+      logger.info('Property created successfully', { 
+        propertyId: result.data?.id,
+        userId: ctx.user!.id 
+      });
+
       return this.transformPropertyToResponse(result.data!);
-      
     } catch (error) {
-      console.error('❌ RESOLVER: Error in createProperty:', error);
+      logger.error('Error in createProperty', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        userId: ctx.user!.id
+      });
       throw error;
     }
   }
@@ -391,52 +423,54 @@ export class PropertyResolver {
     files: FileUpload[],
     @Ctx() ctx: Context
   ): Promise<Property> {
-    // console.log('🔄 RESOLVER: updateProperty called');
-    // console.log('Files received for update:', files?.length || 0);
-    
     try {
-      // Transform simple input to internal format
-      const internalInput: any = {
-        ...input,
-      };
+      // Prepare update data with proper type conversion
+      const updateData: any = { ...input };
 
-      if (input.numberOfUnits) {
-        // console.log('🔄 Setting up bulk units for update');
-        internalInput.bulkUnits = {
-          unitTitle: "Unit",
-          unitCount: input.numberOfUnits,
-          unitDetails: {
-            amount: input.amount,
-            rentalPeriod: input.rentalPeriod,
-            sqft: input.sqft,
-            bedrooms: input.bedrooms,
-            bathrooms: input.bathrooms,
-            roomType: input.roomType,
-            amenities: input.amenities,
-            isFurnished: input.isFurnished,
-            isForStudents: input.isForStudents,
-          },
-        };
+      // Convert Decimal to number for validation if present
+      if (input.amount !== undefined && input.amount !== null) {
+        updateData.amount = Number(input.amount);
+      }
+      if (input.sqft !== undefined && input.sqft !== null) {
+        updateData.sqft = Number(input.sqft);
       }
 
-      // console.log('🔄 RESOLVER: Calling propertyService.updateProperty');
+      // Validate input against schema (partial validation for updates)
+      const validatedInput = updatePropertySchema.parse(updateData);
+
       const result = await this.propertyService.updateProperty(
         id,
         ctx.user!.id,
-        internalInput,
+        {
+          ...validatedInput,
+          amount: input.amount, // Keep as Decimal for database
+          sqft: input.sqft,
+        } as UpdatePropertyInputType,
         files
       );
 
       if (!result.success) {
-        console.error('❌ RESOLVER: Property update failed:', result.message);
+        logger.error('Property update failed', { 
+          error: result.message,
+          propertyId: id,
+          userId: ctx.user!.id
+        });
         throw new Error(result.message);
       }
 
-      // console.log('✅ RESOLVER: Property updated successfully');
+      logger.info('Property updated successfully', { 
+        propertyId: id,
+        userId: ctx.user!.id 
+      });
+
       return this.transformPropertyToResponse(result.data!);
-      
     } catch (error) {
-      console.error('❌ RESOLVER: Error in updateProperty:', error);
+      logger.error('Error in updateProperty', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        propertyId: id,
+        userId: ctx.user!.id
+      });
       throw error;
     }
   }

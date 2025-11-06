@@ -3,7 +3,6 @@ import { PrismaClient, NotificationType, RoleEnum } from "@prisma/client";
 import { Redis } from "ioredis";
 import { RedisPubSub } from "graphql-redis-subscriptions";
 import { BaseService } from "./base";
-import { EmailService } from "./email";
 import {
   CreateNotificationData,
   NotificationFilters,
@@ -12,14 +11,16 @@ import {
 } from "../types/services/notification";
 import { logger, pubSub } from "../utils";
 import { NotificationRepository } from "../repository/notification";
+import { Container } from "../container";
 
 export class NotificationService extends BaseService {
-  private emailService: EmailService;
+  private emailService: any; // Using any to avoid circular dependency
   private repository: NotificationRepository;
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
-    this.emailService = new EmailService(prisma, redis);
+    const container = Container.getInstance(prisma, redis);
+    this.emailService = container.resolve('emailService');
     this.repository = new NotificationRepository(prisma, redis);
   }
 

@@ -1,22 +1,19 @@
 //src/routes/webhook.ts
 import express, { Request, Response } from "express";
 import { createHmac } from "crypto";
-import { PrismaClient, TransactionStatus } from "@prisma/client";
-import { Redis } from "ioredis";
+import { TransactionStatus } from "@prisma/client";
+import { getContainer } from "../services";
 import { BookingService } from "../services/booking";
 import { PaystackService } from "../services/payment";
 
 class WebhookController {
-  private prisma: PrismaClient;
-  private redis: Redis;
   private bookingService: BookingService;
   private paystackService: PaystackService;
 
-  constructor(prisma: PrismaClient, redis: Redis) {
-    this.prisma = prisma;
-    this.redis = redis;
-    this.bookingService = new BookingService(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis);
+  constructor() {
+    const container = getContainer();
+    this.bookingService = container.resolve<BookingService>('bookingService');
+    this.paystackService = container.resolve<PaystackService>('paystackService');
   }
 
   async handlePaystackWebhook(req: Request, res: Response) {
@@ -67,31 +64,7 @@ class WebhookController {
     try {
       const { reference } = event.data;
       
-      // Find the transaction
-      const transaction = await this.prisma.transaction.findUnique({
-        where: { reference },
-        include: {
-          booking: {
-            include: {
-              property: { include: { owner: true } },
-              renter: true,
-              units: { include: { unit: true } },
-            },
-          },
-        },
-      });
-
-      if (!transaction) {
-        console.log(`Transaction not found for reference: ${reference}`);
-        return;
-      }
-
-      if (transaction.status !== TransactionStatus.PENDING) {
-        console.log(`Transaction ${reference} already processed`);
-        return;
-      }
-
-      // Verify the payment with Paystack
+      // Verify the payment with Paystack first
       const verification = await this.paystackService.verifyPayment(reference);
       
       if (!verification.data?.data || verification.data.data.status !== "success") {
@@ -99,17 +72,17 @@ class WebhookController {
         return;
       }
 
-      // Process the payment confirmation
-      const result = await this.bookingService.confirmBookingPayment({
+      // Process the payment confirmation using booking service
+      const paymentResult = await this.bookingService.confirmBookingPayment({
         reference,
-        userId: transaction.userId!,
+        userId: event.data.customer?.email || 'system' // Use customer email or 'system' as fallback
       });
-
-      if (!result.success) {
-        console.error(`Failed to confirm booking payment: ${result.message}`);
+      
+      if (!paymentResult.success) {
+        console.error(`Failed to process payment for reference ${reference}:`, paymentResult.message);
         return;
       }
-
+      
       console.log(`Successfully processed payment for reference: ${reference}`);
     } catch (error) {
       console.error("Error handling charge success:", error);
@@ -143,10 +116,9 @@ class WebhookController {
   }
 }
 
-export function createWebhookRouter(prisma: PrismaClient, redis: Redis) {
+export function createWebhookRouter() {
   const router = express.Router();
-
-  const webhookController = new WebhookController(prisma, redis);
+  const webhookController = new WebhookController();
 
   // Raw body parser for Paystack signature verification
   router.post(

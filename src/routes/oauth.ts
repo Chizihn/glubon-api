@@ -1,10 +1,11 @@
 import express from "express";
 import { ProviderEnum } from "@prisma/client";
 import { OAuthService } from "../services/oauth";
-import { prisma, redis } from "../config";
+import { getContainer } from "../services";
 
 const router = express.Router();
-const oAuthService = new OAuthService(prisma, redis);
+const container = getContainer()
+const oAuthService = container.resolve<OAuthService>('oAuthService');
 
 // Handle root OAuth callback (e.g., /api/oauth/callback)
 router.get("/callback", (req, res) => {

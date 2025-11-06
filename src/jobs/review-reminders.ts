@@ -3,6 +3,7 @@ import { prisma, redis } from "../config";
 import { logger } from "../utils";
 import { NotificationService } from "../services/notification";
 import { NotificationType, BookingStatus, Prisma } from "@prisma/client";
+import { getContainer } from "../services";
 
 // Define the booking type with relations
 interface BookingWithRelations extends Prisma.BookingGetPayload<{
@@ -27,10 +28,12 @@ interface BookingWithRelations extends Prisma.BookingGetPayload<{
   // Add any additional custom fields if needed
 }
 
+
 // Run daily at 10 AM to send review reminders
 cron.schedule("0 10 * * *", async () => {
   try {
-    const notificationService = new NotificationService(prisma, redis);
+    const container = getContainer();
+    const notificationService = container.resolve<NotificationService>('notificationService');
     const threeDaysAgo = new Date();
     threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
     

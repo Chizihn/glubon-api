@@ -68,55 +68,96 @@ export class PropertyService extends BaseService {
   
       let s3UploadResult: any = {};
       
-      // IMPROVED FILE HANDLING
+      // Process file uploads concurrently
       if (files && files.length > 0) {
-        // console.log('📁 PROPERTY SERVICE: Processing files...');
-    
-        
         try {
-          // Wait for all promises to resolve first
-          const resolvedFiles = await Promise.all(files.map(async (file) => {
-            if (file instanceof Promise) {
-              // console.log('⏳ Resolving file promise...');
-              return await file;
-            }
-            return file;
-          }));
-          
-          // console.log('✅ All file promises resolved');
-      
-          
-          // Map the resolved files
-          const mappedFiles = await this.s3Service.mapGraphQLFilesToS3Files(resolvedFiles);
-          // console.log('✅ Files mapped successfully:', mappedFiles.length);
-          
-          const uploadRes = await this.s3Service.uploadFiles(
-            mappedFiles,
-            ownerId,
-            "properties"
+          // Resolve all file promises in parallel
+          const resolvedFiles = await Promise.all(
+            files.map(file => file instanceof Promise ? file : Promise.resolve(file))
           );
+
+          // Process files in parallel for better performance
+          const uploadPromises = resolvedFiles.map(async (file) => {
+            try {
+              const mappedFiles = await this.s3Service.mapGraphQLFilesToS3Files([file]);
+              if (!mappedFiles.length) {
+                const filename = file.filename || 'unknown';
+                logger.warn('No files to upload after mapping', { filename });
+                return null;
+              }
+              
+              const uploadRes = await this.s3Service.uploadFiles(
+                mappedFiles,
+                ownerId,
+                'properties'
+              );
+              
+              if (!uploadRes.success) {
+                const filename = file.filename || 'unknown';
+                logger.error('File upload failed', { 
+                  error: uploadRes.message, 
+                  errors: uploadRes.errors,
+                  filename
+                });
+                return null;
+              }
+              
+              return uploadRes.data?.[0] || null;
+            } catch (error) {
+              const filename = file.filename || 'unknown';
+              logger.error('Error processing file upload', { 
+                error: error instanceof Error ? error.message : 'Unknown error',
+                filename
+              });
+              return null;
+            }
+          });
+
+          // Wait for all uploads to complete
+          const uploadResults = await Promise.all(uploadPromises);
           
-          if (!uploadRes.success) {
-            console.error('❌ S3 upload failed:', uploadRes.message);
-            console.error('Upload errors:', uploadRes.errors);
-            return this.failure(`File upload failed: ${uploadRes.message}`);
+          // Filter out failed uploads and ensure type safety
+          const successfulUploads = uploadResults.filter((upload): upload is { 
+            url: string; 
+            key: string; 
+            type: string; 
+            category: string; 
+          } => upload !== null);
+          
+          if (successfulUploads.length === 0) {
+            logger.error('All file uploads failed');
+            return this.failure('Failed to upload any files');
           }
           
-          if (!uploadRes.data || uploadRes.data.length === 0) {
-            // console.error('❌ No upload data returned');
-            return this.failure('File upload completed but no data returned');
+          // Log summary of uploads
+          if (successfulUploads.length < uploadResults.length) {
+            logger.warn('Some files failed to upload', {
+              total: uploadResults.length,
+              successful: successfulUploads.length,
+              failed: uploadResults.length - successfulUploads.length
+            });
+          } else {
+            logger.info('All files uploaded successfully', {
+              count: successfulUploads.length
+            });
           }
           
-          // console.log('✅ S3 upload successful:', uploadRes.data.length, 'files');
-          s3UploadResult = this.organizeS3Uploads(uploadRes.data);
-          console.log('📦 Organized S3 results:', Object.keys(s3UploadResult));
+          // Organize the successful uploads
+          s3UploadResult = this.organizeS3Uploads(successfulUploads);
+          logger.debug('Organized S3 uploads', { 
+            categories: Object.keys(s3UploadResult) 
+          });
           
-        } catch (fileError) {
-          console.error('❌ File processing error:', fileError);
-          return this.failure(`File upload failed: ${fileError instanceof Error ? fileError.message : 'Unknown error'}`);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          logger.error('File processing error', { 
+            error: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined
+          });
+          return this.failure(`File processing failed: ${errorMessage}`);
         }
       } else {
-        console.log('ℹ️ No files to process');
+        logger.debug('No files to process for property creation');
       }
   
       const coordinates = await this.getCoordinatesFromAddress(

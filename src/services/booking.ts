@@ -22,7 +22,7 @@ import { BaseService } from "./base";
 import { BookingRepository } from "../repository/booking";
 import { TransactionService } from "./transaction";
 import { PaystackService } from "./payment";
-import { NotificationService } from "./notification";
+import { Container } from "../container";
 import { PropertyRepository } from "../repository/properties";
 import { UserRepository } from "../repository/user";
 import { ServiceResponse } from "../types/responses";
@@ -78,7 +78,7 @@ export class BookingService extends BaseService {
   private bookingRepo: BookingRepository;
   private transactionService: TransactionService;
   private paystackService: PaystackService;
-  private notificationService: NotificationService;
+  private notificationService: any; // Using any to avoid circular dependency
   private userRepo: UserRepository;
   private propertyRepo: PropertyRepository;
 
@@ -89,7 +89,8 @@ export class BookingService extends BaseService {
     this.bookingRepo = new BookingRepository(prisma, redis);
     this.transactionService = new TransactionService(prisma, redis);
     this.paystackService = new PaystackService(prisma, redis);
-    this.notificationService = new NotificationService(prisma, redis);
+    const container = Container.getInstance(prisma, redis);
+    this.notificationService = container.resolve('notificationService');
     this.userRepo = new UserRepository(prisma, redis);
     this.propertyRepo = new PropertyRepository(prisma, redis);
   }
