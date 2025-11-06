@@ -2,6 +2,7 @@ import { Resolver, Mutation, Arg, Ctx, UseMiddleware } from "type-graphql";
 import { ObjectType, Field, InputType } from "type-graphql";
 import { AIService } from "../../services/ai";
 import { AuthMiddleware } from "../../middleware/auth";
+import { getContainer } from "../../services";
 
 // GraphQL Types
 @InputType()
@@ -27,13 +28,15 @@ export class AIResponseType {
 
 @Resolver()
 export class AIResolver {
+    private avc = getContainer().resolve<AIService>("aiService");
+  
   @Mutation(() => AIResponseType)
   @UseMiddleware(AuthMiddleware)
   async askAI(
     @Arg("input") input: AIQueryInputType,
     @Ctx() ctx: any
   ): Promise<AIResponseType> {
-    const aiService = new AIService(ctx.prisma);
+    const aiService = this.avc;
 
     const contextData = input.context ? JSON.parse(input.context) : undefined;
 
