@@ -4,6 +4,22 @@ import { Redis } from "ioredis";
 /**
  * A simple dependency injection container
  */
+let containerInstance: Container | null = null;
+
+export function getContainer(): Container {
+  if (!containerInstance) {
+    throw new Error('Container has not been initialized. Call initContainer first.');
+  }
+  return containerInstance;
+}
+
+export function initContainer(prisma: PrismaClient, redis: Redis): Container {
+  if (!containerInstance) {
+    containerInstance = Container.getInstance(prisma, redis);
+  }
+  return containerInstance;
+}
+
 export class Container {
   private static instance: Container;
   private services: Map<string, any> = new Map();

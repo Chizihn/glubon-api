@@ -469,16 +469,16 @@ export class ListerAnalyticsService extends BaseService {
           by: ['status'],
           where: { 
             property: { 
-              ownerId: userId,
-              deletedAt: null 
+              ownerId: userId
             }, 
             createdAt: { 
               gte: start, 
               lte: end 
-            },
-            deletedAt: null
+            }
           },
-          _count: { _all: true },
+          _count: {
+            _all: true
+          },
           _avg: { amount: true },
         }),
 
@@ -554,10 +554,10 @@ export class ListerAnalyticsService extends BaseService {
       } catch (error) {
         console.error('Error fetching customer analytics:', error);
         customerAnalytics = {
-          repeatCustomers: 0,
+          returningCustomers: 0,
           newCustomers: 0,
           averageBookingsPerCustomer: 0,
-          topCustomers: [],
+          customerLifetimeValue: 0
         };
       }
 
@@ -571,7 +571,7 @@ export class ListerAnalyticsService extends BaseService {
           occupancyRate: total > 0 ? (confirmed / total) * 100 : 0,
         },
         bookingTrends: trends.map(t => ({
-          date: new Date(t.date),
+          date: t.date.toISOString(),
           bookings: parseInt(t.bookings, 10) || 0,
           cancellations: parseInt(t.cancellations, 10) || 0,
           revenue: parseFloat(t.revenue) || 0,
@@ -604,10 +604,10 @@ export class ListerAnalyticsService extends BaseService {
         bookingTrends: [],
         seasonalPatterns: [],
         customerAnalytics: {
-          repeatCustomers: 0,
           newCustomers: 0,
+          returningCustomers: 0,
           averageBookingsPerCustomer: 0,
-          topCustomers: [],
+          customerLifetimeValue: 0
         },
         cancellationAnalytics: {
           cancellationRate: 0,

@@ -19,9 +19,13 @@ import { logger } from "./utils";
 import { createWebhookRouter } from "./routes/webhook";
 import { oauthRestRouter } from "./routes/oauth";
 import { initializeWorkers } from "./workers";
+import { initContainer } from "./container";
 
 export async function createApp() {
   try {
+    // Initialize the container with required dependencies
+    initContainer(prisma, redis);
+    
     // Initialize Express app
     const app = express();
 
@@ -84,7 +88,7 @@ export async function createApp() {
     app.use("/api/oauth", oauthRestRouter);
 
     // Paystack webhook endpoint
-    app.use("/api/webhook", createWebhookRouter(prisma, redis));
+    app.use("/api/webhook", createWebhookRouter());
     app.get("/payment-callback", async (req, res) => {
       const { reference, status } = req.query;
 

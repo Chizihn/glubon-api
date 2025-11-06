@@ -9,8 +9,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { BaseService } from "./base";
-import { EmailService } from "./email";
-import { OAuthService } from "./oauth";
+import { Container } from "../container";
 import { jwtConfig, securityConfig } from "../config";
 import { ServiceResponse } from "../types";
 import { logger } from "../utils";
@@ -27,16 +26,16 @@ import {
 import { UserRepository } from "../repository/user";
 import Redis from "ioredis";
 import { validateRole } from "../middleware";
-import { getContainer } from "./container";
+import { getContainer } from "../container";
 
 export class AuthService extends BaseService {
-  private emailService: EmailService;
-  private oauthService: OAuthService;
-  private userRepository: UserRepository;
+  private emailService: any; // Using any to avoid circular dependencies
+  private oauthService: any;
+  private userRepository: any;
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
-    const container = getContainer();
+    const container = Container.getInstance(prisma, redis);
     this.oauthService = container.resolve('oauthService');
     this.userRepository = container.resolve('userRepository');
     this.emailService = container.resolve('emailService');
