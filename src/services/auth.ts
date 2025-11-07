@@ -34,7 +34,7 @@ export class AuthService extends BaseService {
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
     const container = Container.getInstance(prisma, redis);
-    this.oauthService = container.resolve('oauthService');
+    this.oauthService = container.resolve('oAuthService');
     this.userRepository = container.resolve('userRepository');
     this.emailService = container.resolve('emailService');
   }
