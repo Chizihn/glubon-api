@@ -23,7 +23,8 @@ async function bootstrap() {
     });
 
     // Start server
-    httpServer.listen(appConfig.port, () => {
+    const port = process.env.PORT || appConfig.port;
+    httpServer.listen(port, () => {
       logger.info(`
 🚀 Glubon API Server is running!
 📍 Environment: ${appConfig.env}

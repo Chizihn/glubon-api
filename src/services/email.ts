@@ -77,17 +77,29 @@ export class EmailService extends BaseService {
           user: config.EMAIL_USER,
           pass: config.EMAIL_PASS,
         },
-        // Connection settings to prevent timeouts
-        connectionTimeout: 10000, // 10 seconds
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
-        // Recommended settings
-        pool: true, // Use pooled connections
+        // Connection settings with more aggressive timeouts for production
+        connectionTimeout: 30000, // 30 seconds
+        greetingTimeout: 30000,
+        socketTimeout: 30000,
+        // Pool settings
+        pool: true,
         maxConnections: 5,
         maxMessages: 100,
+        // Retry logic
+        retries: 3,
+        retryDelay: 5000, // 5 seconds between retries
+        // TLS options
+        tls: {
+          // Don't fail on invalid certs
+          rejectUnauthorized: config.NODE_ENV === 'production' ? true : false,
+        },
         // Logging for debugging
         logger: config.NODE_ENV === 'development',
         debug: config.NODE_ENV === 'development',
+        // Disable DNS validation if needed (can help with some network restrictions)
+        dnsTimeout: 10000, // 10 seconds
+        dnsLookup: (hostname: string, dns: (hostname: string, options: any) => any) => 
+          dns(hostname, { all: true }),
       };
 
       EmailService.transporter = nodemailer.createTransport(transportConfig);
