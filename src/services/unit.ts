@@ -2,19 +2,22 @@ import { PrismaClient, Unit, UnitStatus } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
 import { IBaseResponse } from "../types";
+import { Container } from "../container";
 import {
-  UnitRepository,
   CreateUnitInput,
   UpdateUnitInput,
   UnitWithDetails,
 } from "../repository/units";
 
 export class UnitService extends BaseService {
-  private repository: UnitRepository;
+  private repository: any; // Using any to avoid circular dependencies
+  private propertyRepository: any;
 
   constructor(prisma: PrismaClient, redis: Redis) {
     super(prisma, redis);
-    this.repository = new UnitRepository(prisma, redis);
+    const container = Container.getInstance(prisma, redis);
+    this.repository = container.resolve('unitRepository');
+    this.propertyRepository = container.resolve('propertyRepository');
   }
 
   async createUnit(

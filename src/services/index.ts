@@ -45,6 +45,8 @@ import { SettingsService } from "./setting";
 import { ListerAnalyticsService } from "./lister-analytics";
 import { ChatService } from "./chat";
 import { TicketService } from "./ticket";
+import { S3Service } from "./s3";
+import { PropertyUnitValidator } from "../utils/property-unit-validator";
 
 // Export the Container class for type information
 export { Container } from "../container";
@@ -69,6 +71,13 @@ export function setContainer(container: Container): void {
 export function registerServices(container: Container): void {
   // Register singleton services
   container.register("emailService", () => emailServiceSingleton);
+  container.register("s3Service", 
+    (container) => new S3Service(container.getPrisma(), container.getRedis())
+  );
+  
+  container.register("propertyUnitValidator",
+    (container) => new PropertyUnitValidator(container.getPrisma())
+  );
 
   // Register other services
   container.register(

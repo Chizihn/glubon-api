@@ -11,6 +11,7 @@ import { errorHandler } from "./middleware/errorHandler";
 import { createServices, registerServices, setContainer } from "./services";
 import { createWebhookRouter } from "./routes/webhook";
 import { Container } from "./container";
+import { registerRepositories } from "./repository/index";
 import { appConfig, corsConfig, prisma, redis } from "./config";
 import { createApolloServer } from "./graphql/server";
 import { createWebSocketServer } from "./graphql/websocket";
@@ -36,6 +37,9 @@ export async function createApp() {
 
     // Register all services with the container
     registerServices(container);
+    
+    // Register all repositories with the container
+    registerRepositories(container);
 
     // For backward compatibility
     const services = createServices(prisma, redis);

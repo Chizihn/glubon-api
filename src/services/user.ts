@@ -3,7 +3,7 @@ import { DocumentType, VerificationStatus, PrismaClient, User, UserStatus } from
 import bcrypt from "bcryptjs";
 import { ServiceResponse } from "../types";
 import { securityConfig } from "../config";
-import { UserRepository } from "../repository/user";
+import { Container } from "../container";
 import { S3Service } from "./s3";
 import { BaseService } from "./base";
 import {
@@ -13,11 +13,14 @@ import {
 } from "../types/services/user";
 
 export class UserService extends BaseService {
-  private userRepository: UserRepository;
+  private userRepository: any; // Using any to avoid circular dependencies
+  private s3Service: any;
 
   constructor(prisma: PrismaClient, redis: any) {
     super(prisma, redis);
-    this.userRepository = new UserRepository(prisma, redis);
+    const container = Container.getInstance(prisma, redis);
+    this.userRepository = container.resolve('userRepository');
+    this.s3Service = container.resolve('s3Service');
   }
 
   /**
