@@ -77,7 +77,7 @@ export function registerServices(container: Container): void {
   );
 
   container.register(
-    "oAuthService",
+    "oauthService",
     (container) => new OAuthService(container.getPrisma(), container.getRedis())
   );
 
