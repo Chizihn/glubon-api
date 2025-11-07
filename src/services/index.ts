@@ -44,6 +44,7 @@ import { PaystackService } from "./payment";
 import { SettingsService } from "./setting";
 import { ListerAnalyticsService } from "./lister-analytics";
 import { ChatService } from "./chat";
+import { TicketService } from "./ticket";
 
 // Export the Container class for type information
 export { Container } from "../container";
@@ -185,10 +186,10 @@ export function registerServices(container: Container): void {
     (container) => new ChatService(container.getPrisma(), container.getRedis())
   );
 
-  // container.register(
-  //   "ticketService",
-  //   (container) => new TicketService(container.getPrisma(), container.getRedis())
-  // );
+  container.register(
+    "ticketService",
+    (container) => new TicketService(container.getPrisma(), container.getRedis())
+  );
 }
 
 // For backward compatibility
@@ -214,7 +215,7 @@ export interface Services {
   settingsService: SettingsService;
   listerAnalyticsService: ListerAnalyticsService;
   chatService: ChatService;
-  // ticketService: TicketService
+  ticketService: TicketService
 }
 
 // Legacy function for backward compatibility
@@ -242,6 +243,6 @@ export function createServices(prisma: any, redis: any): Services {
     settingsService: container.resolve("settingsService"),
     listerAnalyticsService: container.resolve("listerAnalyticsService"),
     chatService: container.resolve("chatService"),
-    // ticketService: container.resolve("ticketService"),
+    ticketService: container.resolve("ticketService"),
   };
 }

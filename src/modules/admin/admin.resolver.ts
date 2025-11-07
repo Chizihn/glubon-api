@@ -10,7 +10,7 @@ import {
 import type { Context } from "../../types/context";
 import { PermissionEnum, RoleEnum, UserStatus, VerificationStatus } from "@prisma/client";
 import { BaseResponse } from "../../types/responses";
-import { getContainer } from "../../services";
+import { getContainer, UserService } from "../../services";
 import { AuthMiddleware, RequirePermission, RequireRole } from "../../middleware";
 import {
   PaginatedLogsResponse,
@@ -62,7 +62,7 @@ export class AdminResolver {
   private adminStatsService: AdminStatsService;
   private adminUsersService: AdminUsersService;
   private adminPropertyService: AdminPropertyService;
-  private userService: any;
+  private userService: UserService;
 
   constructor() {
     const container = getContainer();

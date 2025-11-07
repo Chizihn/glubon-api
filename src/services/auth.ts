@@ -23,10 +23,8 @@ import {
   ResetPasswordInput,
   VerifyEmailInput,
 } from "../types/services/auth";
-import { UserRepository } from "../repository/user";
 import Redis from "ioredis";
 import { validateRole } from "../middleware";
-import { getContainer } from "../container";
 
 export class AuthService extends BaseService {
   private emailService: any; // Using any to avoid circular dependencies

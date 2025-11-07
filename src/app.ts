@@ -9,6 +9,7 @@ import { expressMiddleware } from "@as-integrations/express5";
 import { createGraphQLSchema } from "./graphql/schemas";
 import { errorHandler } from "./middleware/errorHandler";
 import { createServices, registerServices, setContainer } from "./services";
+import { createWebhookRouter } from "./routes/webhook";
 import { Container } from "./container";
 import { appConfig, corsConfig, prisma, redis } from "./config";
 import { createApolloServer } from "./graphql/server";
@@ -16,16 +17,11 @@ import { createWebSocketServer } from "./graphql/websocket";
 import { graphqlUploadExpress } from "graphql-upload-ts";
 import { createGraphQLContext } from "./graphql/context";
 import { logger } from "./utils";
-import { createWebhookRouter } from "./routes/webhook";
 import { oauthRestRouter } from "./routes/oauth";
 import { initializeWorkers } from "./workers";
-import { initContainer } from "./container";
 
 export async function createApp() {
   try {
-    // Initialize the container with required dependencies
-    initContainer(prisma, redis);
-    
     // Initialize Express app
     const app = express();
 
@@ -88,7 +84,7 @@ export async function createApp() {
     app.use("/api/oauth", oauthRestRouter);
 
     // Paystack webhook endpoint
-    app.use("/api/webhook", createWebhookRouter());
+    app.use("/api/webhook", createWebhookRouter(prisma, redis));
     app.get("/payment-callback", async (req, res) => {
       const { reference, status } = req.query;
 
