@@ -333,7 +333,9 @@ export class AuthService extends BaseService {
       // Generate reset token
       const resetToken = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 3600000); // 1 hour
-      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+      
+      // Create reset link with token
+      const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
 
       // Save reset token
       await this.userRepository.createVerificationToken({
@@ -343,12 +345,12 @@ export class AuthService extends BaseService {
         email: user.email,
         expiresAt,
       });
-
-      // Send reset email
+      
+      // Send reset email with the full link
       await this.emailService.sendVerificationCode(
         user.email,
         user.firstName,
-        resetToken,
+        resetLink,
         "password_reset"
       );
 

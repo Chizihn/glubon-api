@@ -51,15 +51,27 @@ export class EmailService extends BaseService {
   private initializeTransporter(): void {
     // If already initialized or initializing, return
     if (EmailService.transporter || EmailService.isInitializing) {
+      logger.debug('Email transporter already initialized or initializing');
       return;
     }
 
     EmailService.isInitializing = true;
 
     try {
+      // Log environment variables (masking sensitive data)
+      // logger.info('Initializing email transporter with config:', {
+      //   host: config.EMAIL_HOST,
+      //   port: config.EMAIL_PORT,
+      //   user: config.EMAIL_USER,
+      //   hasPassword: !!config.EMAIL_PASS,
+      //   from: config.EMAIL_FROM,
+      //   nodeEnv: config.NODE_ENV
+      // });
+
       // Validate required configuration
       if (!config.EMAIL_HOST || !config.EMAIL_USER || !config.EMAIL_PASS) {
-        logger.warn('Email configuration incomplete. Email functionality disabled.', {
+        const errorMsg = 'Email configuration incomplete. Email functionality disabled.';
+        logger.error(errorMsg, {
           hasHost: !!config.EMAIL_HOST,
           hasUser: !!config.EMAIL_USER,
           hasPass: !!config.EMAIL_PASS
@@ -68,19 +80,20 @@ export class EmailService extends BaseService {
         return;
       }
 
-      // Universal configuration that works with any SMTP provider
+      // SMTP configuration for Zoho Mail
+      const isSecurePort = Number(config.EMAIL_PORT) === 465;
       const transportConfig: any = {
-        host: config.EMAIL_HOST, // e.g., smtp.gmail.com, smtp.sendgrid.net, smtp.mailgun.org
-        port: Number(config.EMAIL_PORT) || 587, // Default to 587 (TLS)
-        secure: config.EMAIL_PORT === 465, // true for 465, false for other ports
+        host: config.EMAIL_HOST,
+        port: Number(config.EMAIL_PORT) || 587,
+        secure: isSecurePort, // true for 465, false for other ports
         auth: {
           user: config.EMAIL_USER,
           pass: config.EMAIL_PASS,
         },
-        // Connection settings with more aggressive timeouts for production
+        // Connection settings
         connectionTimeout: 30000, // 30 seconds
         greetingTimeout: 30000,
-        socketTimeout: 30000,
+        socketTimeout: 60000, // Increased to 60 seconds for Zoho
         // Pool settings
         pool: true,
         maxConnections: 5,
@@ -90,12 +103,16 @@ export class EmailService extends BaseService {
         retryDelay: 5000, // 5 seconds between retries
         // TLS options
         tls: {
-          // Don't fail on invalid certs
-          rejectUnauthorized: config.NODE_ENV === 'production' ? true : false,
+          // Don't fail on invalid certs in development
+          rejectUnauthorized: config.NODE_ENV === 'production',
+          // Explicitly set min/max TLS versions for better compatibility
+          minVersion: 'TLSv1.2',
+          maxVersion: 'TLSv1.3',
         },
-        // Logging for debugging
-        logger: config.NODE_ENV === 'development',
-        debug: config.NODE_ENV === 'development',
+        // Always enable logging in production for debugging
+        logger: true,
+        // Enable debug output in all environments
+        debug: true,
         // Disable DNS validation if needed (can help with some network restrictions)
         dnsTimeout: 10000, // 10 seconds
         dnsLookup: (hostname: string, dns: (hostname: string, options: any) => any) => 
@@ -108,20 +125,53 @@ export class EmailService extends BaseService {
       EmailService.transporter.verify((error) => {
         EmailService.isInitializing = false;
         if (error) {
-          logger.error("Email transporter configuration error:", {
-            error: error.message,
-            // code: error.code,
-            host: config.EMAIL_HOST,
-            port: config.EMAIL_PORT
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorDetails = error instanceof Error ? {
+            message: error.message,
+            name: error.name,
+            stack: error.stack,
+            code: (error as any).code,
+            command: (error as any).command,
+            responseCode: (error as any).responseCode,
+            response: (error as any).response,
+          } : {};
+          
+          logger.error("❌ Email transporter verification failed:", {
+            error: errorMessage,
+            ...errorDetails,
+            config: {
+              host: config.EMAIL_HOST,
+              port: config.EMAIL_PORT,
+              user: config.EMAIL_USER,
+              secure: transportConfig.secure,
+              tls: transportConfig.tls,
+            },
+            timestamp: new Date().toISOString(),
           });
+          
           EmailService.transporter = null;
           EmailService.isConfigured = false;
-          logger.warn("⚠️  Email functionality disabled. Server continues running.");
+          
+          // Log specific guidance for common issues
+          // if (errorMessage.includes('Invalid login') || errorMessage.includes('535-5.7.8')) {
+          //   logger.error('🔐 Authentication failed. Please verify your Zoho email credentials and ensure you\'re using an App Password instead of your account password.');
+          // } else if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ETIMEDOUT')) {
+          //   logger.error('🌐 Connection refused or timed out. Please check:');
+          //   logger.error('1. Is the SMTP server running and accessible from this network?');
+          //   logger.error('2. Are there any firewall rules blocking outbound connections to smtp.zoho.com?');
+          //   logger.error('3. Is port 587 (or your configured port) open for outbound traffic?');
+          // } else if (errorMessage.includes('self signed certificate')) {
+          //   logger.warn('🔒 Certificate validation error. In development, you can set NODE_TLS_REJECT_UNAUTHORIZED=0 (not recommended for production)');
+          // }
+          
+          // logger.warn("⚠️  Email functionality disabled. Server continues running.");
         } else {
-          logger.info("✅ Email transporter configured successfully", {
+          logger.info("✅ Email transporter configured and verified successfully", {
             host: config.EMAIL_HOST,
             port: config.EMAIL_PORT,
-            user: config.EMAIL_USER
+            user: config.EMAIL_USER,
+            secure: transportConfig.secure,
+            timestamp: new Date().toISOString(),
           });
           EmailService.isConfigured = true;
         }

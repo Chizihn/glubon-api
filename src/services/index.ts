@@ -45,6 +45,7 @@ import { SettingsService } from "./setting";
 import { ListerAnalyticsService } from "./lister-analytics";
 import { ChatService } from "./chat";
 import { TicketService } from "./ticket";
+import { AIService } from "./ai";
 import { S3Service } from "./s3";
 import { PropertyUnitValidator } from "../utils/property-unit-validator";
 
@@ -199,6 +200,11 @@ export function registerServices(container: Container): void {
     "ticketService",
     (container) => new TicketService(container.getPrisma(), container.getRedis())
   );
+
+  container.register(
+    "aiService",
+    (container) => new AIService(container.getPrisma(), container.getRedis())
+  );
 }
 
 // For backward compatibility
@@ -224,7 +230,8 @@ export interface Services {
   settingsService: SettingsService;
   listerAnalyticsService: ListerAnalyticsService;
   chatService: ChatService;
-  ticketService: TicketService
+  ticketService: TicketService;
+  aiService: AIService
 }
 
 // Legacy function for backward compatibility
@@ -253,5 +260,6 @@ export function createServices(prisma: any, redis: any): Services {
     listerAnalyticsService: container.resolve("listerAnalyticsService"),
     chatService: container.resolve("chatService"),
     ticketService: container.resolve("ticketService"),
+    aiService: container.resolve("aiService"),
   };
 }

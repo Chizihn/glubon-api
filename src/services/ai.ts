@@ -119,7 +119,9 @@ export class AIService extends BaseService {
     const cached = await this.getCache<any[]>(cacheKey);
     if (cached) return cached;
 
-    const where: any = { isActive: true };
+    const where: any = { 
+      status: 'ACTIVE' 
+    };
 
     if (criteria.minPrice !== undefined) where.amount = { ...where.amount, gte: criteria.minPrice };
     if (criteria.maxPrice !== undefined) where.amount = { ...where.amount, lte: criteria.maxPrice };

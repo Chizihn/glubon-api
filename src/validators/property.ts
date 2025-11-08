@@ -36,44 +36,57 @@ export const createPropertySchema = z.object({
 export const updatePropertySchema = createPropertySchema.partial();
 
 export const propertyFiltersSchema = z.object({
-  minAmount: z.number().positive().optional(),
-  maxAmount: z.number().positive().optional(),
-  bedrooms: z.number().int().min(0).optional(),
-  bathrooms: z.number().int().min(1).optional(),
+  // Search query
+  search: z.string().optional(),
+  
+  // Basic filters
+  status: z.nativeEnum(PropertyStatus).optional(),
   propertyType: z.nativeEnum(PropertyType).optional(),
+  listingType: z.nativeEnum(PropertyListingType).optional(),
   roomType: z.nativeEnum(RoomType).optional(),
+  rentalPeriod: z.nativeEnum(RentalPeriod).optional(),
+  
+  // Price range
+  minAmount: z.number().min(0).optional(),
+  maxAmount: z.number().min(0).optional(),
+  
+  // Property details
+  bedrooms: z.number().int().min(0).optional(),
+  bathrooms: z.number().int().min(0).optional(),
   isFurnished: z.boolean().optional(),
   isForStudents: z.boolean().optional(),
+  
+  // Location
   city: z.string().optional(),
   state: z.string().optional(),
+  
+  // Geo-location
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  radiusKm: z.number().min(0).optional(),
+  
+  // Arrays
   amenities: z.array(z.string()).optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
-  radiusKm: z.number().positive().optional(),
-  status: z.nativeEnum(PropertyStatus).optional(),
-});
+  visitingDays: z.array(z.nativeEnum(DayOfWeek)).optional(),
+  
+  // Date filters
+  createdAfter: z.date().optional(),
+  createdBefore: z.date().optional(),
+  updatedAfter: z.date().optional(),
+  
+  // Make the schema more permissive by allowing unknown keys
+  // This ensures backward compatibility with any existing queries
+}).passthrough();
 
+// Make the search schema more permissive to match the resolver's expectations
 export const propertySearchSchema = z.object({
-  page: z.number().int().min(1).default(1),
-  limit: z.number().int().min(1).max(100).default(10),
+  page: z.number().int().min(1).default(1).optional(),
+  limit: z.number().int().min(1).max(100).default(10).optional(),
   search: z.string().optional(),
-  sortBy: z
-    .enum(["createdAt", "updatedAt", "amount", "bedrooms", "bathrooms"])
-    .default("createdAt"),
-  sortOrder: z.enum(["asc", "desc"]).default("desc"),
-  filters: z.object({
-    status: z.nativeEnum(PropertyStatus).optional(),
-    propertyType: z.nativeEnum(PropertyType).optional(),
-    listingType: z.nativeEnum(PropertyListingType).optional(),
-    minAmount: z.number().positive().optional(),
-    maxAmount: z.number().positive().optional(),
-    city: z.string().optional(),
-    state: z.string().optional(),
-    createdAfter: z.date().optional(),
-    createdBefore: z.date().optional(),
-    updatedAfter: z.date().optional(),
-  }).optional(),
-});
+  sortBy: z.string().optional(),
+  sortOrder: z.string().optional(),
+  filters: z.any().optional(), // Allow any filters to pass through
+}).passthrough(); // Allow additional properties
 
 export type CreatePropertyInput = z.infer<typeof createPropertySchema>;
 export type UpdatePropertyInput = z.infer<typeof updatePropertySchema>;

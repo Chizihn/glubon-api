@@ -88,36 +88,102 @@ export class UserEmailTemplates {
 
   static verificationCode(
     firstName: string,
-    code: string,
+    codeOrLink: string,
     purpose: 'email_verification' | 'password_reset'
   ): EmailTemplate {
     const purposeText = purpose === 'email_verification' 
-      ? 'Email Verification' 
-      : 'Password Reset';
+      ? 'Verify Your Email' 
+      : 'Reset Your Password';
     
     const actionText = purpose === 'email_verification'
-      ? 'verify your email'
+      ? 'verify your email address'
       : 'reset your password';
+
+    const isLink = codeOrLink.startsWith('http');
+    const code = isLink ? codeOrLink.split('token=')[1]?.split('&')[0] || '' : codeOrLink;
+    const displayCode = code.length > 8 ? `${code.substring(0, 4)}...${code.slice(-4)}` : code;
 
     const { html, text } = generateBaseTemplate({
       title: purposeText,
       content: `
-        <h2>Hello ${firstName}!</h2>
-        <p>Use the code below to ${actionText}:</p>
-        <div style="font-size: 32px; font-weight: 700; color: #1d4ed8; background: #f8fafc; padding: 16px; border-radius: 8px; margin: 20px 0; letter-spacing: 4px; text-align: center;">
-          ${code}
+        <h2>Hello ${firstName},</h2>
+        <p>You're receiving this email because you requested to ${actionText} for your Glubon account.</p>
+        
+        <div style="background: #F0F9FF; border-radius: 8px; padding: 20px; margin: 24px 0; border-left: 4px solid #0EA5E9;">
+          <p style="color: #0369A1; font-weight: 500; margin: 0 0 12px 0;">
+            ${isLink ? 'Click the button below to continue:' : 'Use the following verification code:'}
+          </p>
+          
+          ${isLink ? `
+            <div style="text-align: center; margin: 20px 0;">
+              <a href="${codeOrLink}" class="button" style="background-color: #1D4ED8; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: all 0.2s ease;">
+                ${purpose === 'email_verification' ? 'Verify Email' : 'Reset Password'}
+              </a>
+            </div>
+            <p style="color: #6B7280; font-size: 14px; text-align: center; margin: 16px 0 0 0;">
+              Or copy and paste this link in your browser:<br>
+              <span style="word-break: break-all; color: #3B82F6;">${codeOrLink}</span>
+            </p>
+          ` : `
+            <div style="font-size: 28px; font-weight: 700; color: #1D4ED8; background: #EFF6FF; padding: 20px; border-radius: 8px; margin: 16px 0; letter-spacing: 2px; text-align: center; font-family: monospace;">
+              ${displayCode}
+            </div>
+          `}
         </div>
-        <div style="background: #fef3c7; border: 1px solid #fde68a; padding: 16px; border-radius: 8px; margin: 20px 0; font-size: 15px;">
-          <p><strong>⚠ Security Notice:</strong> This code expires in 15 minutes. Ignore if you didn't request it.</p>
+        
+        <div style="background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 8px; padding: 16px; margin: 24px 0;">
+          <p style="color: #92400E; margin: 0; font-size: 14px; line-height: 1.5;">
+            <strong>Security Notice:</strong> This ${isLink ? 'link' : 'verification code'} will expire in 1 hour. 
+            If you didn't request this, please ignore this email or contact our support team immediately.
+          </p>
         </div>
-        <p>Never share this code with anyone.</p>
-      `
+        
+        <p style="color: #6B7280; font-size: 14px; margin: 24px 0 0 0;">
+          <strong>Need help?</strong> Contact our support team at 
+          <a href="mailto:support@glubon.com" style="color: #3B82F6; text-decoration: none;">support@glubon.com</a> 
+          or visit our <a href="${process.env.FRONTEND_URL || 'https://glubon.com'}/help" style="color: #3B82F6; text-decoration: none;">Help Center</a>.
+        </p>
+      `,
+      cta: isLink ? {
+        text: purpose === 'email_verification' ? 'Verify Email' : 'Reset Password',
+        url: codeOrLink
+      } : undefined
     });
 
+    const subject = purpose === 'email_verification'
+      ? 'Verify Your Glubon Account'
+      : 'Reset Your Glubon Password';
+
     return {
-      subject: `Glubon ${purposeText} Code: ${code}`,
+      subject,
       html,
-      text: `Hello ${firstName}, Your Glubon ${purposeText.toLowerCase()} code is: ${code}. It expires in 15 minutes. Contact support at ${process.env.FRONTEND_URL}/support.`
+      text: `${subject}
+${'='.repeat(subject.length)}
+
+Hello ${firstName},
+
+You're receiving this email because you requested to ${actionText} for your Glubon account.
+
+${isLink 
+  ? `To continue, please click the link below:
+${codeOrLink}
+
+Or copy and paste the link into your browser.` 
+  : `Your verification code is:
+
+${code}
+
+Enter this code in the verification page to continue.`
+}
+
+This ${isLink ? 'link' : 'verification code'} will expire in 1 hour.
+
+If you didn't request this, please ignore this email or contact our support team immediately.
+
+---
+Need help? Contact our support team at support@glubon.com or visit ${process.env.FRONTEND_URL || 'https://glubon.com'}/help
+
+© ${new Date().getFullYear()} Glubon. All rights reserved.`
     };
   }
 
