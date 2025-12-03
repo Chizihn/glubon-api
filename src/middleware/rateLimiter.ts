@@ -45,3 +45,10 @@ export const graphqlUploadRateLimiter = new GraphQLRedisRateLimiter(
   20, // 20 uploads per hour
   (ctx, operation) => `upload_${ctx.user?.id || ctx.req!.ip}`
 );
+
+export const graphqlMapSearchRateLimiter = new GraphQLRedisRateLimiter(
+  "map_search",
+  30 * 1000, // 30 seconds cooldown
+  1, // 1 request per 30 seconds
+  (ctx, operation) => `map_search_${ctx.user?.id || ctx.req!.ip}` // User-specific rate limiting
+);

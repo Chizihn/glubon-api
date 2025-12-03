@@ -2,14 +2,26 @@
 import { createApp } from "./app";
 import { appConfig, config } from "./config";
 import { logger } from "./utils";
+import { getContainer } from "./services";
+import { PaymentWorker } from "./jobs/workers/payment.worker";
 
 async function bootstrap() {
   try {
     const { httpServer, gracefulShutdown } = await createApp();
+    
+    // Initialize workers
+    const container = getContainer();
+    const paymentWorker = new PaymentWorker(container, container.getRedis());
 
     // Handle process signals
-    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", async () => {
+      await paymentWorker.close();
+      gracefulShutdown("SIGTERM");
+    });
+    process.on("SIGINT", async () => {
+      await paymentWorker.close();
+      gracefulShutdown("SIGINT");
+    });
 
     // Handle uncaught exceptions
     process.on("uncaughtException", (error) => {

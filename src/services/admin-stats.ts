@@ -269,7 +269,6 @@ export class AdminStatsService extends BaseService {
           },
           verifications: {
             pendingIdentity: stats.verifications?.pendingIdentity || 0,
-            pendingOwnership: stats.verifications?.pendingOwnership || 0,
             approvedToday: stats.verifications?.approvedToday || 0,
             rejectedToday: stats.verifications?.rejectedToday || 0,
           },
@@ -613,7 +612,7 @@ export class AdminStatsService extends BaseService {
           },
           verifications: {
             pendingIdentity: 0,
-            pendingOwnership: 0,
+
             approvedToday: 0,
             rejectedToday: 0,
           },

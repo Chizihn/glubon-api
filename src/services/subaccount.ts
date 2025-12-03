@@ -5,6 +5,7 @@ import { BaseService, CACHE_TTL } from "./base";
 import { ServiceResponse } from "../types";
 import { PaystackService } from "./payment";
 import { logger } from "../utils";
+import { PaymentQueue } from "../jobs/queues/payment.queue";
 
 interface CreateSubaccountInput {
   userId: string;
@@ -17,9 +18,9 @@ interface CreateSubaccountInput {
 export class SubaccountService extends BaseService {
   private paystackService: PaystackService;
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
     super(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis);
+    this.paystackService = new PaystackService(prisma, redis, paymentQueue);
   }
 
   async createSubaccount(

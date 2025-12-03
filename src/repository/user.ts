@@ -18,8 +18,13 @@ export class UserRepository extends BaseRepository {
   }
 
   async findUserByEmail(email: string) {
-    return this.prisma.user.findUnique({
-      where: { email },
+    return this.prisma.user.findFirst({
+      where: {
+        email: {
+          equals: email,
+          mode: 'insensitive'
+        }
+      }
     });
   }
 
@@ -30,17 +35,23 @@ export class UserRepository extends BaseRepository {
   }
 
   async findUserByEmailOrPhone(email: string, phoneNumber?: string) {
+    const conditions: any = [
+      { email: { equals: email, mode: 'insensitive' } }
+    ];
+    
+    if (phoneNumber) {
+      conditions.push({ phoneNumber });
+    }
+
     return this.prisma.user.findFirst({
-      where: {
-        OR: [{ email }, ...(phoneNumber ? [{ phoneNumber }] : [])],
-      },
+      where: { OR: conditions },
     });
   }
 
   async createUser(data: RegisterInput) {
     return this.prisma.user.create({
       data: {
-        email: data.email,
+        email: data.email.toLowerCase(), // Store email in lowercase
         firstName: data.firstName,
         lastName: data.lastName,
         password: data.password || null,
@@ -52,9 +63,15 @@ export class UserRepository extends BaseRepository {
   }
 
   async updateUser(userId: string, data: Partial<User>) {
+    // Ensure email is lowercase if being updated
+    const updateData = {...data};
+    if (updateData.email) {
+      updateData.email = updateData.email.toLowerCase();
+    }
+    
     return this.prisma.user.update({
       where: { id: userId },
-      data,
+      data: updateData,
       select: {
         id: true,
         email: true,

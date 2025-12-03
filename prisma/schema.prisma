@@ -19,7 +19,8 @@ model User {
   city                     String?
   state                    String?
   country                  String?                  @default("Nigeria")
-  role                     RoleEnum                 @default(RENTER)
+  role                     RoleEnum                 @default(RENTER) // Deprecated: Use roles instead
+  roles                    RoleEnum[]               @default([RENTER])
   permissions              PermissionEnum[]
   provider                 ProviderEnum             @default(EMAIL)
   isVerified               Boolean                  @default(false)
@@ -52,8 +53,8 @@ model User {
   settingUpdates           PlatformSetting[]        @relation("SettingUpdates")
   properties               Property[]
   propertyLikes            PropertyLike[]
-  reviewedOwnershipProofs  PropertyOwnershipProof[] @relation("OwnershipProofReviewer")
-  propertyOwnershipProofs  PropertyOwnershipProof[]
+  propertyLikes            PropertyLike[]
+  propertyViews            PropertyView[]
   propertyViews            PropertyView[]
   providerAccounts         ProviderAccount[]
   processedRefunds         Refund[]                 @relation("ProcessedRefunds")
@@ -247,7 +248,6 @@ model Property {
   propertyOwnershipDocs String[]                 @default([])
   propertyPlanDocs      String[]                 @default([])
   propertyDimensionDocs String[]                 @default([])
-  ownershipVerified     Boolean                  @default(false)
   featured              Boolean                  @default(false)
   ownerId               String
   createdAt             DateTime                 @default(now())
@@ -259,7 +259,6 @@ model Property {
   notifications         Notification[]
   owner                 User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   likes                 PropertyLike[]
-  ownershipProofs       PropertyOwnershipProof[]
   views                 PropertyView[]
   transactions          Transaction[]
   units                 Unit[]
@@ -317,25 +316,6 @@ model PropertyView {
 
   @@unique([userId, propertyId])
   @@map("property_views")
-}
-
-model PropertyOwnershipProof {
-  id              String               @id @default(uuid())
-  propertyId      String
-  userId          String
-  documentType    PropertyDocumentType
-  documentImages  String[]
-  status          VerificationStatus   @default(PENDING)
-  reviewedAt      DateTime?
-  reviewedById    String?
-  rejectionReason String?
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
-  property        Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  reviewedBy      User?                @relation("OwnershipProofReviewer", fields: [reviewedById], references: [id])
-  user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("property_ownership_proofs")
 }
 
 model Booking {

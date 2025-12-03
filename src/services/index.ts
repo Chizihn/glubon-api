@@ -48,6 +48,7 @@ import { TicketService } from "./ticket";
 import { AIService } from "./ai";
 import { S3Service } from "./s3";
 import { PropertyUnitValidator } from "../utils/property-unit-validator";
+import { PaymentQueue } from "../jobs/queues/payment.queue";
 
 // Export the Container class for type information
 export { Container } from "../container";
@@ -134,7 +135,11 @@ export function registerServices(container: Container): void {
   container.register(
     "adminUserService",
     (container) =>
-      new AdminUsersService(container.getPrisma(), container.getRedis())
+      new AdminUsersService(
+        container.getPrisma(),
+        container.getRedis(),
+        container.resolve("paymentQueue")
+      )
   );
 
   container.register(
@@ -153,7 +158,11 @@ export function registerServices(container: Container): void {
   container.register(
     "subaccountService",
     (container) =>
-      new SubaccountService(container.getPrisma(), container.getRedis())
+      new SubaccountService(
+        container.getPrisma(),
+        container.getRedis(),
+        container.resolve("paymentQueue")
+      )
   );
 
   container.register(
@@ -174,9 +183,18 @@ export function registerServices(container: Container): void {
   );
 
   container.register(
+    "paymentQueue",
+    (container) => new PaymentQueue(container.getRedis())
+  );
+
+  container.register(
     "paystackService",
     (container) =>
-      new PaystackService(container.getPrisma(), container.getRedis())
+      new PaystackService(
+        container.getPrisma(),
+        container.getRedis(),
+        container.resolve("paymentQueue")
+      )
   );
 
   container.register(
@@ -231,7 +249,8 @@ export interface Services {
   listerAnalyticsService: ListerAnalyticsService;
   chatService: ChatService;
   ticketService: TicketService;
-  aiService: AIService
+  aiService: AIService;
+  paymentQueue: PaymentQueue;
 }
 
 // Legacy function for backward compatibility
@@ -261,5 +280,6 @@ export function createServices(prisma: any, redis: any): Services {
     chatService: container.resolve("chatService"),
     ticketService: container.resolve("ticketService"),
     aiService: container.resolve("aiService"),
+    paymentQueue: container.resolve("paymentQueue"),
   };
 }

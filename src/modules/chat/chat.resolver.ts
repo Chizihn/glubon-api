@@ -47,7 +47,7 @@ import {
   BroadcastMessageFilter,
 } from "./broadcast.inputs";
 import { Prisma, PrismaClient, RoleEnum } from "@prisma/client";
-import { PubSub } from "graphql-subscriptions";
+import { pubSub } from "../../utils";
 import { UserPresence } from "../presence/presence.types";
 
 @Resolver()
@@ -544,8 +544,7 @@ export class ChatResolver {
     });
 
     // Publish to subscribers
-    const pubSub = new PubSub();
-    await pubSub.publish(SUBSCRIPTION_EVENTS.BROADCAST_MESSAGE_SENT, {
+    await (pubSub as any).publish(SUBSCRIPTION_EVENTS.BROADCAST_MESSAGE_SENT, {
       broadcastMessage: {
         ...broadcast,
         sentToUserIds: broadcast.recipients.map((r: { id: string }) => r.id),

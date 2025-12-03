@@ -350,9 +350,6 @@ export class Property {
   @Field(() => Boolean, { defaultValue: false })
   featured: boolean;
 
-  @Field(() => Boolean, { defaultValue: false })
-  ownershipVerified: boolean;
-
   @Field(() => String)
   ownerId: string;
 

@@ -45,7 +45,8 @@ import {
   propertyFiltersSchema,
   propertySearchSchema 
 } from "../../validators/property";
-import { AuthMiddleware, RequireRole } from "../../middleware";
+import { AuthMiddleware, RequireRole,  } from "../../middleware";
+import { graphqlMapSearchRateLimiter } from "../../middleware/rateLimiter";
 
 @Resolver()
 export class PropertyResolver {
@@ -63,7 +64,7 @@ export class PropertyResolver {
   }
 
   @Query(() => MapSearchResponse)
-  @UseMiddleware(AuthMiddleware)
+  @UseMiddleware(AuthMiddleware, graphqlMapSearchRateLimiter.createMiddleware())
   async searchPropertiesOnMap(
     @Arg("input") input: MapSearchInput,
     @Ctx() ctx: Context,
@@ -116,7 +117,7 @@ export class PropertyResolver {
   }
 
   @Query(() => PaginatedPropertiesResponse)
-  @UseMiddleware(AuthMiddleware)
+  @UseMiddleware(AuthMiddleware,)
   async getProperties(
     @Args() args: GetPropertiesArgs,
     @Ctx() ctx: Context
@@ -226,7 +227,7 @@ sortBy: searchOptions.sortBy as PropertySortByEnum | undefined,
   }
 
   @Query(() => PaginatedPropertiesResponse)
-  @UseMiddleware(AuthMiddleware)
+  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
   async getMyProperties(
     @Args() args: GetMyPropertiesArgs,
     @Ctx() ctx: Context

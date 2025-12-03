@@ -24,6 +24,9 @@ export class CreateBookingInput {
 
   @Field(() => [String], { nullable: true })
   unitIds?: string[]; // Optional for properties with units
+
+  @Field({ nullable: true })
+  idempotencyKey?: string;
 }
 
 @InputType()

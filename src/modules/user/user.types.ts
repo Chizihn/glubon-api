@@ -56,8 +56,11 @@ export class User {
   @Field(() => Boolean)
   isVerified: boolean;
 
-  @Field(() => RoleEnum)
+  @Field(() => RoleEnum, { deprecationReason: "Use roles instead" })
   role: RoleEnum;
+
+  @Field(() => [RoleEnum])
+  roles: RoleEnum[];
 
   @Field(() => UserStatus)
   status: UserStatus;

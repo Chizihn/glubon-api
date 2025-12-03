@@ -1,5 +1,5 @@
 // src/types/context.ts
-import type { PrismaClient, User } from "@prisma/client";
+import type { PrismaClient, User, RoleEnum } from "@prisma/client";
 import type { Redis } from "ioredis";
 import type { Request, Response } from "express";
 import { Services } from "../services";
@@ -14,7 +14,7 @@ export type AuthenticatedUser = Pick<
   | "permissions"
   | "isVerified"
   | "isActive"
->;
+> & { roles: RoleEnum[] };
 
 export interface Context {
   prisma: PrismaClient;

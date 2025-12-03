@@ -67,8 +67,7 @@ export class DashboardStatsVerifications {
   @Field(() => Int)
   pendingIdentity: number;
 
-  @Field(() => Int)
-  pendingOwnership: number;
+
 
   @Field(() => Int)
   approvedToday: number;

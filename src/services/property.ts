@@ -620,7 +620,7 @@ export class PropertyService extends BaseService {
               propertyPlanDocs: propertyData.propertyPlanDocs || [],
               propertyDimensionDocs: propertyData.propertyDimensionDocs || [],
               featured: propertyData.featured || false,
-              ownershipVerified: propertyData.ownershipVerified || false,
+              ownershipVerified: false, // Deprecated, defaulting to false
               createdAt: propertyData.createdAt,
               updatedAt: propertyData.updatedAt,
 

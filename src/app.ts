@@ -88,7 +88,8 @@ export async function createApp() {
     app.use("/api/oauth", oauthRestRouter);
 
     // Paystack webhook endpoint
-    app.use("/api/webhook", createWebhookRouter(prisma, redis));
+    const paymentQueue = container.resolve("paymentQueue") as any;
+    app.use("/api/webhook", createWebhookRouter(prisma, redis, paymentQueue));
     app.get("/payment-callback", async (req, res) => {
       const { reference, status } = req.query;
 

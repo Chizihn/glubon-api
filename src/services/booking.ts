@@ -52,6 +52,7 @@ export interface CreateBookingInput {
   startDate: Date;
   duration: number;
   unitIds?: string[];
+  idempotencyKey?: string;
 }
 
 export interface UpdateBookingStatusInput {
@@ -88,8 +89,9 @@ export class BookingService extends BaseService {
     super(prisma, redis);
     this.bookingRepo = new BookingRepository(prisma, redis);
     this.transactionService = new TransactionService(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis);
+    this.transactionService = new TransactionService(prisma, redis);
     const container = Container.getInstance(prisma, redis);
+    this.paystackService = container.resolve('paystackService');
     this.notificationService = container.resolve('notificationService');
     this.userRepo = new UserRepository(prisma, redis);
     this.propertyRepo = new PropertyRepository(prisma, redis);
@@ -483,7 +485,8 @@ export class BookingService extends BaseService {
               transactionResult.data.reference,
               property.owner.subaccount!.subaccountCode!,
               property.owner.subaccount!.percentageCharge,
-              callbackUrl
+              callbackUrl,
+              data.idempotencyKey
             );
 
           if (!paystackResponse?.data?.status) {

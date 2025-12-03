@@ -14,6 +14,7 @@ export interface RegisterInput {
 export interface LoginInput {
   email: string;
   password: string;
+  role?: RoleEnum;
 }
 
 export interface RefreshTokenInput {
@@ -40,7 +41,7 @@ export interface AuthTokens {
 }
 
 export interface AuthResult extends AuthTokens {
-  user: Omit<User, "password" | "refreshToken">;
+  user: Omit<User, "password" | "refreshToken"> & { roles: RoleEnum[] };
 }
 
 export interface OAuthUserData {

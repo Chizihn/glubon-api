@@ -104,12 +104,16 @@ interface UpdateSubaccountData {
   settlement_schedule?: string;
 }
 
+import { PaymentQueue } from "../jobs/queues/payment.queue";
+
 export class PaystackService extends BaseService {
   private readonly apiKey: string;
   private readonly baseUrl: string = "https://api.paystack.co";
+  private readonly paymentQueue: PaymentQueue;
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
     super(prisma, redis);
+    this.paymentQueue = paymentQueue;
     this.apiKey = process.env.PAYSTACK_SECRET_KEY || "";
     if (!this.apiKey) {
       throw new Error("Paystack API key not configured");
@@ -159,9 +163,23 @@ export class PaystackService extends BaseService {
       "mobile_money",
     ],
     subaccountCode?: string,
-    callbackUrl?: string
+    callbackUrl?: string,
+    idempotencyKey?: string
   ): Promise<ServiceResponse<PaystackInitializeResponse>> {
     try {
+      // Idempotency check
+      if (idempotencyKey) {
+        const cachedResponse = await this.getCache<PaystackInitializeResponse>(
+          `idempotency:${idempotencyKey}`
+        );
+        if (cachedResponse) {
+          return this.success(
+            cachedResponse,
+            "Payment initialized from cache (idempotency)"
+          );
+        }
+      }
+
       const payload: any = {
         email,
         amount: new Decimal(amount).mul(100).toNumber(), // Convert to kobo
@@ -190,6 +208,21 @@ export class PaystackService extends BaseService {
           },
         }
       );
+
+      // Cache response for idempotency if key provided
+      if (idempotencyKey) {
+        await this.setCache(
+          `idempotency:${idempotencyKey}`,
+          response.data,
+          CACHE_TTL.SHORT as any // 15 mins
+        );
+      }
+
+      // Schedule verification job (e.g. check in 15 mins if not verified)
+      await this.paymentQueue.addVerificationJob({
+        reference,
+        attempt: 1,
+      });
 
       return this.success(
         response.data,
@@ -764,9 +797,23 @@ export class PaystackService extends BaseService {
     reference: string,
     subaccountCode: string,
     subaccountPercentage: number,
-    callbackUrl?: string
+    callbackUrl?: string,
+    idempotencyKey?: string
   ): Promise<ServiceResponse<PaystackInitializeResponse>> {
     try {
+      // Idempotency check
+      if (idempotencyKey) {
+        const cachedResponse = await this.getCache<PaystackInitializeResponse>(
+          `idempotency:${idempotencyKey}`
+        );
+        if (cachedResponse) {
+          return this.success(
+            cachedResponse,
+            "Payment initialized from cache (idempotency)"
+          );
+        }
+      }
+
       const splitConfig = {
         type: "percentage",
         currency: "NGN",
@@ -802,6 +849,22 @@ export class PaystackService extends BaseService {
           },
         }
       );
+
+      // Cache response for idempotency if key provided
+      if (idempotencyKey) {
+        await this.setCache(
+          `idempotency:${idempotencyKey}`,
+          response.data,
+          CACHE_TTL.SHORT as any // 15 mins
+        );
+      }
+
+      // Schedule verification job
+      await this.paymentQueue.addVerificationJob({
+        reference,
+        attempt: 1,
+      });
+
 
       if (!response.data.status) {
         return this.failure(

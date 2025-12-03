@@ -6,6 +6,7 @@ import {
   Arg,
   Ctx,
 } from "type-graphql";
+import { RoleEnum } from "@prisma/client";
 
 import {
   AuthResponse,
@@ -67,12 +68,14 @@ export class AuthResolver {
   async login(
     @Arg("email") email: string,
     @Arg("password") password: string,
+    @Arg("role", () => RoleEnum, { nullable: true }) role: RoleEnum | undefined,
     @Ctx() ctx: Context
   ): Promise<AuthResponse> {
     const validatedInput = loginSchema.parse({ email, password });
-    const result = await this.authService.login(validatedInput);
+    const loginInput = role ? { ...validatedInput, role } : validatedInput;
+    const result = await this.authService.login(loginInput);
     if (!result.success) throw new Error(result.message);
-    return result.data!;
+    return result.data! as unknown as AuthResponse;
   }
 
   @Mutation(() => TokenResponse)
@@ -275,6 +278,6 @@ async getOAuthAuthUrl(
   @Query(() => User)
   @UseMiddleware(AuthMiddleware)
   async me(@Ctx() ctx: Context): Promise<User> {
-    return ctx.user as User;
+    return ctx.user as unknown as User;
   }
 }

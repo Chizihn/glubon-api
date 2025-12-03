@@ -83,6 +83,7 @@ export class AuthService extends BaseService {
         password: hashedPassword as string,
         phoneNumber: phoneNumber || "",
         role: role || RoleEnum.RENTER,
+        roles: [role || RoleEnum.RENTER],
         provider: provider || ProviderEnum.EMAIL,
       });
 
@@ -114,7 +115,7 @@ export class AuthService extends BaseService {
 
   async login(input: LoginInput): Promise<ServiceResponse<AuthResult>> {
     try {
-      const { email, password } = input;
+      const { email, password, role } = input;
 
       // Find user
       const user = await this.userRepository.findUserByEmail(email);
@@ -134,8 +135,26 @@ export class AuthService extends BaseService {
         return this.failure("Invalid credentials");
       }
 
+      // Validate role if provided
+      let activeRole = user.role;
+      if (role) {
+        if (!user.roles.includes(role)) {
+          return this.failure("You do not have permission to access this role");
+        }
+        activeRole = role;
+      } else if (user.roles && user.roles.length > 0) {
+        // Default to first role if not provided (or keep existing default)
+        activeRole = user.roles[0];
+      }
+
       // Generate tokens
-      const tokens = await this.generateTokens(user);
+      const tokens = await this.generateTokens({
+        id: user.id,
+        email: user.email,
+        role: activeRole,
+        roles: user.roles,
+        permissions: user.permissions,
+      });
 
       // Update user with refresh token and last login
       await this.userRepository.updateUser(user.id, {
@@ -149,7 +168,7 @@ export class AuthService extends BaseService {
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: userWithoutSensitive,
+          user: { ...userWithoutSensitive, role: activeRole },
         },
         "Login successful"
       );
@@ -445,6 +464,7 @@ export class AuthService extends BaseService {
             id: updatedUser.id,
             email: updatedUser.email,
             role: updatedUser.role,
+            roles: updatedUser.roles,
             permissions: updatedUser.permissions,
           });
 
@@ -468,6 +488,7 @@ export class AuthService extends BaseService {
         lastName: userData.lastName,
         provider: provider || ProviderEnum.EMAIL,
         role: validatedRole,
+        roles: [validatedRole],
         phoneNumber: userData.phoneNumber || "",
       });
 
@@ -548,17 +569,31 @@ export class AuthService extends BaseService {
       }
 
       // Check if provider matches
+      // Check if provider matches
       if (updatedUser.provider !== provider) {
         return this.failure(
           `Account registered with ${updatedUser.provider}. Please use the correct provider or link accounts.`
         );
       }
 
+      // Validate role if provided
+      let activeRole = updatedUser.role;
+      if (role) {
+        if (!updatedUser.roles.includes(role)) {
+          return this.failure("You do not have permission to access this role");
+        }
+        activeRole = role;
+      } else if (updatedUser.roles && updatedUser.roles.length > 0) {
+        // Default to first role if not provided
+        activeRole = updatedUser.roles[0];
+      }
+
       // Generate tokens
       const tokens = await this.generateTokens({
         id: updatedUser.id,
         email: updatedUser.email,
-        role: updatedUser.role,
+        role: activeRole,
+        roles: updatedUser.roles,
         permissions: updatedUser.permissions,
       });
 
@@ -574,7 +609,7 @@ export class AuthService extends BaseService {
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: userWithoutSensitive,
+          user: { ...userWithoutSensitive, role: activeRole },
         },
         "OAuth login successful"
       );
@@ -717,12 +752,13 @@ export class AuthService extends BaseService {
   }
 
   private async generateTokens(
-    user: Pick<User, "id" | "email" | "role" | "permissions">
+    user: { id: string; email: string; role: RoleEnum; roles: RoleEnum[]; permissions: any[] }
   ): Promise<AuthTokens> {
     const payload = {
       userId: user.id,
       email: user.email,
       role: user.role,
+      roles: user.roles,
       permissions: user.permissions,
     };
 

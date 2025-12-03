@@ -157,9 +157,6 @@ export class AdminPropertyResponse {
   @Field(() => Boolean)
   featured: boolean;
 
-  @Field(() => Boolean)
-  ownershipVerified: boolean;
-
   @Field(() => GraphQLISODateTime)
   createdAt: Date;
 
@@ -189,6 +186,9 @@ export class VerificationUserResponse {
 
   @Field(() => RoleEnum)
   role: RoleEnum;
+
+  @Field(() => [RoleEnum])
+  roles: RoleEnum[];
 }
 
 @ObjectType()
@@ -224,56 +224,7 @@ export class VerificationResponse {
   user: VerificationUserResponse;
 }
 
-@ObjectType()
-export class OwnershipVerificationPropertyResponse {
-  @Field(() => ID)
-  id: string;
 
-  @Field(() => String)
-  title: string;
-
-  @Field(() => String)
-  address: string;
-
-  @Field(() => String)
-  city: string;
-
-  @Field(() => String)
-  state: string;
-
-  @Field(() => Float)
-  amount: number;
-
-  @Field(() => PropertyOwnerResponse)
-  owner: PropertyOwnerResponse;
-}
-
-@ObjectType()
-export class OwnershipVerificationResponse {
-  @Field(() => ID)
-  id: string;
-
-  @Field(() => [String])
-  documentImages: string[];
-
-  @Field(() => VerificationStatus)
-  status: VerificationStatus;
-
-  @Field(() => GraphQLISODateTime, { nullable: true })
-  reviewedAt?: Date;
-
-  @Field(() => String, { nullable: true })
-  reviewedBy?: string;
-
-  @Field(() => String, { nullable: true })
-  rejectionReason?: string;
-
-  @Field(() => GraphQLISODateTime)
-  createdAt: Date;
-
-  @Field(() => OwnershipVerificationPropertyResponse)
-  property: OwnershipVerificationPropertyResponse;
-}
 
 @ObjectType()
 export class AdminLogResponse {
@@ -335,11 +286,7 @@ export class PaginatedVerificationsResponse extends PaginatedResponse<Verificati
   declare items: VerificationResponse[];
 }
 
-@ObjectType()
-export class PaginatedOwnershipVerificationsResponse extends PaginatedResponse<OwnershipVerificationResponse> {
-  @Field(() => [OwnershipVerificationResponse])
-  declare items: OwnershipVerificationResponse[];
-}
+
 
 @ObjectType()
 export class PaginatedLogsResponse extends PaginatedResponse<AdminLogResponse> {

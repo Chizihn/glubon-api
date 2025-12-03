@@ -103,7 +103,6 @@ export class AdminStatsRepository extends BaseRepository {
 
       // Verification metrics
       pendingIdentityVerifications,
-      pendingOwnershipVerifications,
       approvedVerificationsToday,
       rejectedVerificationsToday,
 
@@ -185,9 +184,7 @@ export class AdminStatsRepository extends BaseRepository {
       this.prisma.identityVerification.count({
         where: { status: VerificationStatus.PENDING },
       }),
-      this.prisma.propertyOwnershipProof.count({
-        where: { status: VerificationStatus.PENDING },
-      }),
+
       this.prisma.identityVerification.count({
         where: {
           status: VerificationStatus.APPROVED,
@@ -256,7 +253,6 @@ export class AdminStatsRepository extends BaseRepository {
       },
       verifications: {
         pendingIdentity: pendingIdentityVerifications,
-        pendingOwnership: pendingOwnershipVerifications,
         approvedToday: approvedVerificationsToday,
         rejectedToday: rejectedVerificationsToday,
       },

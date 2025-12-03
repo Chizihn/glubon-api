@@ -58,11 +58,16 @@ export const AuthMiddleware: MiddlewareFn<Context> = async (
 
 export const RequireRole = (...roles: RoleEnum[]): MiddlewareFn<Context> => {
   return async ({ context }, next) => {
-    if (!context.user || !context.user.role) {
+    if (!context.user) {
       throw new UnauthorizedError("Authentication required");
     }
 
-    if (!roles.includes(context.user.role)) {
+    const user = context.user as any;
+    const userRoles = user.roles || (user.role ? [user.role] : []);
+
+    const hasRole = roles.some(role => userRoles.includes(role));
+
+    if (!hasRole) {
       throw new ForbiddenError(
         "You do not have permission to perform this action!"
       );

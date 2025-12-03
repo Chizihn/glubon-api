@@ -24,6 +24,7 @@ import {
 import { ForbiddenError, NotFoundError, ValidationError } from "../utils";
 import { AdminUsersRepository } from "../repository/admin-user";
 import { SubaccountService } from "./subaccount";
+import { PaymentQueue } from "../jobs/queues/payment.queue";
 
 export class AdminUsersService extends BaseService {
   private emailService = emailServiceSingleton;
@@ -71,11 +72,11 @@ export class AdminUsersService extends BaseService {
     }
   }
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
     super(prisma, redis);
     this.notificationService = new NotificationService(prisma, redis);
     this.repository = new AdminUsersRepository(prisma, redis);
-    this.subaccountService = new SubaccountService(prisma, redis);
+    this.subaccountService = new SubaccountService(prisma, redis, paymentQueue);
   }
 
   /**
@@ -692,6 +693,7 @@ export class AdminUsersService extends BaseService {
       state: user.state ?? null,
       country: user.country ?? null,
       role: user.role,
+      roles: user.roles || [user.role],
       permissions: user.permissions || [],
       provider: user.provider,
       isVerified: user.isVerified,

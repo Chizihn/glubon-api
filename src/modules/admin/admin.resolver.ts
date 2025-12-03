@@ -14,7 +14,7 @@ import { getContainer, UserService } from "../../services";
 import { AuthMiddleware, RequirePermission, RequireRole } from "../../middleware";
 import {
   PaginatedLogsResponse,
-  PaginatedOwnershipVerificationsResponse,
+
   AdminPaginatedPropertiesResponse as PaginatedPropertiesResponse,
   PaginatedUsersResponse,
   PaginatedVerificationsResponse,
@@ -104,8 +104,7 @@ export class AdminResolver {
     
     // Calculate pending verifications
     const pendingVerifications = 
-      (stats.verifications?.pendingIdentity || 0) + 
-      (stats.verifications?.pendingOwnership || 0);
+      (stats.verifications?.pendingIdentity || 0);
 
     return {
       totalUsers: stats.users?.total || 0,
@@ -397,29 +396,7 @@ export class AdminResolver {
     );
   }
 
-  @Query(() => PaginatedOwnershipVerificationsResponse)
-  async getPendingOwnershipVerifications(
-    @Arg("page", () => Int, { defaultValue: 1 }) page: number,
-    @Arg("limit", () => Int, { defaultValue: 20 }) limit: number,
-    @Ctx() ctx: Context
-  ): Promise<PaginatedOwnershipVerificationsResponse> {
-    const result =
-      await this.adminPropertyService.getPendingOwnershipVerifications(
-        ctx.user!.id,
-        page,
-        limit
-      );
-    if (!result.success)
-      throw new AppError(result.message, HttpStatusCode.InternalServerError);
 
-    const { verifications, totalCount } = result.data!;
-    return new PaginatedOwnershipVerificationsResponse(
-      verifications,
-      page,
-      limit,
-      totalCount
-    );
-  }
 
   @Query(() => PaginatedLogsResponse)
   async getAdminLogs(
@@ -573,24 +550,7 @@ export class AdminResolver {
     return new BaseResponse(true, result.message);
   }
 
-  @Mutation(() => BaseResponse)
-  @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
-  async reviewOwnershipVerification(
-    @Arg("verificationId") verificationId: string,
-    @Arg("approved") approved: boolean,
-    @Arg("reason", { nullable: true }) reason: string,
-    @Ctx() ctx: Context
-  ): Promise<BaseResponse> {
-    const result = await this.adminPropertyService.reviewOwnershipVerification(
-      ctx.user!.id,
-      verificationId,
-      approved,
-      reason
-    );
-    if (!result.success)
-      throw new AppError(result.message, HttpStatusCode.InternalServerError);
-    return new BaseResponse(true, result.message);
-  }
+
 
   @Mutation(() => BaseResponse)
   async togglePropertyFeatured(

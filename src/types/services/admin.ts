@@ -44,7 +44,6 @@ export interface AdminPropertyFilters {
   state?: string;
   minAmount?: number;
   maxAmount?: number;
-  ownershipVerified?: boolean | null;
   featured?: boolean | null;
   createdAfter?: Date;
   createdBefore?: Date;
@@ -111,7 +110,6 @@ export interface DashboardStats {
   };
   verifications: {
     pendingIdentity: number;
-    pendingOwnership: number;
     approvedToday: number;
     rejectedToday: number;
   };
@@ -218,6 +216,7 @@ export interface AdminUserResponse {
   state?: string;
   country?: string;
   role: RoleEnum;
+  roles: RoleEnum[];
   permissions?: PermissionEnum[];
   provider: ProviderEnum;
   isVerified: boolean;
@@ -260,7 +259,6 @@ export interface AdminPropertyResponse {
   smokingAllowed: boolean;
   status: PropertyStatus;
   featured: boolean;
-  ownershipVerified: boolean;
   images: string[];
   amenities: string[];
   rules: string[];
@@ -286,16 +284,7 @@ export interface VerificationResponse {
   user: User;
 }
 
-export interface OwnershipVerificationResponse {
-  id: string;
-  documentType: string;
-  documentUrl: string;
-  status: string;
-  rejectionReason?: string;
-  createdAt: Date;
-  reviewedAt?: Date;
-  property: Property;
-}
+
 
 export interface AdminLogResponse {
   id: string;
@@ -331,8 +320,7 @@ export interface PaginatedPropertiesResponse
   extends PaginatedResponse<AdminPropertyResponse> {}
 export interface PaginatedVerificationsResponse
   extends PaginatedResponse<VerificationResponse> {}
-export interface PaginatedOwnershipVerificationsResponse
-  extends PaginatedResponse<OwnershipVerificationResponse> {}
+
 export interface PaginatedLogsResponse
   extends PaginatedResponse<AdminLogResponse> {}
 

@@ -29,7 +29,8 @@ import { TicketResolver } from "../modules/tickets/ticket.resolver";
 // Auth checking is handled by the AuthMiddleware
 
 export async function createGraphQLSchema() {
-  const pubSub = new PubSub() as any;
+  // Use the shared pubSub instance
+  const { pubSub } = await import("../utils/index.js");
 
   return await buildSchema({
     scalarsMap: [
@@ -61,7 +62,7 @@ export async function createGraphQLSchema() {
       TicketResolver,
     ],
     validate: false,
-    pubSub,
+    pubSub: pubSub as any,
     emitSchemaFile: appConfig.isDevelopment ? "schema.gql" : false,
     // dateScalarMode: "isoDate",
   });

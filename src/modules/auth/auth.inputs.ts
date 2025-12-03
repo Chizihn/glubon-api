@@ -44,6 +44,9 @@ export class OAuthLoginInput {
 
   @Field(() => ProviderEnum)
   provider: ProviderEnum;
+
+  @Field(() => RoleEnum, { nullable: true })
+  role?: RoleEnum;
 }
 
 @InputType()

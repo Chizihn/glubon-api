@@ -109,91 +109,7 @@ export class AdminPropertyRepository extends BaseRepository {
     };
   }
 
-  async reviewOwnershipVerification(
-    verificationId: string,
-    approved: boolean,
-    adminId: string,
-    reason?: string
-  ): Promise<{ propertyId: string; ownerId: string; propertyTitle: string }> {
-    const verification = await this.prisma.propertyOwnershipProof.findUnique({
-      where: { id: verificationId },
-      include: { property: true },
-    });
 
-    if (!verification) throw new Error("Ownership verification not found");
-
-    await Promise.all([
-      this.prisma.propertyOwnershipProof.update({
-        where: { id: verificationId },
-        data: {
-          status: approved ? VerificationStatus.APPROVED : VerificationStatus.REJECTED,
-          reviewedAt: new Date(),
-          reviewedBy: { connect: { id: adminId } },
-          rejectionReason: approved ? null : reason ?? null,
-        },
-      }),
-      ...(approved
-        ? [
-            this.prisma.property.update({
-              where: { id: verification.propertyId },
-              data: { ownershipVerified: true, status: PropertyStatus.ACTIVE },
-            }),
-          ]
-        : []),
-    ]);
-
-    await this.deleteCachePattern(`property:${verification.propertyId}:*`);
-    await this.deleteCachePattern("properties:*");
-    return {
-      propertyId: verification.propertyId,
-      ownerId: verification.property.ownerId,
-      propertyTitle: verification.property.title,
-    };
-  }
-
-  async getPendingOwnershipVerifications(
-    page: number,
-    limit: number
-  ): Promise<{ verifications: any[]; totalCount: number }> {
-    const { skip, limit: validatedLimit } = this.validatePagination(page, limit);
-    const cacheKey = this.generateCacheKey(
-      "admin",
-      "pending_ownership_verifications",
-      page.toString(),
-      limit.toString()
-    );
-    const cached = await this.getCache<{ verifications: any[]; totalCount: number }>(cacheKey);
-    if (cached) return cached;
-
-    const [verifications, totalCount] = await Promise.all([
-      this.prisma.propertyOwnershipProof.findMany({
-        where: { status: VerificationStatus.PENDING },
-        include: {
-          property: {
-            select: {
-              id: true,
-              title: true,
-              address: true,
-              city: true,
-              state: true,
-              amount: true,
-              owner: true,
-            },
-          },
-        },
-        skip,
-        take: validatedLimit,
-        orderBy: { createdAt: "asc" },
-      }),
-      this.prisma.propertyOwnershipProof.count({
-        where: { status: VerificationStatus.PENDING },
-      }),
-    ]);
-
-    const result = { verifications, totalCount };
-    await this.setCache(cacheKey, result, 300);
-    return result;
-  }
 
   async logAdminAction(adminId: string, action: string, data?: any): Promise<void> {
     try {
@@ -225,9 +141,7 @@ export class AdminPropertyRepository extends BaseRepository {
       if (filters.minAmount) where.amount.gte = filters.minAmount;
       if (filters.maxAmount) where.amount.lte = filters.maxAmount;
     }
-    if (filters.ownershipVerified !== undefined && filters.ownershipVerified !== null) {
-      where.ownershipVerified = filters.ownershipVerified;
-    }
+
     if (filters.featured !== undefined && filters.featured !== null) {
       where.featured = filters.featured;
     }

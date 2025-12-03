@@ -5,6 +5,7 @@ import { PrismaClient, TransactionStatus } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BookingService } from "../services/booking";
 import { PaystackService } from "../services/payment";
+import { PaymentQueue } from "../jobs/queues/payment.queue";
 
 class WebhookController {
   private prisma: PrismaClient;
@@ -12,11 +13,11 @@ class WebhookController {
   private bookingService: BookingService;
   private paystackService: PaystackService;
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
     this.prisma = prisma;
     this.redis = redis;
     this.bookingService = new BookingService(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis);
+    this.paystackService = new PaystackService(prisma, redis, paymentQueue);
   }
 
   async handlePaystackWebhook(req: Request, res: Response) {
@@ -143,10 +144,10 @@ class WebhookController {
   }
 }
 
-export function createWebhookRouter(prisma: PrismaClient, redis: Redis) {
+export function createWebhookRouter(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
   const router = express.Router();
 
-  const webhookController = new WebhookController(prisma, redis);
+  const webhookController = new WebhookController(prisma, redis, paymentQueue);
 
   // Raw body parser for Paystack signature verification
   router.post(
