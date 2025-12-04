@@ -53,8 +53,7 @@ model User {
   settingUpdates           PlatformSetting[]        @relation("SettingUpdates")
   properties               Property[]
   propertyLikes            PropertyLike[]
-  propertyLikes            PropertyLike[]
-  propertyViews            PropertyView[]
+
   propertyViews            PropertyView[]
   providerAccounts         ProviderAccount[]
   processedRefunds         Refund[]                 @relation("ProcessedRefunds")
@@ -68,8 +67,8 @@ model User {
   reviewedTokens           VerificationToken[]      @relation("TokenReviewer")
   verificationTokens       VerificationToken[]
   receivedBroadcasts       BroadcastMessage[]       @relation("BroadcastRecipients")
-  createdTickets   Ticket[]         @relation("TicketCreator")
-  assignedTickets  Ticket[]         @relation("TicketAssignee")
+  createdTickets           Ticket[]         @relation("TicketCreator")
+  assignedTickets          Ticket[]         @relation("TicketAssignee")
 
   @@index([email])
   @@map("users")

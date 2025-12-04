@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { BaseService } from "./base";
-import { Container } from "../container";
+// import { Container } from "../container";
 import { jwtConfig, securityConfig } from "../config";
 import { ServiceResponse } from "../types";
 import { logger } from "../utils";
@@ -26,17 +26,23 @@ import {
 import Redis from "ioredis";
 import { validateRole } from "../middleware";
 
-export class AuthService extends BaseService {
-  private emailService: any; // Using any to avoid circular dependencies
-  private oauthService: any;
-  private userRepository: any;
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+import { OAuthService } from "./oauth";
+import { UserRepository } from "../repository/user";
+import { EmailService } from "./email";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+@Service()
+export class AuthService extends BaseService {
+
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private oauthService: OAuthService,
+    private userRepository: UserRepository,
+    private emailService: EmailService
+  ) {
     super(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.oauthService = container.resolve('oAuthService');
-    this.userRepository = container.resolve('userRepository');
-    this.emailService = container.resolve('emailService');
   }
 
   async register(input: RegisterInput): Promise<ServiceResponse<AuthResult>> {
@@ -98,13 +104,16 @@ export class AuthService extends BaseService {
       // Send verification email
       await this.sendVerificationEmail(user);
 
-      // Remove sensitive data
+      // Remove sensitive data and add activeRole
       const { password: _, refreshToken: __, ...userWithoutSensitive } = user;
 
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: userWithoutSensitive,
+          user: { 
+            ...userWithoutSensitive, 
+            activeRole: role || RoleEnum.RENTER // Set activeRole to the registration role
+          } as any, // Type assertion needed since activeRole is runtime field, not in Prisma schema
         },
         "Registration successful. Please check your email for verification."
       );
@@ -135,23 +144,24 @@ export class AuthService extends BaseService {
         return this.failure("Invalid credentials");
       }
 
-      // Validate role if provided
-      let activeRole = user.role;
+      // Validate role if provided and set activeRole
+      let activeRole = user.role; // fallback to deprecated field
       if (role) {
+        // User specified a role during login - validate they have it
         if (!user.roles.includes(role)) {
           return this.failure("You do not have permission to access this role");
         }
         activeRole = role;
       } else if (user.roles && user.roles.length > 0) {
-        // Default to first role if not provided (or keep existing default)
-        activeRole = user.roles[0];
+        // Default to first role if not provided
+        activeRole = user.roles[0] || user.role;
       }
 
-      // Generate tokens
+      // Generate tokens with the activeRole
       const tokens = await this.generateTokens({
         id: user.id,
         email: user.email,
-        role: activeRole,
+        role: activeRole, // This becomes the active role in JWT
         roles: user.roles,
         permissions: user.permissions,
       });
@@ -168,7 +178,7 @@ export class AuthService extends BaseService {
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: { ...userWithoutSensitive, role: activeRole },
+          user: { ...userWithoutSensitive, role: activeRole }, // Return user with activeRole
         },
         "Login successful"
       );
@@ -223,17 +233,28 @@ export class AuthService extends BaseService {
 
   async resendVerificationEmail(email: string): Promise<ServiceResponse> {
     try {
+      logger.info(`🔄 Resend verification email requested`, { email });
+
       const user = await this.userRepository.findUserByEmail(email);
 
       if (!user) {
+        logger.warn(`⚠️ Resend verification email: User not found`, { email });
         // Don't reveal if user doesn't exist
         return this.success(null, "If an account exists with this email, a verification email has been sent");
       }
 
+      logger.info(`👤 User found for resend verification`, { 
+        userId: user.id, 
+        email: user.email, 
+        isVerified: user.isVerified 
+      });
+
       if (user.isVerified) {
+        logger.warn(`⚠️ User already verified`, { userId: user.id, email: user.email });
         return this.failure("Email is already verified");
       }
 
+      logger.info(`📧 Calling sendVerificationEmail`, { userId: user.id, email: user.email });
       await this.sendVerificationEmail(user);
 
       return this.success(
@@ -241,6 +262,7 @@ export class AuthService extends BaseService {
         "If an account exists with this email, a verification email has been sent"
       );
     } catch (error) {
+      logger.error(`❌ Error in resendVerificationEmail`, { email, error });
       return this.handleError(error, "resendVerificationEmail");
     }
   }
@@ -504,13 +526,16 @@ export class AuthService extends BaseService {
       // Send welcome email (no verification needed)
       await this.emailService.sendWelcomeEmail(user.email, user.firstName);
 
-      // Remove sensitive data
+      // Remove sensitive data and add activeRole
       const { password: _, refreshToken: __, ...userWithoutSensitive } = user;
 
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: userWithoutSensitive,
+          user: {
+            ...userWithoutSensitive,
+            activeRole: validatedRole // Set activeRole to the selected role
+          } as any, // Type assertion needed since activeRole is runtime field
         },
         "Registration with OAuth provider successful"
       );
@@ -585,7 +610,7 @@ export class AuthService extends BaseService {
         activeRole = role;
       } else if (updatedUser.roles && updatedUser.roles.length > 0) {
         // Default to first role if not provided
-        activeRole = updatedUser.roles[0];
+        activeRole = updatedUser.roles[0] || updatedUser.role;
       }
 
       // Generate tokens
@@ -603,13 +628,16 @@ export class AuthService extends BaseService {
         lastLogin: new Date(),
       });
 
-      // Remove sensitive data
+      // Remove sensitive data and add activeRole
       const { password, refreshToken, ...userWithoutSensitive } = updatedUser;
 
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: { ...userWithoutSensitive, role: activeRole },
+          user: { 
+            ...userWithoutSensitive, 
+            activeRole // activeRole was determined above
+          } as any, // Type assertion needed since activeRole is runtime field
         },
         "OAuth login successful"
       );
@@ -723,6 +751,52 @@ export class AuthService extends BaseService {
     }
   }
 
+  async switchRole(
+    userId: string,
+    newRole: RoleEnum
+  ): Promise<ServiceResponse<AuthResult>> {
+    try {
+      // Get current user
+      const user = await this.userRepository.findUserById(userId);
+
+      if (!user) {
+        return this.failure("User not found");
+      }
+
+      // Validate user has this role
+      if (!user.roles.includes(newRole)) {
+        return this.failure("You do not have access to this role");
+      }
+
+      // Generate new tokens with the new activeRole
+      const tokens = await this.generateTokens({
+        id: user.id,
+        email: user.email,
+        role: newRole, // This becomes the active role in JWT
+        roles: user.roles,
+        permissions: user.permissions,
+      });
+
+      // Update user with new refresh token
+      await this.userRepository.updateUser(userId, {
+        refreshToken: tokens.refreshToken,
+      });
+
+      // Remove sensitive data
+      const { password, refreshToken, ...userWithoutSensitive } = user;
+
+      return this.success<AuthResult>(
+        {
+          ...tokens,
+          user: { ...userWithoutSensitive, role: newRole }, // Return user with new activeRole
+        },
+        "Role switched successfully"
+      );
+    } catch (error) {
+      return this.handleError(error, "switchRole");
+    }
+  }
+
   async getOAuthAuthUrl(
     provider: ProviderEnum,
     redirectUri: string,
@@ -757,8 +831,9 @@ export class AuthService extends BaseService {
     const payload = {
       userId: user.id,
       email: user.email,
-      role: user.role,
-      roles: user.roles,
+      role: user.role, // This is the active role
+      roles: user.roles, // All available roles
+      activeRole: user.role, // Explicit activeRole field for clarity
       permissions: user.permissions,
     };
 
@@ -786,6 +861,11 @@ export class AuthService extends BaseService {
 
   private async sendVerificationEmail(user: User): Promise<void> {
     try {
+logger.info(`🔐 Sending verification email for user registration`, { 
+        userId: user.id, 
+        email: user.email 
+      });
+
       // Generate 6-digit verification code
       const verificationCode = this.generateSixDigitCode();
       const expiresAt = new Date(Date.now() + 3600000); // 1 hour
@@ -811,13 +891,31 @@ export class AuthService extends BaseService {
         expiresAt,
       });
 
+      logger.info(`📝 Verification code saved to database`, { 
+        userId: user.id, 
+        code: verificationCode 
+      });
+
       // Send email with 6-digit code
-      await this.emailService.sendVerificationCode(
+      const result = await this.emailService.sendVerificationCode(
         user.email,
         user.firstName,
         verificationCode,
         "email_verification"
       );
+
+      if (result.success) {
+        logger.info(`✅ Verification email sent successfully`, { 
+          userId: user.id, 
+          email: user.email 
+        });
+      } else {
+        logger.error(`❌ Failed to send verification email`, { 
+          userId: user.id, 
+          email: user.email,
+          error: result.message 
+        });
+      }
     } catch (error) {
       logger.error("Failed to send verification email:", error);
     }

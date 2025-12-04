@@ -2,19 +2,19 @@ import { useServer } from "graphql-ws/use/ws";
 import type { Disposable } from "graphql-ws";
 import { WebSocketServer } from "ws";
 import { GraphQLSchema } from "graphql";
-import { getContainer, Services } from "../services";
+import { Container } from "typedi";
 import { WebSocketContext } from "../types";
 import { prisma, redis } from "../config";
 import { logger } from "../utils";
-import type { PresenceService } from "../services/presence";
+import { PresenceService } from "../services/presence";
+import { AuthService } from "../services/auth";
 
 export async function createWebSocketServer(
   wsServer: WebSocketServer,
-  schema: GraphQLSchema,
-  services: Services
+  schema: GraphQLSchema
 ): Promise<Disposable> {
-  const container = getContainer();
-  const presenceService = container.resolve<PresenceService>('presenceService');
+  const presenceService = Container.get(PresenceService);
+  const authService = Container.get(AuthService);
 
   // Clean up stale connections periodically
   const cleanupInterval = setInterval(
@@ -29,7 +29,6 @@ export async function createWebSocketServer(
         const context: WebSocketContext = {
           prisma,
           redis,
-          services,
           user: null,
         };
 
@@ -38,7 +37,7 @@ export async function createWebSocketServer(
           if (typeof authHeader === 'string') {
             const token = authHeader.replace('Bearer ', '');
             if (token) {
-              const decoded = await services.authService.verifyToken(token);
+              const decoded = await authService.verifyToken(token);
               const user = await prisma.user.findUnique({
                 where: { id: decoded.userId },
                 select: {

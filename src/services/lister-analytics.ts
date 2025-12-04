@@ -29,8 +29,15 @@ import {
 
 type DateRange = { startDate: Date; endDate: Date };
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+
+@Service()
 export class ListerAnalyticsService extends BaseService {
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis
+  ) {
     super(prisma, redis);
   }
 
@@ -160,25 +167,65 @@ export class ListerAnalyticsService extends BaseService {
     return this.getBookingAnalytics(userId, startDate, endDate);
   }
 
-  /** Market insights – stub (you can fill later) */
-  async getMarketInsights(_location?: string): Promise<MarketInsightsResponse> {
-    // TODO: real market data
+  /** Market insights with real data */
+  async getMarketInsights(location?: string): Promise<MarketInsightsResponse> {
+    const whereClause = location ? { city: location, status: PropertyStatus.ACTIVE } : { status: PropertyStatus.ACTIVE };
+
+    const marketStats = await this.prisma.property.aggregate({
+      where: whereClause,
+      _count: true,
+      _avg: { amount: true },
+    });
+
+    // Build occupancy query dynamically
+    let occupancyQuery = `
+      SELECT
+        COUNT(DISTINCT p.id)::text AS total,
+        COUNT(DISTINCT CASE 
+          WHEN b.status = 'CONFIRMED' AND b."endDate" > NOW() 
+          THEN p.id 
+          END)::text AS booked
+      FROM "properties" p
+      LEFT JOIN "bookings" b ON b."propertyId" = p.id
+      WHERE p.status = 'ACTIVE'
+    `;
+    
+    if (location) {
+      occupancyQuery += ` AND p.city = '${location}'`;
+    }
+
+    const occupancyData = await this.prisma.$queryRawUnsafe<Array<{
+      total: string;
+      booked: string;
+    }>>(occupancyQuery);
+
+    const totalListings = marketStats._count;
+    const averagePrice = this.toNum(marketStats._avg.amount);
+
+    const occupancy = occupancyData[0];
+    const averageOccupancy = parseInt(occupancy?.total || '0', 10) > 0
+      ? (parseInt(occupancy?.booked || '0', 10) / parseInt(occupancy?.total || '1', 10)) * 100
+      : 0;
+
     return {
       marketOverview: {
-        averagePrice: 0,
-        totalListings: 0,
-        averageOccupancy: 0,
-        priceGrowth: 0,
+        averagePrice,
+        totalListings,
+        averageOccupancy,
+        priceGrowth: 0, // Would need historical data
       },
       priceAnalysis: {
-        yourAveragePrice: 0,
-        marketAveragePrice: 0,
+        yourAveragePrice: 0, // Need userId context
+        marketAveragePrice: averagePrice,
         pricePosition: PricePosition.AVERAGE,
-        recommendedPriceRange: { min: 0, max: 0 },
+        recommendedPriceRange: {
+          min: averagePrice * 0.8,
+          max: averagePrice * 1.2,
+        },
       },
       demandAnalysis: {
-        searchVolume: 0,
-        bookingDemand: 0,
+        searchVolume: 0, // No search tracking
+        bookingDemand: totalListings,
         seasonalTrends: [],
         popularAmenities: [],
       },
@@ -343,8 +390,31 @@ export class ListerAnalyticsService extends BaseService {
     start: Date,
     end: Date
   ): Promise<ViewsAnalytics[]> {
-    // TODO: Implement views analytics retrieval
-    return [];
+    const result = await this.prisma.$queryRaw<Array<{
+      date: Date;
+      views: string;
+      unique_views: string;
+    }>>`
+      SELECT
+        DATE(pv."viewedAt") AS date,
+        COUNT(*)::text AS views,
+        COUNT(DISTINCT pv."userId")::text AS unique_views
+      FROM "property_views" pv
+      JOIN "properties" p ON pv."propertyId" = p.id
+      WHERE p."ownerId" = ${userId}::uuid
+        AND pv."viewedAt" >= ${start}
+        AND pv."viewedAt" <= ${end}
+      GROUP BY DATE(pv."viewedAt")
+      ORDER BY date
+    `;
+
+    return result.map(r => ({
+      date: r.date.toISOString(),
+      views: parseInt(r.views, 10) || 0,
+      uniqueViews: parseInt(r.unique_views, 10) || 0,
+      likes: 0, // Not tracked per day in current schema
+      bookings: 0, // Not tracked per day in current schema
+    }));
   }
 
   private async getRevenueAnalytics(
@@ -622,42 +692,176 @@ export class ListerAnalyticsService extends BaseService {
   /* STUBS – implement when you have the data                               */
   /* --------------------------------------------------------------------- */
   private async getGeographicData(userId: string, start: Date, end: Date): Promise<ListerGeographicData[]> {
-    // TODO: Implement geographic data retrieval
-    return [];
+    const result = await this.prisma.$queryRaw<Array<{
+      location: string;
+      views: string;
+      bookings: string;
+      revenue: string;
+    }>>`
+      SELECT
+        COALESCE(u.city, 'Unknown') || ', ' || COALESCE(u.country, 'Unknown') AS location,
+        COUNT(DISTINCT pv.id)::text AS views,
+        COUNT(DISTINCT b.id)::text AS bookings,
+        COALESCE(SUM(t.amount), 0)::numeric::text AS revenue
+      FROM "properties" p
+      LEFT JOIN "property_views" pv ON pv."propertyId" = p.id 
+        AND pv."viewedAt" >= ${start} AND pv."viewedAt" <= ${end}
+      LEFT JOIN "users" u ON pv."userId" = u.id
+      LEFT JOIN "bookings" b ON b."propertyId" = p.id 
+        AND b."createdAt" >= ${start} AND b."createdAt" <= ${end}
+      LEFT JOIN "transactions" t ON t."bookingId" = b.id 
+        AND t.status = 'COMPLETED'
+      WHERE p."ownerId" = ${userId}::uuid
+      GROUP BY u.city, u.country
+      HAVING COUNT(DISTINCT pv.id) > 0 OR COUNT(DISTINCT b.id) > 0
+      ORDER BY revenue DESC
+      LIMIT 20
+    `;
+
+    return result.map(r => ({
+      location: r.location,
+      views: parseInt(r.views, 10) || 0,
+      bookings: parseInt(r.bookings, 10) || 0,
+      revenue: parseFloat(r.revenue) || 0,
+    }));
   }
   private async getVisitorInsights(userId: string, start: Date, end: Date): Promise<VisitorInsights> {
-    // TODO: Implement visitor insights retrieval
+    const viewStats = await this.prisma.$queryRaw<Array<{
+      total_visitors: string;
+      returning_visitors: string;
+    }>>`
+      SELECT
+        COUNT(DISTINCT pv."userId")::text AS total_visitors,
+        COUNT(DISTINCT CASE 
+          WHEN visitor_count > 1 THEN pv."userId" 
+        END)::text AS returning_visitors
+      FROM "property_views" pv
+      JOIN "properties" p ON pv."propertyId" = p.id
+      LEFT JOIN (
+        SELECT pv2."userId", COUNT(*) as visitor_count
+        FROM "property_views" pv2
+        JOIN "properties" p2 ON pv2."propertyId" = p2.id
+        WHERE p2."ownerId" = ${userId}::uuid
+          AND pv2."viewedAt" >= ${start}
+          AND pv2."viewedAt" <= ${end}
+        GROUP BY pv2."userId"
+      ) vc ON vc."userId" = pv."userId"
+      WHERE p."ownerId" = ${userId}::uuid
+        AND pv."viewedAt" >= ${start}
+        AND pv."viewedAt" <= ${end}
+    `;
+
+    const stats = viewStats[0] || { total_visitors: '0', returning_visitors: '0' };
+
     return {
-      totalVisitors: 0,
-      returningVisitors: 0,
-      averageSessionDuration: 0,
+      totalVisitors: parseInt(stats.total_visitors, 10) || 0,
+      returningVisitors: parseInt(stats.returning_visitors, 10) || 0,
+      averageSessionDuration: 0, // No session tracking yet
       topReferrers: [],
-      deviceTypes: { mobile: 0, desktop: 0, tablet: 0 },
+      deviceTypes: { mobile: 0, desktop: 0, tablet: 0 }, // No device tracking yet
     };
   }
   private async getPropertyOverview(propertyId: string, start: Date, end: Date): Promise<PropertyAnalyticsOverview> {
-    // TODO: Implement property overview retrieval
+    const [views, uniqueViews, likes, bookings, revenue] = await Promise.all([
+      this.prisma.propertyView.count({
+        where: { propertyId, viewedAt: { gte: start, lte: end } },
+      }),
+      
+      this.prisma.propertyView.groupBy({
+        by: ['userId'],
+        where: { propertyId, viewedAt: { gte: start, lte: end } },
+        _count: true,
+      }),
+      
+      this.prisma.propertyLike.count({
+        where: { propertyId, createdAt: { gte: start, lte: end } },
+      }),
+      
+      this.prisma.booking.aggregate({
+        where: { propertyId, createdAt: { gte: start, lte: end } },
+        _count: true,
+      }),
+      
+      this.prisma.transaction.aggregate({
+        where: {
+          booking: { propertyId },
+          status: TransactionStatus.COMPLETED,
+          createdAt: { gte: start, lte: end },
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const uniqueViewsCount = uniqueViews.length;
+    const totalBookings = bookings._count;
+    const conversionRate = views > 0 ? (totalBookings / views) * 100 : 0;
+
     return {
-      totalViews: 0,
-      uniqueViews: 0,
-      totalLikes: 0,
-      totalBookings: 0,
-      revenue: 0,
-      conversionRate: 0,
-      averageRating: 0,
-      responseTime: 0,
+      totalViews: views,
+      uniqueViews: uniqueViewsCount,
+      totalLikes: likes,
+      totalBookings,
+      revenue: this.toNum(revenue._sum.amount),
+      conversionRate,
+      averageRating: 0, // No rating system yet
+      responseTime: 0, // No response time tracking yet
     };
   }
   private async getPropertyViewsOverTime(propertyId: string, start: Date, end: Date): Promise<ViewsAnalytics[]> {
-    // TODO: Implement property views over time retrieval
-    return [];
+    const result = await this.prisma.$queryRaw<Array<{
+      date: Date;
+      views: string;
+      unique_views: string;
+    }>>`
+      SELECT
+        DATE(pv."viewedAt") AS date,
+        COUNT(*)::text AS views,
+        COUNT(DISTINCT pv."userId")::text AS unique_views
+      FROM "property_views" pv
+      WHERE pv."propertyId" = ${propertyId}::uuid
+        AND pv."viewedAt" >= ${start}
+        AND pv."viewedAt" <= ${end}
+      GROUP BY DATE(pv."viewedAt")
+      ORDER BY date
+    `;
+
+    return result.map(r => ({
+      date: r.date.toISOString(),
+      views: parseInt(r.views, 10) || 0,
+      uniqueViews: parseInt(r.unique_views, 10) || 0,
+      likes: 0, // Not tracked per day
+      bookings: 0, // Not tracked per day
+    }));
   }
   private async getVisitorDemographics(propertyId: string, start: Date, end: Date): Promise<VisitorDemographics> {
-    // TODO: Implement visitor demographics retrieval
+    const locations = await this.prisma.$queryRaw<Array<{
+      city: string;
+      state: string;
+      country: string;
+      count: string;
+    }>>`
+      SELECT
+        COALESCE(u.city, 'Unknown') AS city,
+        COALESCE(u.state, 'Unknown') AS state,
+        COUNT(*)::text AS count
+      FROM "property_views" pv
+      JOIN "users" u ON pv."userId" = u.id
+      WHERE pv."propertyId" = ${propertyId}::uuid
+        AND pv."viewedAt" >= ${start}
+        AND pv."viewedAt" <= ${end}
+      GROUP BY u.city, u.state
+      ORDER BY count DESC
+      LIMIT 10
+    `;
+
     return {
-      ageGroups: [],
-      locations: [],
-      interests: []
+      ageGroups: [], // No age data in User table
+      locations: locations.map(l => ({
+        city: l.city,
+        state: l.state,
+        count: parseInt(l.count, 10) || 0,
+      })),
+      interests: [], // No interest data available
     };
   }
   // private async getBookingPatterns(propertyId: string, start: Date, end: Date): Promise<BookingPatterns[]> {

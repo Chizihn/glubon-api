@@ -8,6 +8,7 @@ import {
   RoomType,
 } from "@prisma/client";
 import { z } from "zod";
+import { NigerianState } from "../types/enums";
 
 export const createPropertySchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters"),
@@ -16,7 +17,7 @@ export const createPropertySchema = z.object({
   rentalPeriod: z.nativeEnum(RentalPeriod),
   address: z.string().min(10, "Address must be at least 10 characters"),
   city: z.string().min(2, "City must be at least 2 characters"),
-  state: z.string().min(2, "State must be at least 2 characters"),
+  state: z.nativeEnum(NigerianState),
   sqft: z.number().positive().optional(),
   bedrooms: z.number().int().min(0, "Bedrooms must be 0 or more").optional(),
   bathrooms: z.number().int().min(1, "Must have at least 1 bathroom"),
@@ -58,7 +59,7 @@ export const propertyFiltersSchema = z.object({
   
   // Location
   city: z.string().optional(),
-  state: z.string().optional(),
+  state: z.nativeEnum(NigerianState).optional(),
   
   // Geo-location
   latitude: z.number().min(-90).max(90).optional(),

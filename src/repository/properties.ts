@@ -17,11 +17,12 @@ import {
 import { BaseRepository } from "./base";
 import { logger } from "../utils";
 import { Decimal } from "@prisma/client/runtime/library";
+import { Service } from "typedi";
 
+@Service()
 export class PropertyRepository extends BaseRepository {
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
+
 
   async create(data: any, tx?: any): Promise<Property> {
     const client = tx || this.prisma;

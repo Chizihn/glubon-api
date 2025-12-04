@@ -1,17 +1,23 @@
 import { Worker, Job } from "bullmq";
 import { Redis } from "ioredis";
 import { logger } from "../../utils";
-import { Container } from "../../container";
+// import { Container } from "../../container";
 import { PAYMENT_QUEUE_NAME } from "../queues/payment.queue";
 import { TransactionService } from "../../services/transaction";
 
+import { Service, Inject } from "typedi";
+import { PrismaClient } from "@prisma/client";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../../types/di-tokens";
+
+@Service()
 export class PaymentWorker {
   private worker: Worker;
-  private container: Container;
 
-  constructor(container: Container, redis: Redis) {
-    this.container = container;
-    
+  constructor(
+    @Inject(REDIS_TOKEN) private redis: Redis,
+    @Inject(PRISMA_TOKEN) private prisma: PrismaClient,
+    private transactionService: TransactionService
+  ) {
     this.worker = new Worker(
       PAYMENT_QUEUE_NAME,
       async (job: Job) => {
@@ -42,15 +48,16 @@ export class PaymentWorker {
       throw new Error("Job data missing reference");
     }
 
-    const transactionService = new TransactionService(
-      this.container.getPrisma(),
-      this.container.getRedis()
-    );
+    // TransactionService is already injected
+    // const transactionService = new TransactionService(
+    //   this.container.getPrisma(),
+    //   this.container.getRedis()
+    // );
 
     try {
       // Verify the transaction using the existing service logic
       // This service handles calling Paystack and updating the transaction/booking status
-      const result = await transactionService.verifyTransaction(reference);
+      const result = await this.transactionService.verifyTransaction(reference);
       
       if (!result.success) {
         // If verification fails but it's not a terminal error (e.g. network issue), 
@@ -65,7 +72,7 @@ export class PaymentWorker {
         // If the transaction is still PENDING after verification, we might want to throw to retry later
         // But let's check the transaction status first.
         
-        const tx = await this.container.getPrisma().transaction.findUnique({
+        const tx = await this.prisma.transaction.findUnique({
           where: { reference },
         });
         

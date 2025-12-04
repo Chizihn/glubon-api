@@ -7,21 +7,20 @@ import {
   UseMiddleware,
 } from "type-graphql";
 import { Context } from "../../types";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AuthMiddleware } from "../../middleware";
 import { AdAnalyticsService } from "../../services/ad-analytics";
 import { AdAnalyticsSummary } from "./ad-analytics.types";
 import { AdAnalyticsFilter, RecordAdInteractionInput } from "./ad-analytics.inputs";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => AdAnalyticsSummary)
 export class AdAnalyticsResolver {
-  private adAnalyticsService: AdAnalyticsService;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.adAnalyticsService = container.resolve('adAnalyticsService');
-  }
+  constructor(
+    private adAnalyticsService: AdAnalyticsService
+  ) {}
 
   @Query(() => AdAnalyticsSummary)
   @UseMiddleware(AuthMiddleware)

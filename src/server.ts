@@ -2,16 +2,17 @@
 import { createApp } from "./app";
 import { appConfig, config } from "./config";
 import { logger } from "./utils";
-import { getContainer } from "./services";
 import { PaymentWorker } from "./jobs/workers/payment.worker";
+import { Container } from "typedi";
 
 async function bootstrap() {
   try {
     const { httpServer, gracefulShutdown } = await createApp();
     
+
+
     // Initialize workers
-    const container = getContainer();
-    const paymentWorker = new PaymentWorker(container, container.getRedis());
+    const paymentWorker = Container.get(PaymentWorker);
 
     // Handle process signals
     process.on("SIGTERM", async () => {
@@ -51,13 +52,13 @@ ${
       `);
     });
   } catch (error) {
-    // logger.error("Failed to start server:", error);
+    logger.error("Failed to start server:", error);
     process.exit(1);
   }
 }
 
 // Initialize the application
 bootstrap().catch((error) => {
-  // logger.error("Bootstrap failed:", error);
+  logger.error("Bootstrap failed:", error);
   process.exit(1);
 });

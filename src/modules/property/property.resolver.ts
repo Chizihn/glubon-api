@@ -27,7 +27,7 @@ import {
   SimpleCreatePropertyInput,
   SimpleUpdatePropertyInput,
 } from "./property.simple.inputs";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { PropertyService } from "../../services/property";
 import { Context } from "../../types";
 import { logger } from "../../utils";
@@ -48,14 +48,14 @@ import {
 import { AuthMiddleware, RequireRole,  } from "../../middleware";
 import { graphqlMapSearchRateLimiter } from "../../middleware/rateLimiter";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver()
 export class PropertyResolver {
-  private propertyService: PropertyService;
-
-  constructor() {
-    const container = getContainer();
-    this.propertyService = container.resolve('propertyService');
-  }
+  constructor(
+    private propertyService: PropertyService
+  ) {}
 
   private transformPropertyToResponse(property: any): Property {
     return {

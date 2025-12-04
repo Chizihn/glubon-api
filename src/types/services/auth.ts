@@ -8,6 +8,7 @@ export interface RegisterInput {
   password?: string;
   phoneNumber?: string;
   role: RoleEnum;
+  roles?: RoleEnum[];
   provider?: ProviderEnum;
 }
 

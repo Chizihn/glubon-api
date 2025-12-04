@@ -9,23 +9,24 @@ export class UserEmailTemplates {
       content: `
         <h2>Hello ${firstName}!</h2>
         <p>We're thrilled to welcome you to Glubon, Nigeria's leading platform for property rentals. Discover your perfect home or list your property with ease.</p>
-        <div style="background: #f8fafc; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #1d4ed8;">
-          <p><strong>Explore Glubon's Features:</strong></p>
-          <ul style="list-style: none;">
+        
+        <div style="background-color: #EFF6FF; border-radius: 8px; padding: 24px; margin: 24px 0;">
+          <p style="margin-top: 0; font-weight: 600; color: #1E40AF;">Explore Glubon's Features:</p>
+          <ul style="list-style: none; padding: 0; margin: 0;">
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Browse verified properties
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Browse verified properties
             </li>
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Search rentals by location
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Search rentals by location
             </li>
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Connect with property owners
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Connect with property owners
             </li>
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Save favorite listings
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Save favorite listings
             </li>
             <li style="display: flex; align-items: center;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Secure rental process
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Secure rental process
             </li>
           </ul>
         </div>
@@ -51,23 +52,24 @@ export class UserEmailTemplates {
       content: `
         <h2>Hello ${firstName}!</h2>
         <p>Thank you for joining Glubon with your ${provider} account. Your email has been verified, and you're ready to explore.</p>
-        <div style="background: #f8fafc; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #1d4ed8;">
-          <p><strong>Explore Glubon's Features:</strong></p>
-          <ul style="list-style: none;">
+        
+        <div style="background-color: #EFF6FF; border-radius: 8px; padding: 24px; margin: 24px 0;">
+          <p style="margin-top: 0; font-weight: 600; color: #1E40AF;">Explore Glubon's Features:</p>
+          <ul style="list-style: none; padding: 0; margin: 0;">
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Browse verified properties
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Browse verified properties
             </li>
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Search rentals by location
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Search rentals by location
             </li>
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Connect with property owners
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Connect with property owners
             </li>
             <li style="display: flex; align-items: center; margin-bottom: 12px;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Save favorite listings
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Save favorite listings
             </li>
             <li style="display: flex; align-items: center;">
-              <span style="color: #1d4ed8; margin-right: 12px;">✓</span> Secure rental process
+              <span style="color: #2563EB; margin-right: 12px; font-weight: bold;">✓</span> Secure rental process
             </li>
           </ul>
         </div>
@@ -109,29 +111,29 @@ export class UserEmailTemplates {
         <h2>Hello ${firstName},</h2>
         <p>You're receiving this email because you requested to ${actionText} for your Glubon account.</p>
         
-        <div style="background: #F0F9FF; border-radius: 8px; padding: 20px; margin: 24px 0; border-left: 4px solid #0EA5E9;">
-          <p style="color: #0369A1; font-weight: 500; margin: 0 0 12px 0;">
+        <div style="background-color: #EFF6FF; border-radius: 8px; padding: 24px; margin: 24px 0; text-align: center;">
+          <p style="color: #1E40AF; font-weight: 500; margin: 0 0 16px 0;">
             ${isLink ? 'Click the button below to continue:' : 'Use the following verification code:'}
           </p>
           
           ${isLink ? `
-            <div style="text-align: center; margin: 20px 0;">
-              <a href="${codeOrLink}" class="button" style="background-color: #1D4ED8; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; transition: all 0.2s ease;">
+            <div style="margin: 20px 0;">
+              <a href="${codeOrLink}" class="btn" style="display: inline-block; background-color: #2563EB; color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; padding: 12px 32px; border-radius: 8px;">
                 ${purpose === 'email_verification' ? 'Verify Email' : 'Reset Password'}
               </a>
             </div>
-            <p style="color: #6B7280; font-size: 14px; text-align: center; margin: 16px 0 0 0;">
+            <p style="color: #6B7280; font-size: 14px; margin: 16px 0 0 0;">
               Or copy and paste this link in your browser:<br>
-              <span style="word-break: break-all; color: #3B82F6;">${codeOrLink}</span>
+              <span style="word-break: break-all; color: #2563EB;">${codeOrLink}</span>
             </p>
           ` : `
-            <div style="font-size: 28px; font-weight: 700; color: #1D4ED8; background: #EFF6FF; padding: 20px; border-radius: 8px; margin: 16px 0; letter-spacing: 2px; text-align: center; font-family: monospace;">
+            <div style="font-size: 32px; font-weight: 700; color: #1E40AF; letter-spacing: 4px; font-family: monospace; background-color: #ffffff; padding: 16px; border-radius: 8px; display: inline-block; border: 1px solid #DBEAFE;">
               ${displayCode}
             </div>
           `}
         </div>
         
-        <div style="background: #FFFBEB; border: 1px solid #FCD34D; border-radius: 8px; padding: 16px; margin: 24px 0;">
+        <div style="background-color: #FFFBEB; border: 1px solid #FCD34D; border-radius: 8px; padding: 16px; margin: 24px 0;">
           <p style="color: #92400E; margin: 0; font-size: 14px; line-height: 1.5;">
             <strong>Security Notice:</strong> This ${isLink ? 'link' : 'verification code'} will expire in 1 hour. 
             If you didn't request this, please ignore this email or contact our support team immediately.
@@ -140,8 +142,8 @@ export class UserEmailTemplates {
         
         <p style="color: #6B7280; font-size: 14px; margin: 24px 0 0 0;">
           <strong>Need help?</strong> Contact our support team at 
-          <a href="mailto:support@glubon.com" style="color: #3B82F6; text-decoration: none;">support@glubon.com</a> 
-          or visit our <a href="${process.env.FRONTEND_URL || 'https://glubon.com'}/help" style="color: #3B82F6; text-decoration: none;">Help Center</a>.
+          <a href="mailto:support@glubon.com" style="color: #2563EB; text-decoration: none;">support@glubon.com</a> 
+          or visit our <a href="${process.env.FRONTEND_URL || 'https://glubon.com'}/help" style="color: #2563EB; text-decoration: none;">Help Center</a>.
         </p>
       `,
       cta: isLink ? {
@@ -193,9 +195,9 @@ Need help? Contact our support team at support@glubon.com or visit ${process.env
       subtitle: `Your ${provider} Account is Connected`,
       content: `
         <h2>Hello ${firstName}!</h2>
-        <div style="background: #f8fafc; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #1d4ed8;">
-          <p>Your ${provider} account is now linked to Glubon.</p>
-          <p>You can now sign in with either your ${provider} account or your email/password.</p>
+        <div style="background-color: #F0FDF4; border-radius: 8px; padding: 24px; margin: 24px 0; border: 1px solid #BBF7D0;">
+          <p style="margin: 0; color: #166534; font-weight: 500;">Your ${provider} account is now linked to Glubon.</p>
+          <p style="margin: 8px 0 0 0; color: #15803D;">You can now sign in with either your ${provider} account or your email/password.</p>
         </div>
         <p>If you didn't link this account, please contact our support team immediately.</p>
       `,
@@ -223,9 +225,9 @@ Need help? Contact our support team at support@glubon.com or visit ${process.env
       content: `
         <h2>Hello ${firstName},</h2>
         <p>${message}</p>
-        <div style="background: #f8fafc; border-left: 4px solid #1d4ed8; padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0;">
-          <p><strong>${title}</strong></p>
-          <p>${message}</p>
+        <div style="background-color: #EFF6FF; border-radius: 8px; padding: 24px; margin: 24px 0; border-left: 4px solid #2563EB;">
+          <p style="margin: 0 0 8px 0; font-weight: 600; color: #1E40AF;">${title}</p>
+          <p style="margin: 0; color: #1E40AF;">${message}</p>
         </div>
         <p>Thank you for using Glubon.</p>
       `,
@@ -261,8 +263,8 @@ Need help? Contact our support team at support@glubon.com or visit ${process.env
         <p>Your account status has been updated to: <strong>${status}</strong></p>
         
         ${reason ? `
-          <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0;">
-            <p><strong>Reason:</strong> ${reason}</p>
+          <div style="background-color: #FFFBEB; border-radius: 8px; padding: 24px; margin: 24px 0; border: 1px solid #FCD34D;">
+            <p style="margin: 0; color: #92400E;"><strong>Reason:</strong> ${reason}</p>
           </div>
         ` : ''}
         

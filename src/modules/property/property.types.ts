@@ -21,6 +21,12 @@ import {
 import { User } from "../user/user.types";
 import { PaginationInfo } from "../../types";
 import { MapSearchInput } from "./property.map.inputs";
+import { NigerianState } from "../../types/enums";
+
+registerEnumType(NigerianState, {
+  name: "NigerianState",
+  description: "States in Nigeria",
+});
 
 @ObjectType()
 export class MapSearchResponse {
@@ -57,8 +63,8 @@ export class MyPropertiesFilterInput {
   @Field({ nullable: true })
   city?: string;
 
-  @Field({ nullable: true })
-  state?: string;
+  @Field(() => NigerianState, { nullable: true })
+  state?: NigerianState;
 
   @Field(() => Date, { nullable: true })
   createdAfter?: Date;
@@ -143,8 +149,8 @@ export class PropertyFilterInput {
   @Field(() => String, { nullable: true })
   city?: string;
 
-  @Field(() => String, { nullable: true })
-  state?: string;
+  @Field(() => NigerianState, { nullable: true })
+  state?: NigerianState;
 
   @Field(() => [String], { nullable: true })
   amenities?: string[];
@@ -263,8 +269,8 @@ export class Property {
   @Field(() => String)
   city: string;
 
-  @Field(() => String)
-  state: string;
+  @Field(() => NigerianState)
+  state: NigerianState;
 
   @Field(() => String, { defaultValue: "Nigeria" })
   country: string;

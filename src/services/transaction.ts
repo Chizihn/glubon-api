@@ -8,7 +8,7 @@ import {
 import { Decimal } from "@prisma/client/runtime/library";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
-import { getContainer } from ".";
+// import { getContainer } from ".";
 
 export interface CreateTransactionInput {
   type: TransactionType;
@@ -21,13 +21,17 @@ export interface CreateTransactionInput {
   metadata?: any;
 }
 
-export class TransactionService extends BaseService {
-  private notificationService: any; // Using any to avoid circular dependency
+import { Service, Inject } from "typedi";
+import { NotificationService } from "./notification";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+@Service()
+export class TransactionService extends BaseService {
+  constructor(
+    @Inject("prisma") prisma: PrismaClient,
+    @Inject("redis") redis: Redis,
+    private notificationService: NotificationService
+  ) {
     super(prisma, redis);
-    const container = getContainer();
-    this.notificationService = container.resolve('notificationService');
   }
 
   async createTransaction(data: CreateTransactionInput, userId: string) {

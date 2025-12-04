@@ -1,7 +1,7 @@
 import { PrismaClient, PropertyStatus, NotificationType } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
-import { emailServiceSingleton } from "./email";
+import { EmailService } from "./email";
 import { NotificationService } from "./notification";
 import { IBaseResponse } from "../types";
 import {
@@ -10,16 +10,19 @@ import {
 } from "../types/services/admin";
 import { NotFoundError } from "../utils";
 import { AdminPropertyRepository } from "../repository/admin-property";
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
+@Service()
 export class AdminPropertyService extends BaseService {
-  private emailService = emailServiceSingleton;
-  private notificationService: NotificationService;
-  private repository: AdminPropertyRepository;
-
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private notificationService: NotificationService,
+    private repository: AdminPropertyRepository,
+    private emailService: EmailService
+  ) {
     super(prisma, redis);
-    this.notificationService = new NotificationService(prisma, redis);
-    this.repository = new AdminPropertyRepository(prisma, redis);
   }
 
   async getAllProperties(

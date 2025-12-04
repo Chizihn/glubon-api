@@ -36,264 +36,200 @@ export function generateBaseTemplate({
       <title>${title} | Glubon</title>
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
       <style>
-        /* Base Styles */
+        /* Reset */
         body, html {
-          margin: 0 !important;
-          padding: 0 !important;
-          -ms-text-size-adjust: 100%;
+          margin: 0;
+          padding: 0;
           -webkit-text-size-adjust: 100%;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          line-height: 1.6;
-          color: #1F2937;
+          -ms-text-size-adjust: 100%;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
           background-color: #F3F4F6;
+          color: #374151;
         }
-        
-        /* Container */
-        .email-container {
-          max-width: 600px;
+
+        /* Layout */
+        .wrapper {
+          width: 100%;
+          table-layout: fixed;
+          background-color: #F3F4F6;
+          padding-bottom: 40px;
+        }
+
+        .main {
+          background-color: #ffffff;
           margin: 0 auto;
-          background: #FFFFFF;
-          border-radius: 8px;
+          width: 100%;
+          max-width: 600px;
+          border-spacing: 0;
+          font-family: 'Inter', sans-serif;
+          color: #374151;
+          border-radius: 12px;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
           overflow: hidden;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
-        
+
         /* Header */
-        .email-header {
-          background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%);
-          padding: 32px 24px;
+        .header {
+          padding: 32px 0;
           text-align: center;
         }
-        
+
         .logo {
-          max-width: 180px;
-          height: auto;
-          margin-bottom: 16px;
+          width: 48px;
+          height: 48px;
+          border-radius: 8px;
         }
-        
-        .email-header h1 {
-          color: #FFFFFF;
+
+        /* Content */
+        .content {
+          padding: 0 40px 40px 40px;
+        }
+
+        .title {
           font-size: 24px;
           font-weight: 700;
-          margin: 0 0 8px 0;
-          line-height: 1.3;
+          color: #111827;
+          margin: 0 0 16px 0;
+          text-align: center;
+          letter-spacing: -0.025em;
         }
-        
-        .email-header p {
-          color: rgba(255, 255, 255, 0.9);
-          font-size: 15px;
-          margin: 0;
+
+        .subtitle {
+          font-size: 16px;
+          color: #6B7280;
+          margin: 0 0 32px 0;
+          text-align: center;
           line-height: 1.5;
         }
-        
-        /* Content */
-        .email-body {
-          padding: 32px 24px;
+
+        .text {
+          font-size: 16px;
+          line-height: 1.625;
+          color: #374151;
+          margin: 0 0 24px 0;
         }
-        
-        .email-body h2 {
-          color: #111827;
-          font-size: 20px;
-          font-weight: 600;
-          margin: 0 0 20px 0;
-        }
-        
-        .email-body p {
-          color: #4B5563;
-          font-size: 15px;
-          line-height: 1.6;
-          margin: 0 0 20px 0;
-        }
-        
+
         /* Button */
-        .button-container {
-          margin: 32px 0;
+        .btn-container {
           text-align: center;
+          margin: 32px 0;
         }
-        
-        .button {
+
+        .btn {
           display: inline-block;
-          background: #1D4ED8;
-          color: #FFFFFF !important;
-          font-size: 15px;
+          background-color: #2563EB;
+          color: #ffffff;
+          font-size: 16px;
           font-weight: 600;
           text-decoration: none;
-          padding: 14px 28px;
-          border-radius: 6px;
-          transition: all 0.2s ease;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          padding: 12px 32px;
+          border-radius: 8px;
+          transition: background-color 0.2s;
         }
-        
-        .button:hover {
-          background: #1E40AF;
-          transform: translateY(-1px);
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+        .btn:hover {
+          background-color: #1D4ED8;
         }
-        
+
         /* Footer */
-        .email-footer {
-          background: #F9FAFB;
-          padding: 24px;
+        .footer {
+          padding: 32px 0;
           text-align: center;
-          border-top: 1px solid #E5E7EB;
+          background-color: #F3F4F6;
         }
-        
+
+        .footer-text {
+          font-size: 12px;
+          color: #9CA3AF;
+          margin-bottom: 12px;
+        }
+
         .footer-links {
-          margin: 0 0 16px 0;
+          margin: 0;
           padding: 0;
           list-style: none;
         }
-        
-        .footer-links li {
+
+        .footer-link {
           display: inline-block;
+          color: #6B7280;
+          font-size: 12px;
+          text-decoration: none;
           margin: 0 8px;
         }
-        
-        .footer-links a {
-          color: #6B7280;
-          font-size: 13px;
-          text-decoration: none;
-          transition: color 0.2s ease;
-        }
-        
-        .footer-links a:hover {
-          color: #1D4ED8;
+
+        .footer-link:hover {
+          color: #374151;
           text-decoration: underline;
         }
-        
-        .copyright {
-          color: #9CA3AF;
-          font-size: 13px;
-          margin: 16px 0 0 0;
+
+        /* Utilities */
+        .divider {
+          height: 1px;
+          background-color: #E5E7EB;
+          margin: 32px 0;
+          border: none;
         }
-        
-        .social-links {
-          margin: 24px 0 16px 0;
-        }
-        
-        .social-links a {
-          display: inline-block;
-          margin: 0 8px;
-          color: #6B7280;
-          text-decoration: none;
-          transition: color 0.2s ease;
-        }
-        
-        .social-links a:hover {
-          color: #1D4ED8;
-        }
-        
+
         /* Responsive */
         @media screen and (max-width: 600px) {
-          .email-container {
-            margin: 0 10px;
-            border-radius: 6px;
+          .main {
+            width: 100% !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
           }
-          
-          .email-header, .email-body {
-            padding: 24px 16px;
+          .content {
+            padding: 0 24px 32px 24px !important;
           }
-          
-          .email-header h1 {
-            font-size: 22px;
-          }
-          
-          .button {
-            display: block;
-            width: 100%;
-            text-align: center;
-          }
-          
-          .footer-links li {
-            display: block;
-            margin: 8px 0;
-          }
-        }
-        
-        /* Utility Classes */
-        .text-muted {
-          color: #6B7280 !important;
-        }
-        
-        .text-center {
-          text-align: center !important;
-        }
-        
-        .mb-0 {
-          margin-bottom: 0 !important;
-        }
-        
-        .mt-0 {
-          margin-top: 0 !important;
         }
       </style>
     </head>
-    <body style="margin: 0; padding: 0; background-color: #F3F4F6;">
-      <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-        <tr>
-          <td align="center" style="padding: 20px 0;">
-            <!--[if mso]>
-            <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="600" align="center">
-            <tr>
-            <td>
-            <![endif]-->
-            
-            <div class="email-container">
-              <!-- Header -->
-              <div class="email-header">
-                <a href="${appUrl}" style="display: inline-block;">
-                  <img src="${logoUrl}" alt="Glubon" class="logo" style="max-width: 180px; height: auto;">
-                </a>
-                <h1>${title}</h1>
-                ${subtitle ? `<p style="color: rgba(255, 255, 255, 0.9); font-size: 15px; margin: 8px 0 0 0; line-height: 1.5;">${subtitle}</p>` : ''}
-              </div>
-              
-              <!-- Body -->
-              <div class="email-body">
-                ${content}
-                
-                ${cta ? `
-                  <div class="button-container">
-                    <a href="${cta.url}" class="button" style="color: #FFFFFF; text-decoration: none;">
-                      ${cta.text}
-                    </a>
-                  </div>
-                ` : ''}
-              </div>
-              
-              <!-- Footer -->
-              <div class="email-footer">
-                <div class="social-links">
-                  <a href="https://facebook.com/glubon" style="color: #6B7280; text-decoration: none; margin: 0 8px;">Facebook</a>
-                  <a href="https://twitter.com/glubon" style="color: #6B7280; text-decoration: none; margin: 0 8px;">Twitter</a>
-                  <a href="https://instagram.com/glubon" style="color: #6B7280; text-decoration: none; margin: 0 8px;">Instagram</a>
-                  <a href="https://linkedin.com/company/glubon" style="color: #6B7280; text-decoration: none; margin: 0 8px;">LinkedIn</a>
-                </div>
-                
-                <ul class="footer-links" style="list-style: none; padding: 0; margin: 0 0 16px 0;">
-                  ${footerLinks.map(link => `
-                    <li style="display: inline-block; margin: 0 8px;">
-                      <a href="${link.url}" style="color: #6B7280; font-size: 13px; text-decoration: none;">
-                        ${link.text}
-                      </a>
-                    </li>
-                  `).join('')}
-                </ul>
-                
-                <p class="copyright" style="color: #9CA3AF; font-size: 13px; margin: 16px 0 0 0;">
-                  &copy; ${currentYear} Glubon. All rights reserved.
-                </p>
-              </div>
-            </div>
-            
-            <!--[if mso]>
+    <body>
+      <div class="wrapper">
+        <table class="main" align="center">
+          <!-- Header -->
+          <tr>
+            <td class="header">
+              <a href="${appUrl}">
+                <img src="${logoUrl}" alt="Glubon" class="logo">
+              </a>
             </td>
-            </tr>
-            </table>
-            <![endif]-->
-          </td>
-        </tr>
-      </table>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td class="content">
+              <h1 class="title">${title}</h1>
+              ${subtitle ? `<p class="subtitle">${subtitle}</p>` : ''}
+              
+              <div class="text">
+                ${content}
+              </div>
+
+              ${cta ? `
+                <div class="btn-container">
+                  <a href="${cta.url}" class="btn">${cta.text}</a>
+                </div>
+              ` : ''}
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <div class="footer">
+          <p class="footer-text">&copy; ${currentYear} Glubon. All rights reserved.</p>
+          <div class="footer-links">
+            ${footerLinks.map(link => `
+              <a href="${link.url}" class="footer-link">${link.text}</a>
+            `).join('')}
+          </div>
+          <div style="margin-top: 16px;">
+            <a href="https://twitter.com/glubon" class="footer-link">Twitter</a>
+            <a href="https://instagram.com/glubon" class="footer-link">Instagram</a>
+            <a href="https://linkedin.com/company/glubon" class="footer-link">LinkedIn</a>
+          </div>
+        </div>
+      </div>
     </body>
     </html>
   `;
@@ -306,11 +242,6 @@ export function generateBaseTemplate({
   text += `---\n`;
   text += footerLinks.map(link => `${link.text}: ${link.url}`).join(' | ');
   text += `\n\n`;
-  text += `Follow us:\n`;
-  text += `Facebook: https://facebook.com/glubon\n`;
-  text += `Twitter: https://twitter.com/glubon\n`;
-  text += `Instagram: https://instagram.com/glubon\n`;
-  text += `LinkedIn: https://linkedin.com/company/glubon\n\n`;
   text += `© ${currentYear} Glubon. All rights reserved.`;
 
   return { html, text };

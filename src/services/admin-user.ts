@@ -7,7 +7,7 @@ import {
 } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
-import { emailServiceSingleton } from "./email";
+// import { emailServiceSingleton } from "./email";
 import { NotificationService } from "./notification";
 import { IBaseResponse } from "../types";
 import { VerificationStatus } from "@prisma/client";
@@ -26,11 +26,12 @@ import { AdminUsersRepository } from "../repository/admin-user";
 import { SubaccountService } from "./subaccount";
 import { PaymentQueue } from "../jobs/queues/payment.queue";
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+import { EmailService } from "./email";
+
+@Service()
 export class AdminUsersService extends BaseService {
-  private emailService = emailServiceSingleton;
-  private notificationService: NotificationService;
-  private repository: AdminUsersRepository;
-  private subaccountService: SubaccountService;
 
   /**
    * Get verifications with filtering and pagination
@@ -72,11 +73,15 @@ export class AdminUsersService extends BaseService {
     }
   }
 
-  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private notificationService: NotificationService,
+    private repository: AdminUsersRepository,
+    private subaccountService: SubaccountService,
+    private emailService: EmailService
+  ) {
     super(prisma, redis);
-    this.notificationService = new NotificationService(prisma, redis);
-    this.repository = new AdminUsersRepository(prisma, redis);
-    this.subaccountService = new SubaccountService(prisma, redis, paymentQueue);
   }
 
   /**

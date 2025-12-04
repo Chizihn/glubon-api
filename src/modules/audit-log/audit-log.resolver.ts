@@ -4,21 +4,20 @@ import {
   Args,
   UseMiddleware,
 } from "type-graphql";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AuthMiddleware } from "../../middleware";
 import { AuditLogService } from "../../services/audit-log";
 import { AuditLogType, AuditLogsResponse, AuditAction } from "./audit-log.types";
 import { AuditLogFilter } from "./audit-log.inputs";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => AuditLogType)
 export class AuditLogResolver {
-  private auditLogService: AuditLogService;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.auditLogService = container.resolve('auditLogService');
-  }
+  constructor(
+    private auditLogService: AuditLogService
+  ) {}
 
   @Query(() => AuditLogsResponse)
   @UseMiddleware(AuthMiddleware)

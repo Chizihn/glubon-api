@@ -24,11 +24,18 @@ type UserPresence = {
   };
 };
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+
+@Service()
 export class PresenceService extends BaseService {
   private readonly ONLINE_USERS_KEY = 'online_users';
   private readonly PRESENCE_TTL = 60 * 5; // 5 minutes
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis
+  ) {
     super(prisma, redis);
     this.redis = redis;
   }
@@ -159,10 +166,21 @@ export class PresenceService extends BaseService {
   }
 
   async getBatchUserPresence(userIds: string[]): Promise<UserPresence[]> {
-    // Check Redis for online users
-    const onlineStatuses = await Promise.all(
-      userIds.map(id => this.redis.sismember(this.ONLINE_USERS_KEY, id))
-    );
+    // Use Redis pipelining for efficient batch operations
+    const pipeline = this.redis.pipeline();
+    
+    // Queue all SISMEMBER commands in a single pipeline
+    for (const userId of userIds) {
+      pipeline.sismember(this.ONLINE_USERS_KEY, userId);
+    }
+    
+    // Execute all commands at once
+    const pipelineResults = await pipeline.exec();
+    
+    // Extract online statuses from pipeline results
+    const onlineStatuses = pipelineResults?.map(([err, result]) => 
+      err ? false : result === 1
+    ) || [];
 
     // Get all presences from database
     const presences = await (this.prisma as any).userPresence.findMany({
@@ -181,7 +199,7 @@ export class PresenceService extends BaseService {
     // Create a map of user ID to online status
     const onlineStatusMap = new Map<string, boolean>();
     userIds.forEach((userId, index) => {
-      onlineStatusMap.set(userId, onlineStatuses[index] === 1);
+      onlineStatusMap.set(userId, onlineStatuses[index] || false);
     });
 
     // Merge online status from Redis

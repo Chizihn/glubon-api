@@ -41,7 +41,13 @@ export const AuthMiddleware: MiddlewareFn<Context> = async (
       throw new UnauthorizedError("Account has been deactivated");
     }
 
-    context.user = user;
+    // Set activeRole from JWT token (this is what was selected during login)
+    // The decoded token contains the role the user chose when logging in
+    context.user = {
+      ...user,
+      activeRole: decoded.activeRole || decoded.role, // activeRole takes precedence
+    } as any;
+    
     return next();
   } catch (error) {
     

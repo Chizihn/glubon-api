@@ -17,24 +17,23 @@ import {
   GetUnitsArgs,
 } from "./unit.types";
 import { UnitStatus, RoleEnum } from "@prisma/client";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { UnitService } from "../../services/unit";
 import { Context } from "../../types";
 import { AuthMiddleware, RequireRole } from "../../middleware";
 import { Decimal } from "@prisma/client/runtime/library";
 import { PrismaClient } from "@prisma/client";
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN } from "../../types/di-tokens";
+
+@Service()
 @Resolver()
 export class UnitResolver {
-  private unitService: UnitService;
-  private prisma: PrismaClient;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.unitService = container.resolve('unitService');
-    this.prisma = container.getPrisma() as unknown as PrismaClient;
-  }
+  constructor(
+    private unitService: UnitService,
+    @Inject(PRISMA_TOKEN) private prisma: PrismaClient
+  ) {}
 
   // PUBLIC: Property owners can view their units
   @Query(() => PaginatedUnitsResponse)

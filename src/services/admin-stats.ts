@@ -34,12 +34,18 @@ import * as fs from "fs";
 import * as path from "path";
 import { AdminStatsRepository } from "../repository/admin-stats";
 
-export class AdminStatsService extends BaseService {
-  private repository: AdminStatsRepository;
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+@Service()
+export class AdminStatsService extends BaseService {
+
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private repository: AdminStatsRepository
+  ) {
     super(prisma, redis);
-    this.repository = new AdminStatsRepository(prisma, redis);
   }
 
   /**

@@ -11,7 +11,7 @@ import {
 } from "type-graphql";
 import { Context } from "../../types";
 import {  Booking } from "../booking/booking.types";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { DisputeService } from "../../services/dispute";
 import { AuthMiddleware } from "../../middleware";
 import { CreateDisputeInput, ResolveDisputeInput } from "./dispute.inputs";
@@ -20,14 +20,14 @@ import { ServiceResponse } from "../../types";
 import { Dispute, PaginatedDisputes } from "./dispute.types";
 import { User } from "../user/user.types";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => Dispute)
 export class DisputeResolver {
-  private disputeService: DisputeService;
-
-  constructor() {
-        const container = getContainer();
-    this.disputeService = container.resolve('disputeService');
-  }
+  constructor(
+    private disputeService: DisputeService
+  ) {}
 
   @FieldResolver(() => Booking, { nullable: true })
   async booking(@Root() dispute: Dispute): Promise<Booking | null> {

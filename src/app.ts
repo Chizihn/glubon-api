@@ -8,10 +8,10 @@ import { WebSocketServer } from "ws";
 import { expressMiddleware } from "@as-integrations/express5";
 import { createGraphQLSchema } from "./graphql/schemas";
 import { errorHandler } from "./middleware/errorHandler";
-import { createServices, registerServices, setContainer } from "./services";
+import { Container } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "./types/di-tokens";
 import { createWebhookRouter } from "./routes/webhook";
-import { Container } from "./container";
-import { registerRepositories } from "./repository/index";
+// import { registerRepositories } from "./repository/index";
 import { appConfig, corsConfig, prisma, redis } from "./config";
 import { createApolloServer } from "./graphql/server";
 import { createWebSocketServer } from "./graphql/websocket";
@@ -29,20 +29,9 @@ export async function createApp() {
     // Create HTTP server
     const httpServer = createServer(app);
 
-    // Initialize container with prisma and redis
-    const container = Container.getInstance(prisma, redis);
-
-    // Set the container instance for services to use
-    setContainer(container);
-
-    // Register all services with the container
-    registerServices(container);
-    
-    // Register all repositories with the container
-    registerRepositories(container);
-
-    // For backward compatibility
-    const services = createServices(prisma, redis);
+    // Initialize TypeDI container
+    Container.set(PRISMA_TOKEN, prisma);
+    Container.set(REDIS_TOKEN, redis);
 
     // Initialize background workers
     if (process.env.NODE_ENV !== "test") {
@@ -62,7 +51,7 @@ export async function createApp() {
     });
 
     // Set up WebSocket server for subscriptions
-    const wsCleanup = await createWebSocketServer(wsServer, schema, services);
+    const wsCleanup = await createWebSocketServer(wsServer, schema);
 
     // Skip helmet for GraphQL to allow embedded Apollo landing page
     app.use((req, res, next) => {
@@ -88,8 +77,8 @@ export async function createApp() {
     app.use("/api/oauth", oauthRestRouter);
 
     // Paystack webhook endpoint
-    const paymentQueue = container.resolve("paymentQueue") as any;
-    app.use("/api/webhook", createWebhookRouter(prisma, redis, paymentQueue));
+    // Paystack webhook endpoint
+    app.use("/api/webhook", createWebhookRouter());
     app.get("/payment-callback", async (req, res) => {
       const { reference, status } = req.query;
 
@@ -215,7 +204,7 @@ export async function createApp() {
       apolloServer,
       wsServer,
       wsCleanup,
-      services,
+      // services, // Removed
       gracefulShutdown,
     };
   } catch (error) {

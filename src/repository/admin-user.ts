@@ -16,10 +16,11 @@ import {
 } from "../types/services/admin";
 import { logger } from "../utils";
 
+import { Service } from "typedi";
+
+@Service()
 export class AdminUsersRepository extends BaseRepository {
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
 
   /**
    * Get all users (excluding admin roles unless specified)

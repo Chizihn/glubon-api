@@ -6,7 +6,7 @@ import {
 } from "@prisma/client";
 import Redis from "ioredis";
 import { BaseService } from "./base";
-import { Container } from "../container";
+// import { Container } from "../container";
 import {
   CreateConversationInput,
   SendMessageInput,
@@ -21,13 +21,18 @@ import {
 import { IBaseResponse } from "../types";
 import { pubSub, SUBSCRIPTION_EVENTS } from "../utils";
 
-export class ChatService extends BaseService {
-  private notificationService: any; // Using any to avoid circular dependency
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+import { NotificationService } from "./notification";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+@Service()
+export class ChatService extends BaseService {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private notificationService: NotificationService
+  ) {
     super(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.notificationService = container.resolve('notificationService');
   }
 
   /**

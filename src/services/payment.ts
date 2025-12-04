@@ -104,14 +104,21 @@ interface UpdateSubaccountData {
   settlement_schedule?: string;
 }
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 import { PaymentQueue } from "../jobs/queues/payment.queue";
 
+@Service()
 export class PaystackService extends BaseService {
   private readonly apiKey: string;
   private readonly baseUrl: string = "https://api.paystack.co";
   private readonly paymentQueue: PaymentQueue;
 
-  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    paymentQueue: PaymentQueue
+  ) {
     super(prisma, redis);
     this.paymentQueue = paymentQueue;
     this.apiKey = process.env.PAYSTACK_SECRET_KEY || "";

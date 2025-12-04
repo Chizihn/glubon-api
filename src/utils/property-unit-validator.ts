@@ -1,8 +1,14 @@
 import { PrismaClient, UnitStatus, PropertyStatus, BookingStatus } from "@prisma/client";
 import { logger } from "./logger";
 
+import { Inject, Service } from "typedi";
+import { PRISMA_TOKEN } from "../types/di-tokens";
+
+@Service()
 export class PropertyUnitValidator {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    @Inject(PRISMA_TOKEN) private prisma: PrismaClient
+  ) {}
 
   /**
    * Validates that a property can be created with the given unit configuration

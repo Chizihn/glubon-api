@@ -2,12 +2,16 @@ import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { logger } from "../../utils";
 
+import { Service, Inject } from "typedi";
+import { REDIS_TOKEN } from "../../types/di-tokens";
+
 export const PAYMENT_QUEUE_NAME = "payment-verification";
 
+@Service()
 export class PaymentQueue {
   private queue: Queue;
 
-  constructor(redis: Redis) {
+  constructor(@Inject(REDIS_TOKEN) redis: Redis) {
     this.queue = new Queue(PAYMENT_QUEUE_NAME, {
       connection: redis,
       defaultJobOptions: {

@@ -11,7 +11,7 @@ import {
 } from "type-graphql";
 import { AIService } from "../../services/ai";
 import { AuthMiddleware } from "../../middleware/auth";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { GraphQLError } from "graphql";
 
 // ── INPUT TYPES ───────────────────────────────────────────────────────────
@@ -81,13 +81,14 @@ export class AIResponseType {
 }
 
 // ── RESOLVER ──────────────────────────────────────────────────────────────
+import { Service } from "typedi";
+
+@Service()
 @Resolver()
 export class AIResolver {
-  private aiService: AIService;
-
-  constructor() {
-    this.aiService = getContainer().resolve<AIService>("aiService");
-  }
+  constructor(
+    private aiService: AIService
+  ) {}
 
   @Mutation(() => AIResponseType)
   @UseMiddleware(AuthMiddleware)

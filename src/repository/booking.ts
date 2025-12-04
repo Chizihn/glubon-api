@@ -3,6 +3,9 @@ import { Redis } from "ioredis";
 import { BaseRepository } from "./base";
 import { Decimal } from "@prisma/client/runtime/library";
 
+import { Service } from "typedi";
+
+@Service()
 export class BookingRepository extends BaseRepository {
   async update(
     id: string, 
@@ -19,9 +22,7 @@ export class BookingRepository extends BaseRepository {
       }
     });
   }
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
 
   async getHostBookingRequests(
     hostId: string,

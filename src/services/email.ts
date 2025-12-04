@@ -28,13 +28,20 @@ interface QueuedEmail extends EmailOptions {
   scheduledFor?: Date;
 }
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+
+@Service()
 export class EmailService extends BaseService {
   private static transporter: Transporter | null = null;
   private static isInitializing: boolean = false;
   private static isConfigured: boolean = false;
   private emailQueue = "email_queue";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis
+  ) {
     super(prisma, redis);
     this.initializeTransporter();
     this.startEmailProcessor();
@@ -260,11 +267,25 @@ export class EmailService extends BaseService {
   }
 
   private async sendEmailDirectly(emailOptions: EmailOptions): Promise<void> {
+    logger.info(`📮 sendEmailDirectly called`, { 
+      to: emailOptions.to, 
+      subject: emailOptions.subject,
+      hasTransporter: !!EmailService.transporter,
+      isConfigured: EmailService.isConfigured
+    });
+
     if (!EmailService.transporter || !EmailService.isConfigured) {
-      throw new Error("Email service not configured or not ready");
+      const error = new Error("Email service not configured or not ready");
+      logger.error(`❌ Email service not ready in sendEmailDirectly`, {
+        hasTransporter: !!EmailService.transporter,
+        isConfigured: EmailService.isConfigured
+      });
+      throw error;
     }
     
     try {
+      logger.info(`🚀 Attempting to send email via SMTP`, { to: emailOptions.to });
+      
       const info = await EmailService.transporter.sendMail({
         from: emailOptions.from || `"Glubon" <${config.EMAIL_USER}>`,
         to: emailOptions.to,
@@ -273,9 +294,19 @@ export class EmailService extends BaseService {
         text: emailOptions.text,
       });
 
+      logger.info(`✅ Email sent successfully via SMTP`, { 
+        to: emailOptions.to, 
+        messageId: info.messageId,
+        response: info.response 
+      });
+
       return info;
     } catch (error) {
-      logger.error("Error sending email:", error);
+      logger.error(`❌ SMTP Error sending email`, { 
+        to: emailOptions.to,
+        error: error instanceof Error ? error.message : String(error),
+        errorDetails: error
+      });
       throw error;
     }
   }
@@ -339,8 +370,21 @@ export class EmailService extends BaseService {
     purpose: "email_verification" | "password_reset"
   ): Promise<ServiceResponse<void>> {
     try {
+      logger.info(`📧 Attempting to send verification code`, { 
+        to: email, 
+        purpose, 
+        isReady: this.isReady(),
+        isConfigured: EmailService.isConfigured,
+        hasTransporter: !!EmailService.transporter
+      });
+
       if (!this.isReady()) {
-        logger.warn('Email service not configured, cannot send verification code', { to: email });
+        logger.warn('❌ Email service not ready, cannot send verification code', { 
+          to: email,
+          isConfigured: EmailService.isConfigured,
+          hasTransporter: !!EmailService.transporter,
+          isInitializing: EmailService.isInitializing
+        });
         return this.failure("Email service not configured");
       }
 
@@ -350,14 +394,18 @@ export class EmailService extends BaseService {
         purpose
       );
 
+      logger.info(`📤 Sending verification code email`, { to: email, subject: template.subject });
+      
       await this.sendEmailDirectly({
         to: email,
         ...template,
       });
 
+      logger.info(`✅ Verification code email sent successfully`, { to: email });
+
       return this.success(undefined, "Verification code sent successfully");
     } catch (error) {
-      logger.error("Error sending verification code:", error);
+      logger.error("❌ Error sending verification code:", error);
       return this.failure("Failed to send verification code");
     }
   }
@@ -683,5 +731,6 @@ export class EmailService extends BaseService {
   }
 }
 
-import { prisma, redis } from "../config";
-export const emailServiceSingleton = EmailService.getInstance(prisma, redis);
+// Singleton export removed in favor of TypeDI
+// import { prisma, redis } from "../config";
+// export const emailServiceSingleton = EmailService.getInstance(prisma, redis);

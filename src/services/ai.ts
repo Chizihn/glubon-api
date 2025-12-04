@@ -50,6 +50,10 @@ interface Analysis {
   };
 }
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+
+@Service()
 export class AIService extends BaseService {
   // Common amenities for pattern matching
   private readonly COMMON_AMENITIES = [
@@ -58,7 +62,10 @@ export class AIService extends BaseService {
     'water', 'electricity', 'kitchen', 'laundry', 'storage'
   ];
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis
+  ) {
     super(prisma, redis);
   }
 

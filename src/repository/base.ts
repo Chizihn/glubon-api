@@ -2,9 +2,14 @@ import { PrismaClient } from "@prisma/client";
 import { Redis } from "ioredis";
 import { logger } from "../utils";
 import { Decimal } from "@prisma/client/runtime/library";
+import { Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
 export abstract class BaseRepository {
-  constructor(protected prisma: PrismaClient, protected redis: Redis) {}
+  constructor(
+    @Inject(PRISMA_TOKEN) protected prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) protected redis: Redis
+  ) {}
 
   protected async getCache<T>(key: string): Promise<T | null> {
     try {
@@ -78,11 +83,42 @@ export abstract class BaseRepository {
     }
   }
 
+  /**
+   * Scan Redis keys matching a pattern (non-blocking alternative to KEYS)
+   */
+  protected async scanKeys(pattern: string, count = 100): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+
+    try {
+      do {
+        const result = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', count);
+        cursor = result[0];
+        const batch = result[1];
+        
+        if (batch.length > 0) {
+          keys.push(...batch);
+        }
+      } while (cursor !== '0');
+
+      return keys;
+    } catch (error) {
+      logger.warn(`Failed to scan keys for pattern ${pattern}:`, error);
+      return keys;
+    }
+  }
+
   protected async deleteCachePattern(pattern: string): Promise<void> {
     try {
-      const keys = await this.redis.keys(pattern);
+      // Use SCAN instead of KEYS to avoid blocking Redis
+      const keys = await this.scanKeys(pattern);
       if (keys.length > 0) {
-        await this.redis.del(...keys);
+        // Delete in batches to avoid overwhelming Redis
+        const batchSize = 100;
+        for (let i = 0; i < keys.length; i += batchSize) {
+          const batch = keys.slice(i, i + batchSize);
+          await this.redis.del(...batch);
+        }
       }
     } catch (error) {
       logger.warn(`Failed to delete cache pattern ${pattern}:`, error);

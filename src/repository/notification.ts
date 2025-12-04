@@ -4,10 +4,11 @@ import { logger } from "../utils";
 import { NotificationFilters } from "../types/services/notification";
 import { BaseRepository } from "./base";
 
+import { Service } from "typedi";
+
+@Service()
 export class NotificationRepository extends BaseRepository {
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
 
   async createNotification(data: {
     userId: string;

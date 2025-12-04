@@ -2,6 +2,8 @@ import type { PrismaClient } from "@prisma/client";
 import type { Redis } from "ioredis";
 import { ServiceResponse } from "../types";
 import { logger } from "../utils";
+import { Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
 // Cache TTL constants for consistency
 export const CACHE_TTL = {
@@ -19,10 +21,11 @@ export const CACHE_CONFIG = {
 } as const;
 
 export abstract class BaseService {
-  protected prisma: PrismaClient;
-  protected redis: Redis;
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) protected prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) protected redis: Redis
+  ) {
     this.prisma = prisma;
     this.redis = redis;
   }
@@ -274,6 +277,66 @@ export abstract class BaseService {
     }
   }
 
+  /**
+   * Scan Redis keys matching a pattern (non-blocking alternative to KEYS)
+   * Uses SCAN command which is safe for production and doesn't block Redis
+   */
+  protected async scanKeys(
+    pattern: string,
+    options: {
+      count?: number;
+      maxKeys?: number;
+    } = {}
+  ): Promise<string[]> {
+    const { count = 100, maxKeys = 10000 } = options;
+    const keys: string[] = [];
+    let cursor = '0';
+    let iterations = 0;
+    const maxIterations = Math.ceil(maxKeys / count);
+
+    try {
+      do {
+        // SCAN is non-blocking and returns keys incrementally
+        const result = await this.redis.scan(
+          cursor,
+          'MATCH',
+          pattern,
+          'COUNT',
+          count
+        );
+        
+        cursor = result[0];
+        const batch = result[1];
+        
+        if (batch.length > 0) {
+          keys.push(...batch);
+        }
+
+        iterations++;
+        
+        // Safety limit to prevent infinite loops or excessive iterations
+        if (iterations >= maxIterations) {
+          logger.warn(
+            `SCAN reached max iterations (${maxIterations}) for pattern: ${pattern}`
+          );
+          break;
+        }
+      } while (cursor !== '0' && keys.length < maxKeys);
+
+      if (keys.length >= maxKeys) {
+        logger.warn(
+          `SCAN reached max keys limit (${maxKeys}) for pattern: ${pattern}`
+        );
+      }
+
+      return keys;
+    } catch (error: unknown) {
+      const err = error as any;
+      logger.error(`Failed to scan keys for pattern ${pattern}:`, err);
+      return keys; // Return whatever we found before the error
+    }
+  }
+
   // Enhanced pattern-based deletion with batching and progress tracking
   protected async deleteCachePattern(
     pattern: string,
@@ -293,7 +356,8 @@ export abstract class BaseService {
     let totalErrors = 0;
 
     try {
-      const keys = await this.redis.keys(pattern);
+      // Use SCAN instead of KEYS to avoid blocking Redis
+      const keys = await this.scanKeys(pattern);
 
       if (keys.length === 0) {
         logger.debug(`No keys found matching pattern: ${pattern}`);

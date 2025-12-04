@@ -12,10 +12,11 @@ import { BaseRepository } from "./base";
 import { RegisterInput } from "../types/services/auth";
 import { SubmitIdentityVerificationInput } from "../modules/user/user.inputs";
 
+import { Service } from "typedi";
+
+@Service()
 export class UserRepository extends BaseRepository {
-  constructor(prisma: PrismaClient, redis: any) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
 
   async findUserByEmail(email: string) {
     return this.prisma.user.findFirst({
@@ -57,6 +58,7 @@ export class UserRepository extends BaseRepository {
         password: data.password || null,
         phoneNumber: data.phoneNumber || null,
         role: data.role,
+        roles: data.roles || [data.role],
         provider: data.provider || ProviderEnum.EMAIL,
       },
     });
@@ -84,6 +86,7 @@ export class UserRepository extends BaseRepository {
         state: true,
         country: true,
         role: true,
+        roles: true,
         permissions: true,
         provider: true,
         isVerified: true,

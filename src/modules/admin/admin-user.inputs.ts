@@ -134,9 +134,6 @@ export class AdminPropertyFilters {
   @Field(() => Int, { nullable: true })
   maxAmount?: number;
   
-  // Fix: Allow null values explicitly
-  @Field(() => Boolean, { nullable: true })
-  ownershipVerified?: boolean | null;
   
   @Field(() => Boolean, { nullable: true })
   featured?: boolean | null;

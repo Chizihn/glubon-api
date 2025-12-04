@@ -7,20 +7,20 @@ import {
   UseMiddleware,
 } from "type-graphql";
 import { Context } from "../../types"; // Adjust based on your project structure
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { FAQService } from "../../services/faq";
 import { AuthMiddleware } from "../../middleware";
 import { FAQType, FAQCategoryType } from "./faq.types";
 import { CreateFAQInput, UpdateFAQInput, FAQFilter } from "./faq.inputs";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => FAQType)
 export class FAQResolver {
-  private faqService: FAQService;
-
-  constructor() {
-    const container = getContainer();
-    this.faqService = container.resolve('faqService');
-  }
+  constructor(
+    private faqService: FAQService
+  ) {}
 
   @Query(() => [FAQType])
   async getFAQs(

@@ -7,7 +7,7 @@ import {
   UseMiddleware,
 } from "type-graphql";
 import type { Context } from "../../types/context";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { SettingsService } from "../../services/setting";
 import {
   UserSetting,
@@ -29,16 +29,16 @@ import {
 } from "@prisma/client";
 import { AuthMiddleware } from "../../middleware/auth";
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN } from "../../types/di-tokens";
+
+@Service()
 @Resolver()
 export class SettingsResolver {
-  private settingsService: SettingsService;
-  private prisma: PrismaClient;
-
-  constructor() {
-    const container = getContainer();
-    this.settingsService = container.resolve('settingsService');
-    this.prisma = container.getPrisma();
-  }
+  constructor(
+    private settingsService: SettingsService,
+    @Inject(PRISMA_TOKEN) private prisma: PrismaClient
+  ) {}
 
   @Query(() => UserSetting, { nullable: true })
   @UseMiddleware(AuthMiddleware)

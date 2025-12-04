@@ -17,24 +17,20 @@ import {
   UpdateProfileInput,
   UsersSearchResponse,
 } from "./user.inputs";
-import { getContainer } from "../../services";
-import { UserService } from "../../services/user"
+import { Service } from "typedi";
+import { UserService } from "../../services/user";
 import { NotificationService } from "../../services/notification";
-import { AuthMiddleware, } from "../../middleware";
+import { AuthMiddleware } from "../../middleware";
 import { BaseResponse, Context } from "../../types";
-import {  User, UserStatsResponse } from "./user.types";
+import { User, UserStatsResponse } from "./user.types";
 
+@Service()
 @Resolver()
 export class UserResolver {
-  private userService: UserService;
-  private notificationService: NotificationService;
-
-  constructor() {
-    const container = getContainer();
-    this.userService = container.resolve('userService');
-    this.notificationService = container.resolve('notificationService');
-
-  }
+  constructor(
+    private userService: UserService,
+    private notificationService: NotificationService
+  ) {}
 
   @Query(() => User)
   @UseMiddleware(AuthMiddleware)
@@ -62,7 +58,7 @@ export class UserResolver {
     if (!result.success) {
       throw new Error(result.message);
     }
-    return result.data!;
+    return result.data as User;
   }
 
   @Mutation(() => User)
@@ -77,7 +73,7 @@ export class UserResolver {
     if (!result.success || !result.data) {
       throw new Error(result.message || "Failed to upload profile picture");
     }
-    return result.data;
+    return result.data as User;
   }
 
   @Mutation(() => BaseResponse)
@@ -154,6 +150,18 @@ export class UserResolver {
     return new BaseResponse(true, result.message);
   }
 
+  @Mutation(() => BaseResponse)
+  @UseMiddleware(AuthMiddleware)
+  async deleteAccount(@Ctx() ctx: Context): Promise<BaseResponse> {
+    const result = await this.userService.deleteAccount(
+      ctx.user!.id as string
+    );
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+    return new BaseResponse(true, result.message);
+  }
+
   @Query(() => UserStatsResponse)
   @UseMiddleware(AuthMiddleware)
   async getUserStats(@Ctx() ctx: Context): Promise<UserStatsResponse> {
@@ -181,27 +189,4 @@ export class UserResolver {
       result.data.pagination.totalItems
     );
   }
-
-  // @Query(() => AccountDetails)
-  // @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))
-  // async resolveAccountDetails(
-  //   @Arg("input") input: AccountResolveInput
-  // ): Promise<AccountDetails> {
-  //   try {
-  //     const accountDetails = await this.paystackService.resolveAccountNumber(
-  //       input.accountNumber,
-  //       input.bankCode
-  //     );
-
-  //     const data = {
-  //       accountNumber: accountDetails.data?.account_number as string,
-  //       accountName: accountDetails.data?.account_name as string,
-  //       bankCode: accountDetails.data?.bank_code as string,
-  //     };
-
-  //     return data;
-  //   } catch (error) {
-  //     throw new Error("Failed to resolve account details");
-  //   }
-  // }
 }

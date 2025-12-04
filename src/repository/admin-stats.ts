@@ -53,10 +53,11 @@ const formatDate = (date: DateInput): string => {
   return toDate(date).toISOString();
 };
 
+import { Service } from "typedi";
+
+@Service()
 export class AdminStatsRepository extends BaseRepository {
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
 
   /**
    * Get comprehensive dashboard statistics

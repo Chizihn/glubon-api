@@ -9,7 +9,7 @@ import {
   Int,
 } from "type-graphql";
 import { Context } from "../../types/context";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AuthMiddleware, RequireRole } from "../../middleware/auth";
 import { BookingService } from "../../services/booking";
 import { BookingStatus, RoleEnum } from "@prisma/client";
@@ -25,17 +25,16 @@ import {
   PaginatedBookingsResponse,
 } from "./booking.types";
 
+import { Service } from "typedi";
+import { PaystackService } from "../../services/payment";
+
+@Service()
 @Resolver()
 export class BookingResolver {
-  private bookingService: BookingService;
-
-  private paymentService: any; // We'll use any type to avoid import issues
-
-  constructor() {
-    const container = getContainer();
-    this.bookingService = container.resolve('bookingService');
-    this.paymentService = container.resolve('paystackService');
-  }
+  constructor(
+    private bookingService: BookingService,
+    private paymentService: PaystackService
+  ) {}
 
   /**
    * Step 1: Create a booking request (no payment yet)
@@ -350,7 +349,7 @@ export class BookingResolver {
     const result = await this.paymentService.retryPayment(bookingId, ctx.user!.id);
     
     if (!result.success) {
-      throw new Error(result.error || 'Failed to retry payment');
+      throw new Error(result.message || 'Failed to retry payment');
     }
     
     // Get the updated booking with payment URL
@@ -360,6 +359,10 @@ export class BookingResolver {
       throw new Error('Failed to retrieve booking after payment retry');
     }
     
+    if (!result.data) {
+      throw new Error('Failed to generate payment URL');
+    }
+
     return {
       booking: bookingResult.data,
       paymentUrl: result.data.paymentUrl,

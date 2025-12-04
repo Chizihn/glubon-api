@@ -4,7 +4,7 @@ import { NotFoundError } from "../utils";
 import { BaseService } from "./base";
 import { DisputeRepository } from "../repository/dispute";
 import { RefundService } from "./refund";
-import { Container } from "../container";
+// import { Container } from "../container";
 import {
   CreateDisputeInput,
   ResolveDisputeInput,
@@ -30,11 +30,12 @@ export interface DisputeWithRelations {
   initiator?: any; // Will be populated by the resolver
 }
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+import { NotificationService } from "./notification";
+
+@Service()
 export class DisputeService extends BaseService {
-  private disputeRepo: DisputeRepository;
-  private refundService: RefundService;
-  private notificationService: any; // Using any to avoid circular dependency
-  
   private logger: Console;
 
   async getDisputeWithRelations(disputeId: string) {
@@ -58,13 +59,15 @@ export class DisputeService extends BaseService {
     }
   }
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private disputeRepo: DisputeRepository,
+    private refundService: RefundService,
+    private notificationService: NotificationService
+  ) {
     super(prisma, redis);
     this.logger = console;
-    this.disputeRepo = new DisputeRepository(prisma, redis);
-    this.refundService = new RefundService(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.notificationService = container.resolve('notificationService');
   }
 
   async createDispute(data: CreateDisputeInput, initiatorId: string) {

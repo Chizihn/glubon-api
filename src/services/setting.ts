@@ -21,8 +21,15 @@ interface PlatformSettingInput {
   description?: string;
 }
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+
+@Service()
 export class SettingsService extends BaseService {
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis
+  ) {
     super(prisma, redis);
   }
 

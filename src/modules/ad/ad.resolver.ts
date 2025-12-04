@@ -12,21 +12,19 @@ import { PaginationInfo } from "../../types/responses";
 import { CreateAdInput, UpdateAdStatusInput, AdAnalyticsFilter, GetAdsFilter } from "./ad.inputs";
 import { AdPosition } from "@prisma/client";
 import { AuthMiddleware } from "../../middleware";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AdService } from "../../services/ad";
 import { AdAnalyticsService } from "../../services/ad-analytics";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => Ad)
 export class AdResolver {
-  private adService: AdService;
-  private adAnalyticsService: AdAnalyticsService;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.adService = container.resolve('adService');
-    this.adAnalyticsService = container.resolve('adAnalyticsService');
-  }
+  constructor(
+    private adService: AdService,
+    private adAnalyticsService: AdAnalyticsService
+  ) {}
 
   @Query(() => PaginatedAdResponse)
   @UseMiddleware(AuthMiddleware)

@@ -1,16 +1,16 @@
-import { BookingStatus, NotificationType, PrismaClient } from "@prisma/client";
-import { Redis } from "ioredis";
+// import { BookingStatus, NotificationType, PrismaClient } from "@prisma/client";
+// import { Redis } from "ioredis";
 import { BookingRepository } from "../repository/booking";
 import { NotificationService } from "./notification";
 
-export class BookingRequestService {
-  private bookingRepository: BookingRepository;
-  private notificationService: NotificationService;
+import { Service } from "typedi";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
-    this.bookingRepository = new BookingRepository(prisma, redis);
-    this.notificationService = new NotificationService(prisma, redis);
-  }
+@Service()
+export class BookingRequestService {
+  constructor(
+    private bookingRepository: BookingRepository,
+    private notificationService: NotificationService
+  ) {}
 
   async createBookingRequest(data: {
     renterId: string;

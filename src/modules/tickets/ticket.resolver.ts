@@ -3,18 +3,19 @@ import { Resolver, Query, Mutation, Arg, Ctx, UseMiddleware } from 'type-graphql
 import { Context } from '../../types';
 import { AuthMiddleware, RequirePermission, RequireRole } from '../../middleware';
 import { PermissionEnum, RoleEnum } from '@prisma/client';
-import { getContainer } from '../../services';
+// import { getContainer } from '../../services';
 import { TicketService } from '../../services/ticket';
 import { PaginatedTickets, Ticket, TicketStats } from './ticket.types';
 import { CreateTicketInput, TicketFilterInput, UpdateTicketInput } from './ticket.input';
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => Ticket)
 export class TicketResolver {
-  private service: TicketService;
-
-  constructor() {
-    this.service = getContainer().resolve('ticketService');
-  }
+  constructor(
+    private service: TicketService
+  ) {}
 
   // LIST ALL TICKETS (Support or Admin)
   @Query(() => PaginatedTickets)

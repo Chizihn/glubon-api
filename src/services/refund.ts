@@ -2,19 +2,23 @@
 import { NotificationType, PrismaClient, RefundStatus } from "@prisma/client";
 import { Redis } from "ioredis";
 import { BaseService } from "./base";
-import { Container } from "../container";
+// import { Container } from "../container";
 import { RefundRepository } from "../repository/refund";
 import { CreateRefundInput } from "../types/services/booking";
 
-export class RefundService extends BaseService {
-  private refundRepo: RefundRepository;
-  private notificationService: any; // Using any to avoid circular dependency
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+import { NotificationService } from "./notification";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+@Service()
+export class RefundService extends BaseService {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private refundRepo: RefundRepository,
+    private notificationService: NotificationService
+  ) {
     super(prisma, redis);
-    this.refundRepo = new RefundRepository(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.notificationService = container.resolve('notificationService');
   }
 
   async createRefund(data: CreateRefundInput, requestedBy: string) {

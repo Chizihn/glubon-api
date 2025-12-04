@@ -15,12 +15,18 @@ interface CreateSubaccountInput {
   percentageCharge?: number;
 }
 
-export class SubaccountService extends BaseService {
-  private paystackService: PaystackService;
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
-  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
+@Service()
+export class SubaccountService extends BaseService {
+
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private paystackService: PaystackService
+  ) {
     super(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis, paymentQueue);
   }
 
   async createSubaccount(

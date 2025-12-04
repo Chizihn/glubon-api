@@ -26,21 +26,20 @@ import {
   UpdateContentDisputeInput
 } from "./content.inputs";
 import { ContentService, ContentFilters } from "../../services/content";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AuthMiddleware, RequireRole } from "../../middleware";
 import { Context } from "../../types";
 import { SUBSCRIPTION_EVENTS } from "../../utils";
 import { RoleEnum } from "@prisma/client";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => Content)
 export class ContentResolver {
-  private contentService: ContentService;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.contentService = container.resolve('contentService');
-  }
+  constructor(
+    private contentService: ContentService
+  ) {}
 
   @Query(() => ContentResponse)
   @UseMiddleware(AuthMiddleware)

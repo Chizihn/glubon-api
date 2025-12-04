@@ -1,7 +1,7 @@
 // src/resolvers/analytics.resolver.ts
 import { Resolver, Query, Arg, Ctx, UseMiddleware } from "type-graphql";
 import { Context } from "../../types/context";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AuthMiddleware, RequireRole } from "../../middleware/auth";
 import { RoleEnum } from "@prisma/client";
 import {
@@ -15,9 +15,14 @@ import {
 import { ListerAnalyticsService } from "../../services/lister-analytics";
 
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver()
 export class AnalyticsResolver {
-  private svc = getContainer().resolve<ListerAnalyticsService>("listerAnalyticsService");
+  constructor(
+    private svc: ListerAnalyticsService
+  ) {}
 
   @Query(() => ListerAnalyticsResponse)
   @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))

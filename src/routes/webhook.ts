@@ -3,9 +3,10 @@ import express, { Request, Response } from "express";
 import { createHmac } from "crypto";
 import { PrismaClient, TransactionStatus } from "@prisma/client";
 import { Redis } from "ioredis";
+import { Container } from "typedi";
 import { BookingService } from "../services/booking";
 import { PaystackService } from "../services/payment";
-import { PaymentQueue } from "../jobs/queues/payment.queue";
+import { prisma, redis } from "../config";
 
 class WebhookController {
   private prisma: PrismaClient;
@@ -13,11 +14,11 @@ class WebhookController {
   private bookingService: BookingService;
   private paystackService: PaystackService;
 
-  constructor(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
+  constructor() {
     this.prisma = prisma;
     this.redis = redis;
-    this.bookingService = new BookingService(prisma, redis);
-    this.paystackService = new PaystackService(prisma, redis, paymentQueue);
+    this.bookingService = Container.get(BookingService);
+    this.paystackService = Container.get(PaystackService);
   }
 
   async handlePaystackWebhook(req: Request, res: Response) {
@@ -144,10 +145,10 @@ class WebhookController {
   }
 }
 
-export function createWebhookRouter(prisma: PrismaClient, redis: Redis, paymentQueue: PaymentQueue) {
+export function createWebhookRouter() {
   const router = express.Router();
 
-  const webhookController = new WebhookController(prisma, redis, paymentQueue);
+  const webhookController = new WebhookController();
 
   // Raw body parser for Paystack signature verification
   router.post(

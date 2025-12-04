@@ -23,11 +23,11 @@ function sha256(buffer: Buffer): Buffer {
   return crypto.createHash("sha256").update(buffer).digest();
 }
 
-export class OAuthService extends BaseService {
+import { Service } from "typedi";
 
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+@Service()
+export class OAuthService extends BaseService {
+  // Constructor removed to use BaseService's constructor with injection
 
  // Key changes in startOAuthFlow method:
 

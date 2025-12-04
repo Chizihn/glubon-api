@@ -2,6 +2,7 @@
 import "reflect-metadata";
 import { PubSub } from "graphql-subscriptions";
 import { buildSchema } from "type-graphql";
+import { Container } from "typedi";
 import { GraphQLUpload } from "graphql-upload-ts";
 import { GraphQLDecimal } from "./scalars/Decimal";
 import { AuthResolver } from "../modules/auth/auth.resolver";
@@ -26,11 +27,12 @@ import { UnitResolver } from "../modules/unit/unit.resolver";
 import { AnalyticsResolver } from "../modules/analytics/analytics.resolver";
 import { AIResolver } from "../modules/ai/ai.resolver";
 import { TicketResolver } from "../modules/tickets/ticket.resolver";
+import { pubSub } from "../utils";
+
 // Auth checking is handled by the AuthMiddleware
 
 export async function createGraphQLSchema() {
-  // Use the shared pubSub instance
-  const { pubSub } = await import("../utils/index.js");
+
 
   return await buildSchema({
     scalarsMap: [
@@ -64,6 +66,7 @@ export async function createGraphQLSchema() {
     validate: false,
     pubSub: pubSub as any,
     emitSchemaFile: appConfig.isDevelopment ? "schema.gql" : false,
+    container: Container,
     // dateScalarMode: "isoDate",
   });
 }

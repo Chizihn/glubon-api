@@ -62,6 +62,9 @@ export class User {
   @Field(() => [RoleEnum])
   roles: RoleEnum[];
 
+  @Field(() => RoleEnum, {nullable: true})
+  activeRole?: RoleEnum; 
+
   @Field(() => UserStatus)
   status: UserStatus;
 

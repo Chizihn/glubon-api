@@ -1,7 +1,8 @@
 import cron from "node-cron";
 import { prisma, config } from "../config";
 import { logger } from "../utils";
-import { emailServiceSingleton } from "../services/email";
+import { Container } from "typedi";
+import { EmailService } from "../services/email";
 import { NotificationType } from "@prisma/client";
 
 // Run every minute to process email queue
@@ -56,7 +57,8 @@ export const initializeEmailWorker = () => {
           });
 
           // Send the email using the immediate email method
-          await emailServiceSingleton.sendImmediateEmail({
+          const emailService = Container.get(EmailService);
+          await emailService.sendImmediateEmail({
             to: emailData.to,
             subject: emailData.subject,
             html: emailData.html,

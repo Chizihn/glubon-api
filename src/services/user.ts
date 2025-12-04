@@ -1,26 +1,32 @@
-import { FileUpload } from 'graphql-upload-ts';
+import type { FileUpload } from 'graphql-upload-ts';
 import { DocumentType, VerificationStatus, PrismaClient, User, UserStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { Redis } from "ioredis";
 import { ServiceResponse } from "../types";
 import { securityConfig } from "../config";
-import { Container } from "../container";
+// import { Container } from "../container";
 import { S3Service } from "./s3";
 import { BaseService } from "./base";
+import { UserRepository } from "../repository/user";
 import {
   ChangePasswordInput,
   UpdateProfileInput,
   UserWithStats,
 } from "../types/services/user";
 
-export class UserService extends BaseService {
-  private userRepository: any; // Using any to avoid circular dependencies
-  private s3Service: any;
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
-  constructor(prisma: PrismaClient, redis: any) {
+@Service()
+export class UserService extends BaseService {
+
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private userRepository: UserRepository,
+    private s3Service: S3Service
+  ) {
     super(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.userRepository = container.resolve('userRepository');
-    this.s3Service = container.resolve('s3Service');
   }
 
   /**
@@ -28,8 +34,8 @@ export class UserService extends BaseService {
    */
   async uploadProfilePicture(
     userId: string,
-    file: any
-  ): Promise<ServiceResponse<UserWithStats>> {
+    file: FileUpload
+  ): Promise<ServiceResponse<Partial<User>>> {
     try {
       // Get user data
       const userRes = await this.getUserProfile(userId);
@@ -142,7 +148,7 @@ export class UserService extends BaseService {
   async updateProfile(
     userId: string,
     input: UpdateProfileInput
-  ): Promise<ServiceResponse<UserWithStats>> {
+  ): Promise<ServiceResponse<Partial<User>>> {
     try {
       // Check if phone number is already taken by another user
       if (input.phoneNumber) {
@@ -158,8 +164,11 @@ export class UserService extends BaseService {
 
       const updatedUser = await this.userRepository.updateUser(userId, input);
 
-      // Clear cache
-      await this.deleteCache(this.generateCacheKey("user_profile", userId));
+      // Clear all caches related to this user
+      await Promise.all([
+        this.deleteCache(this.generateCacheKey("user_profile", userId)),
+        this.deleteCachePattern(`user:${userId}*`),
+      ]);
 
       return this.success(updatedUser, "Profile updated successfully");
     } catch (error) {
@@ -329,6 +338,157 @@ export class UserService extends BaseService {
       return this.success(null, "Account deactivated successfully");
     } catch (error) {
       return this.handleError(error, "deactivateAccount");
+    }
+  }
+
+  async deleteAccount(userId: string): Promise<ServiceResponse> {
+    try {
+      // 1. Retrieve Data to get S3 keys and check for active obligations
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          properties: {
+            include: {
+              bookings: true,
+            }
+          },
+          identityVerifications: true,
+          renterBookings: true,
+          subaccount: true,
+        },
+      });
+
+      if (!user) {
+        return this.failure("User not found");
+      }
+
+      // Check for active bookings (as renter)
+      const activeRenterBookings = user.renterBookings.filter(b => 
+        ['PENDING_APPROVAL', 'PENDING_PAYMENT', 'PAID', 'CONFIRMED'].includes(b.status)
+      );
+      if (activeRenterBookings.length > 0) {
+        return this.failure("Cannot delete account with active bookings. Please cancel them first.");
+      }
+
+      // Check for active bookings (as host)
+      const activeHostBookings = user.properties.flatMap(p => p.bookings).filter(b => 
+        ['PENDING_APPROVAL', 'PENDING_PAYMENT', 'PAID', 'CONFIRMED'].includes(b.status)
+      );
+      if (activeHostBookings.length > 0) {
+        return this.failure("Cannot delete account with active property bookings. Please resolve them first.");
+      }
+
+      // Check for pending payments/subaccount balance (Placeholder logic - adjust based on actual payment provider integration)
+      // if (user.subaccount && user.subaccount.balance > 0) { ... }
+
+      // 2. S3 Cleanup Preparation
+      const s3Keys: string[] = [];
+
+      // Profile picture
+      if (user.profilePic && user.profilePic.includes("amazonaws.com")) {
+        try {
+          const url = new URL(user.profilePic);
+          const key = url.pathname.startsWith("/")
+            ? url.pathname.slice(1)
+            : url.pathname;
+          s3Keys.push(key);
+        } catch (e) {
+          console.warn("Invalid profile pic URL:", user.profilePic);
+        }
+      }
+
+      // Property images
+      user.properties.forEach((property) => {
+        const propertyImages = [
+          ...property.images,
+          ...property.livingRoomImages,
+          ...property.bedroomImages,
+          ...property.bathroomImages,
+          ...property.propertyOwnershipDocs,
+          ...property.propertyPlanDocs,
+          ...property.propertyDimensionDocs,
+        ];
+        if (property.video) propertyImages.push(property.video);
+
+        propertyImages.forEach((imgUrl) => {
+          if (imgUrl && imgUrl.includes("amazonaws.com")) {
+            try {
+              const url = new URL(imgUrl);
+              const key = url.pathname.startsWith("/")
+                ? url.pathname.slice(1)
+                : url.pathname;
+              s3Keys.push(key);
+            } catch (e) {
+              console.warn("Invalid property image URL:", imgUrl);
+            }
+          }
+        });
+      });
+
+      // Verification documents
+      user.identityVerifications.forEach((verification) => {
+        verification.documentImages.forEach((docUrl) => {
+          if (docUrl && docUrl.includes("amazonaws.com")) {
+            try {
+              const url = new URL(docUrl);
+              const key = url.pathname.startsWith("/")
+                ? url.pathname.slice(1)
+                : url.pathname;
+              s3Keys.push(key);
+            } catch (e) {
+              console.warn("Invalid verification doc URL:", docUrl);
+            }
+          }
+        });
+      });
+
+      // TODO: Revoke Apple Sign In token if applicable
+      // if (user.provider === 'APPLE') { await revokeAppleToken(user.appleId); }
+
+      // 3. Database Cleanup
+      await this.prisma.$transaction(async (tx) => {
+        // Anonymize Transactions (keep record but remove user link)
+        await tx.transaction.updateMany({
+          where: { userId: userId },
+          data: { userId: null },
+        });
+
+        // Delete Content (cascades to comments)
+        await tx.content.deleteMany({
+          where: { authorId: userId },
+        });
+
+        // Delete Disputes
+        await tx.dispute.deleteMany({
+          where: { initiatorId: userId },
+        });
+        
+        await tx.contentDispute.deleteMany({
+          where: { reportedById: userId },
+        });
+
+        // Delete User (cascades to Properties, Subaccounts, Settings, etc.)
+        await tx.user.delete({
+          where: { id: userId },
+        });
+      });
+
+      // 4. S3 Cleanup Execution
+      if (s3Keys.length > 0) {
+        const s3Service = new S3Service(this.prisma, this.redis);
+        await s3Service.deleteFiles(s3Keys);
+      }
+
+      // Clear cache
+      await Promise.all([
+        this.deleteCache(this.generateCacheKey("user_profile", userId)),
+        this.deleteCachePattern(`user:${userId}*`),
+      ]);
+
+      return this.success(null, "Account permanently deleted");
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      return this.handleError(error, "deleteAccount");
     }
   }
 

@@ -4,10 +4,11 @@ import { BaseRepository } from "./base";
 import { AdminPropertyFilters } from "../types/services/admin";
 import { logger } from "../utils";
 
+import { Service } from "typedi";
+
+@Service()
 export class AdminPropertyRepository extends BaseRepository {
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
 
   async getAllProperties(
     filters: AdminPropertyFilters,

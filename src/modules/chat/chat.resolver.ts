@@ -11,7 +11,7 @@ import {
   ID,
 } from "type-graphql";
 import { Context } from "../../types/context";
-import { ChatService, getContainer } from "../../services";
+import { ChatService } from "../../services";
 import { AuthMiddleware } from "../../middleware";
 import { SUBSCRIPTION_EVENTS } from "../../utils/pubsub";
 import {
@@ -50,16 +50,16 @@ import { Prisma, PrismaClient, RoleEnum } from "@prisma/client";
 import { pubSub } from "../../utils";
 import { UserPresence } from "../presence/presence.types";
 
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN } from "../../types/di-tokens";
+
+@Service()
 @Resolver()
 export class ChatResolver {
-  private chatService: ChatService;
-  private prisma: PrismaClient;
-
-  constructor() {
-    const container = getContainer();
-    this.chatService = container.resolve("chatService");
-    this.prisma = container.getPrisma() as unknown as PrismaClient;
-  }
+  constructor(
+    private chatService: ChatService,
+    @Inject(PRISMA_TOKEN) private prisma: PrismaClient
+  ) {}
 
   // Queries
   @Query(() => PaginatedConversations)

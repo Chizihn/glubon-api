@@ -1,18 +1,15 @@
 import cron from "node-cron";
 import { logger } from "../utils";
-import { Container } from "../container";
+import { Container } from "typedi";
 import { NotificationService } from "../services/notification";
-import { NotificationType } from "@prisma/client";
+import { NotificationType, PrismaClient } from "@prisma/client";
+import { PRISMA_TOKEN } from "../types/di-tokens";
 
 // Run every hour to check for upcoming bookings
 cron.schedule("0 * * * *", async () => {
   try {
-    const container = Container.getInstance();
-    const prisma = container.getPrisma();
-    const notificationService = new NotificationService(
-      prisma,
-      container.getRedis()
-    );
+    const prisma = Container.get(PRISMA_TOKEN) as PrismaClient;
+    const notificationService = Container.get(NotificationService);
     const now = new Date();
     
     // Get all upcoming bookings in the next 24 hours

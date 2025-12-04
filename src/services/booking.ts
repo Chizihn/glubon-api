@@ -22,7 +22,8 @@ import { BaseService } from "./base";
 import { BookingRepository } from "../repository/booking";
 import { TransactionService } from "./transaction";
 import { PaystackService } from "./payment";
-import { Container } from "../container";
+import { NotificationService } from "./notification";
+// import { Container } from "../container";
 import { PropertyRepository } from "../repository/properties";
 import { UserRepository } from "../repository/user";
 import { ServiceResponse } from "../types/responses";
@@ -75,26 +76,24 @@ export interface GetUserBookingsInput {
   status?: BookingStatus;
 }
 
-export class BookingService extends BaseService {
-  private bookingRepo: BookingRepository;
-  private transactionService: TransactionService;
-  private paystackService: PaystackService;
-  private notificationService: any; // Using any to avoid circular dependency
-  private userRepo: UserRepository;
-  private propertyRepo: PropertyRepository;
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
+@Service()
+export class BookingService extends BaseService {
   // Logger is available from BaseService
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private bookingRepo: BookingRepository,
+    private transactionService: TransactionService,
+    private paystackService: PaystackService,
+    private notificationService: NotificationService,
+    private userRepo: UserRepository,
+    private propertyRepo: PropertyRepository
+  ) {
     super(prisma, redis);
-    this.bookingRepo = new BookingRepository(prisma, redis);
-    this.transactionService = new TransactionService(prisma, redis);
-    this.transactionService = new TransactionService(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.paystackService = container.resolve('paystackService');
-    this.notificationService = container.resolve('notificationService');
-    this.userRepo = new UserRepository(prisma, redis);
-    this.propertyRepo = new PropertyRepository(prisma, redis);
   }
 
   /**
@@ -296,8 +295,14 @@ export class BookingService extends BaseService {
         }),
       ]);
 
-      // Invalidate any cached booking data
-      await this.redis.del(`booking:${bookingId}`);
+      // Invalidate cache for affected users
+      await Promise.all([
+        this.deleteCachePattern(`booking:${bookingId}*`),
+        // Invalidate renter's booking list
+        this.deleteCachePattern(`bookings:renter:${updatedBooking.renterId}*`),
+        // Invalidate host's booking requests
+        this.deleteCachePattern(`bookings:host:${hostId}*`),
+      ]);
 
       return this.success({
         booking: result,

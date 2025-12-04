@@ -10,7 +10,7 @@ import {
 import type { Context } from "../../types/context";
 import { PermissionEnum, RoleEnum, UserStatus, VerificationStatus } from "@prisma/client";
 import { BaseResponse } from "../../types/responses";
-import { getContainer, UserService } from "../../services";
+import { UserService } from "../../services";
 import { AuthMiddleware, RequirePermission, RequireRole } from "../../middleware";
 import {
   PaginatedLogsResponse,
@@ -56,21 +56,18 @@ import { AdminPropertyService } from "../../services/admin-property";
 import { RecentDataResponse } from "./admin.types"; // Import from GraphQL types
 import { AnalyticsDateRangeInput } from "../analytics/analytics.types";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver()
 @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.ADMIN))
 export class AdminResolver {
-  private adminStatsService: AdminStatsService;
-  private adminUsersService: AdminUsersService;
-  private adminPropertyService: AdminPropertyService;
-  private userService: UserService;
-
-  constructor() {
-    const container = getContainer();
-    this.adminUsersService = container.resolve('adminUserService');
-    this.adminStatsService = container.resolve('adminStatsService');
-    this.adminPropertyService = container.resolve('adminPropertyService');
-    this.userService = container.resolve('userService');
-  }
+  constructor(
+    private adminUsersService: AdminUsersService,
+    private adminStatsService: AdminStatsService,
+    private adminPropertyService: AdminPropertyService,
+    private userService: UserService
+  ) {}
 
   @Query(() => RecentDataResponse, { description: 'Get recent activities and transactions' })
   @UseMiddleware(RequireRole(RoleEnum.ADMIN))

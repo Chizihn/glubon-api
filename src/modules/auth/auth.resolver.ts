@@ -24,7 +24,7 @@ import {
   SetPasswordInput,
 } from "./auth.inputs";
 import { User } from "../user/user.types";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AuthService } from "../../services/auth";
 import { EmailService } from "../../services/email";
 import { BaseResponse, Context } from "../../types";
@@ -41,17 +41,15 @@ import { config } from "../../config";
 
 // const AuthRateLimiter = wrapExpressMiddleware(authRateLimiterMiddleware);
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver()
 export class AuthResolver {
-  private authService: AuthService;
-  private emailService: EmailService;
-
-  constructor() {
-    const container = getContainer();
-    
-    this.authService = container.resolve('authService');
-    this.emailService = container.resolve('emailService');
-  }
+  constructor(
+    private authService: AuthService,
+    private emailService: EmailService
+  ) {}
 
   @Mutation(() => AuthResponse)
   async register(
@@ -273,6 +271,17 @@ async getOAuthAuthUrl(
     );
     if (!result.success) throw new Error(result.message);
     return new BaseResponse(true, result.message);
+  }
+
+  @Mutation(() => AuthResponse)
+  @UseMiddleware(AuthMiddleware)
+  async switchRole(
+    @Arg("role", () => RoleEnum) role: RoleEnum,
+    @Ctx() ctx: Context
+  ): Promise<AuthResponse> {
+    const result = await this.authService.switchRole(ctx.user!.id as string, role);
+    if (!result.success) throw new Error(result.message);
+    return result.data! as unknown as AuthResponse;
   }
 
   @Query(() => User)

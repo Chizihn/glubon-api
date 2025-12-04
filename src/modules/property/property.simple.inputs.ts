@@ -10,6 +10,7 @@ import {
 import { Decimal } from "@prisma/client/runtime/library";
 import { FileUpload, GraphQLUpload } from "graphql-upload-ts";
 import { Field, InputType, Int, Float } from "type-graphql";
+import { NigerianState } from "../../types/enums";
 
 @InputType()
 export class SimpleCreatePropertyInput {
@@ -31,8 +32,8 @@ export class SimpleCreatePropertyInput {
   @Field(() => String)
   city: string;
 
-  @Field(() => String)
-  state: string;
+  @Field(() => NigerianState)
+  state: NigerianState;
 
   @Field(() => Float, { nullable: true })
   sqft?: number | null;
@@ -101,8 +102,8 @@ export class SimpleUpdatePropertyInput {
   @Field(() => String, { nullable: true })
   city?: string | null;
 
-  @Field(() => String, { nullable: true })
-  state?: string | null;
+  @Field(() => NigerianState, { nullable: true })
+  state?: NigerianState | null;
 
   @Field(() => Float, { nullable: true })
   sqft?: number | null;

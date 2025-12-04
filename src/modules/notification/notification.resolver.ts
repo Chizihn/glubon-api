@@ -13,7 +13,7 @@ import type { Context } from "../../types/context";
 import { AuthMiddleware } from "../../middleware/auth";
 import { BaseResponse } from "../../types/responses";
 import { logger, SUBSCRIPTION_EVENTS } from "../../utils";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import {
   BulkNotificationResponse,
   NotificationCreatedPayload,
@@ -29,15 +29,14 @@ import {
 import { NotificationService } from "../../services/notification";
 import { NotificationType, RoleEnum } from "@prisma/client";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver()
 export class NotificationResolver {
-  private notificationService: NotificationService;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.notificationService = container.resolve('notificationService');
-  }
+  constructor(
+    private notificationService: NotificationService
+  ) {}
 
   @Query(() => PaginatedNotificationsResponse)
   @UseMiddleware(AuthMiddleware)

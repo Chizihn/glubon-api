@@ -8,7 +8,7 @@ import {
   ID,
 } from "type-graphql";
 import { Context } from "../../types/context";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { SubaccountService } from "../../services/subaccount";
 import { PaystackService } from "../../services/payment";
 import { AuthMiddleware, RequireRole } from "../../middleware";
@@ -28,17 +28,15 @@ import {
 } from "./subaccount.inputs";
 import { logger } from "../../utils";
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver(() => Subaccount)
 export class SubaccountResolver {
-  private subaccountService: SubaccountService;
-  private paystackService: PaystackService;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.subaccountService = container.resolve('subaccountService');
-    this.paystackService = container.resolve('paystackService');
-  }
+  constructor(
+    private subaccountService: SubaccountService,
+    private paystackService: PaystackService
+  ) {}
 
   @Query(() => Subaccount, { nullable: true })
   @UseMiddleware(AuthMiddleware, RequireRole(RoleEnum.LISTER))

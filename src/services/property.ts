@@ -19,25 +19,27 @@ import {
   PropertyWithDetails,
   UpdatePropertyInput,
 } from "../types/services/properties";
-import { Container } from "../container";
-import { FileUpload } from "./s3";
+// import { Container } from "../container";
+import { FileUpload, S3Service } from "./s3";
 import { MapSearchResponse, MapSearchResult } from "../types/services/map";
 import { PropertyUnitValidator } from "../utils/property-unit-validator";
+import { PropertyRepository } from "../repository/properties";
+import { UnitRepository } from "../repository/units";
 import { Decimal } from "@prisma/client/runtime/library";
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
 
+@Service()
 export class PropertyService extends BaseService {
-  private repository: any; // Using any to avoid circular dependencies
-  private unitRepository: any;
-  private s3Service: any;
-  private validator: any;
-
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private repository: PropertyRepository,
+    private unitRepository: UnitRepository,
+    private s3Service: S3Service,
+    private validator: PropertyUnitValidator
+  ) {
     super(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.repository = container.resolve('propertyRepository');
-    this.unitRepository = container.resolve('unitRepository');
-    this.s3Service = container.resolve('s3Service');
-    this.validator = container.resolve('propertyUnitValidator');
   }
 
   async createProperty(
@@ -245,6 +247,16 @@ export class PropertyService extends BaseService {
         return property;
       });
   
+      // Invalidate cache to show new property immediately
+      await Promise.all([
+        // Invalidate owner's properties list
+        this.deleteCachePattern(`properties:owner:${ownerId}*`),
+        // Invalidate general listings
+        this.deleteCachePattern(`properties:list*`),
+        // Invalidate search caches
+        this.deleteCachePattern(`properties:search*`),
+      ]);
+
       console.log('✅ PROPERTY SERVICE: Property created successfully');
       return this.success(result, "Property created successfully");
       
@@ -460,6 +472,18 @@ export class PropertyService extends BaseService {
         return updatedProperty;
       });
   
+      // Invalidate cache after successful update
+      await Promise.all([
+       // Invalidate specific property cache
+        this.deleteCachePattern(`property:${id}*`),
+        // Invalidate owner's properties list
+        this.deleteCachePattern(`properties:owner:${ownerId}*`),
+        // Invalidate general property listings that might include this property
+        this.deleteCachePattern(`properties:list*`),
+        // Invalidate property search results
+        this.deleteCachePattern(`properties:search*`),
+      ]);
+
       console.log('✅ PROPERTY SERVICE: Property updated successfully');
       return this.success(result, "Property updated successfully");
       
@@ -620,7 +644,6 @@ export class PropertyService extends BaseService {
               propertyPlanDocs: propertyData.propertyPlanDocs || [],
               propertyDimensionDocs: propertyData.propertyDimensionDocs || [],
               featured: propertyData.featured || false,
-              ownershipVerified: false, // Deprecated, defaulting to false
               createdAt: propertyData.createdAt,
               updatedAt: propertyData.updatedAt,
 

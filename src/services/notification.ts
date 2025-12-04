@@ -11,17 +11,20 @@ import {
 } from "../types/services/notification";
 import { logger, pubSub } from "../utils";
 import { NotificationRepository } from "../repository/notification";
-import { Container } from "../container";
+import { Service, Inject } from "typedi";
+import { PRISMA_TOKEN, REDIS_TOKEN } from "../types/di-tokens";
+import { EmailService } from "./email";
 
+@Service()
 export class NotificationService extends BaseService {
-  private emailService: any; // Using any to avoid circular dependency
-  private repository: NotificationRepository;
 
-  constructor(prisma: PrismaClient, redis: Redis) {
+  constructor(
+    @Inject(PRISMA_TOKEN) prisma: PrismaClient,
+    @Inject(REDIS_TOKEN) redis: Redis,
+    private emailService: EmailService,
+    private repository: NotificationRepository
+  ) {
     super(prisma, redis);
-    const container = Container.getInstance(prisma, redis);
-    this.emailService = container.resolve('emailService');
-    this.repository = new NotificationRepository(prisma, redis);
   }
 
   async createNotification(data: CreateNotificationData): Promise<any> {

@@ -11,7 +11,7 @@ import {
 import { UserPresence, TypingStatus } from "./presence.types";
 import { pubSub, SUBSCRIPTION_EVENTS } from "../../utils/pubsub";
 import { Context } from "../../types/context";
-import { getContainer } from "../../services";
+// import { getContainer } from "../../services";
 import { AuthMiddleware } from "../../middleware/auth";
 import { PresenceService } from "../../services/presence";
 
@@ -19,15 +19,14 @@ type PubSubPayload = {
   [key: string]: any;
 };
 
+import { Service } from "typedi";
+
+@Service()
 @Resolver()
 export class PresenceResolver {
-  private presenceService: PresenceService;
-
-  constructor() {
-        const container = getContainer();
-    
-    this.presenceService = container.resolve('presenceService');
-  }
+  constructor(
+    private presenceService: PresenceService
+  ) {}
 
   @Query(() => UserPresence, { nullable: true })
   @UseMiddleware(AuthMiddleware)

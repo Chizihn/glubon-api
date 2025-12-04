@@ -8,6 +8,7 @@ import {
 import { Redis } from "ioredis";
 import { BaseRepository } from "./base";
 import { Decimal } from "@prisma/client/runtime/library";
+import { Service } from "typedi";
 
 export interface CreateUnitInput {
   propertyId: string;
@@ -57,10 +58,9 @@ export interface UnitWithDetails extends Unit {
   } | null;
 }
 
+@Service()
 export class UnitRepository extends BaseRepository {
-  constructor(prisma: PrismaClient, redis: Redis) {
-    super(prisma, redis);
-  }
+  // Constructor removed to use BaseRepository's constructor with injection
 
   async create(data: CreateUnitInput, tx?: any): Promise<Unit> {
     const client = tx || this.prisma;
