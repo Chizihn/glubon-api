@@ -144,13 +144,12 @@ export class AuthService extends BaseService {
         return this.failure("Invalid credentials");
       }
 
-      // Validate role if provided and set activeRole
+      // Set activeRole based on user selection or default
       let activeRole = user.role; // fallback to deprecated field
       if (role) {
-        // User specified a role during login - validate they have it
-        if (!user.roles.includes(role)) {
-          return this.failure("You do not have permission to access this role");
-        }
+        // User specified a role during login - use it directly
+        // Allow users to sign in with any role (RENTER or OWNER)
+        logger.info("user signing in with role", role)
         activeRole = role;
       } else if (user.roles && user.roles.length > 0) {
         // Default to first role if not provided
@@ -178,7 +177,11 @@ export class AuthService extends BaseService {
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: { ...userWithoutSensitive, role: activeRole }, // Return user with activeRole
+          user: { 
+            ...userWithoutSensitive, 
+            role: activeRole, // Update deprecated field for backwards compatibility
+            activeRole // Include activeRole in response
+          } as any, // Type assertion needed since activeRole is runtime field
         },
         "Login successful"
       );
@@ -788,7 +791,11 @@ export class AuthService extends BaseService {
       return this.success<AuthResult>(
         {
           ...tokens,
-          user: { ...userWithoutSensitive, role: newRole }, // Return user with new activeRole
+          user: { 
+            ...userWithoutSensitive, 
+            role: newRole, // Update deprecated field for backwards compatibility
+            activeRole: newRole // Include activeRole in response
+          } as any, // Type assertion needed since activeRole is runtime field
         },
         "Role switched successfully"
       );

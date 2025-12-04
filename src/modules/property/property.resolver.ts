@@ -387,7 +387,8 @@ sortBy: searchOptions.sortBy as PropertySortByEnum | undefined,
       const result = await this.propertyService.createProperty(
         ctx.user!.id,
         internalInput,
-        files
+        ctx.user!.activeRole as RoleEnum,
+        files,
       );
 
       if (!result.success) {

@@ -14,12 +14,12 @@ export type AuthenticatedUser = Pick<
   | "permissions"
   | "isVerified"
   | "isActive"
-> & { roles: RoleEnum[] };
+> & { roles: RoleEnum[]; activeRole?: RoleEnum };
 
 export interface Context {
   prisma: PrismaClient;
   redis: Redis;
-  user: User | null;
+  user: (User & { activeRole?: RoleEnum }) | null;
   req?: Request; // Remove | undefined - let TypeScript handle it
   res?: Response;
 }

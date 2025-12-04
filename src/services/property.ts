@@ -45,7 +45,8 @@ export class PropertyService extends BaseService {
   async createProperty(
     ownerId: string,
     input: CreatePropertyInput,
-    files?: any[]
+    activeRole: RoleEnum,
+    files?: any[],
   ): Promise<IBaseResponse<Property>> {
     try {
       // console.log('🏠 PROPERTY SERVICE: createProperty started');
@@ -55,7 +56,7 @@ export class PropertyService extends BaseService {
         where: { id: ownerId },
       });
   
-      if (!user || user.role !== RoleEnum.LISTER) {
+      if (!user || activeRole !== RoleEnum.LISTER) {
         return this.failure("Only property owners can create properties");
       }
   

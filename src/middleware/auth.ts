@@ -69,9 +69,11 @@ export const RequireRole = (...roles: RoleEnum[]): MiddlewareFn<Context> => {
     }
 
     const user = context.user as any;
-    const userRoles = user.roles || (user.role ? [user.role] : []);
+    // Use activeRole (the role selected during login) for authorization
+    // This allows users to access endpoints based on their current session role
+    const activeRole = user.activeRole || user.role;
 
-    const hasRole = roles.some(role => userRoles.includes(role));
+    const hasRole = roles.includes(activeRole);
 
     if (!hasRole) {
       throw new ForbiddenError(
