@@ -4,7 +4,7 @@ import { appConfig } from ".";
 export const corsConfig: CorsOptions = {
   origin: appConfig.isDevelopment
     ? true
-    : [appConfig.frontendUrl, appConfig.apiUrl],
+    : [appConfig.frontendUrl, appConfig.apiUrl, appConfig.adminFrontendUrl],
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   optionsSuccessStatus: 200,
