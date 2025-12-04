@@ -1,6 +1,6 @@
 // src/app.ts
 import "reflect-metadata";
-import express from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 import helmet, { HelmetOptions } from "helmet";
 import { createServer } from "http";
@@ -141,6 +141,10 @@ export async function createApp() {
     });
 
     // app.use(upload);
+    // Root redirect route
+    app.get("/", (req: Request, res: Response) => {
+      res.redirect("/graphql");
+    });
 
     // GraphQL endpoint with file upload support
     app.use(

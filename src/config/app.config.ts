@@ -44,6 +44,7 @@ const envSchema = z.object({
 
   // Frontend
   FRONTEND_URL: z.string().url("Valid frontend URL is required"),
+  ADMIN_FRONTEND_URL: z.string().url("Valid admin frontend URL is required"),
 
   // Security
   BCRYPT_ROUNDS: z.coerce.number().default(12),
@@ -156,8 +157,12 @@ export const appConfig = {
   description: "Property Rental Platform for Nigeria",
   port: config.PORT,
   env: config.NODE_ENV,
-  apiUrl: config.NODE_ENV === "development" ? `localhost:${config.PORT}` : config.API_BASE_URL,
+  apiUrl:
+    config.NODE_ENV === "development"
+      ? `localhost:${config.PORT}`
+      : config.API_BASE_URL,
   frontendUrl: config.FRONTEND_URL,
+  adminFrontendUrl: config.ADMIN_FRONTEND_URL,
   isDevelopment: config.NODE_ENV === "development",
   isProduction: config.NODE_ENV === "production",
   isTest: config.NODE_ENV === "test",
